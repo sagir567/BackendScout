@@ -1,0 +1,27 @@
+name: Sagi Yosef Azulay
+target_roles:
+  - Backend Engineer
+  - Software Engineer
+target_locations:
+  - Israel
+  - Remote
+work_preferences:
+  remote: true
+  hybrid: true
+  onsite: false
+seniority:
+  min_years: 0
+  max_years: 6
+core_skills:
+  - Python
+  - Backend
+  - APIs
+  - Databases
+nice_to_have_skills:
+  - AI agents
+  - Distributed systems
+  - Cloud
+constraints:
+  require_truthful_cv_only: true
+  require_approval_before_submit: true
+
