@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from enum import Enum
 
-from sqlmodel import Field, SQLModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ApplicationStatus(str, Enum):
@@ -18,10 +18,11 @@ class ApplicationStatus(str, Enum):
     CLOSED = "closed"
 
 
-class Job(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
+class Job(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source: str
-    source_url: str = Field(index=True, unique=True)
+    source_url: str
     company: str
     title: str
     location: str | None = None
@@ -29,20 +30,21 @@ class Job(SQLModel, table=True):
     remote_policy: str | None = None
     salary_text: str | None = None
     description: str
-    required_skills: str | None = None
+    required_skills: list[str] = Field(default_factory=list)
     years_experience: str | None = None
     match_score: int | None = Field(default=None, ge=0, le=100)
     match_reason: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    discovered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class Application(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    job_id: int = Field(foreign_key="job.id", index=True)
+class Application(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    notion_page_id: str | None = None
+    job: Job
     status: ApplicationStatus = Field(default=ApplicationStatus.FOUND)
     company_folder: str | None = None
     tailored_cv_path: str | None = None
     last_action_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     notes: str | None = None
-

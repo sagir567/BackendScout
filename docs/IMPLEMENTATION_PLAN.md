@@ -4,7 +4,7 @@
 
 - Create project repo.
 - Define candidate profile schema.
-- Define job and application tracker schema.
+- Define Notion application tracker schema.
 - Add CLI commands for profile, scan, digest, and status.
 - Add configuration and secrets templates.
 
@@ -14,6 +14,7 @@
 - Add one or two public-source collectors.
 - Add deduplication by canonical URL, company, title, and content hash.
 - Add structured parsing and match scoring.
+- Write approved job records into Notion.
 
 ## Phase 3: Telegram Approval Loop
 
@@ -33,4 +34,3 @@
 - Track every job from discovery to final outcome.
 - Produce weekly metrics.
 - Generate interview preparation tasks after each approved application.
-

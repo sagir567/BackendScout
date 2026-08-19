@@ -11,7 +11,7 @@ The project has two goals:
 
 - Core orchestration: Codex + OpenAI Agents SDK.
 - Runtime: Python.
-- State: SQLite at first, with optional Notion or Google Sheets sync later.
+- Tracker: Notion-first. The Notion applications data source is the human-facing source of truth.
 - Human approval: Telegram first.
 - CV archive: existing CV folders stay outside this repo. Submitted CV versions can continue to be stored in company-named folders in `/Users/sagi/Documents/CV`.
 
@@ -42,3 +42,17 @@ python -m pip install -e ".[dev]"
 backend-scout --help
 ```
 
+## Notion Setup
+
+BackendScout expects a Notion data source for applications. Create a Notion
+database/table, connect it to an internal Notion integration, then put the data
+source ID and token in `.env`.
+
+Required environment values:
+
+```bash
+NOTION_API_KEY=
+NOTION_APPLICATIONS_DATA_SOURCE_ID=
+```
+
+See [docs/NOTION_SETUP.md](docs/NOTION_SETUP.md) for the planned tracker schema.

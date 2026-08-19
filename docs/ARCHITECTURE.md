@@ -10,7 +10,7 @@ BackendScout is intentionally split into small modules instead of one all-powerf
 - `matcher`: scores job fit against the candidate profile.
 - `approval`: human-in-the-loop gates for critical actions.
 - `cv`: CV tailoring and export workflow.
-- `tracker`: application state, history, and reports.
+- `tracker`: application state, history, and reports in Notion.
 - `prep`: interview preparation recommendations.
 
 ## Daily Flow
@@ -23,7 +23,7 @@ BackendScout is intentionally split into small modules instead of one all-powerf
 6. For approved jobs, draft a tailored CV and application summary.
 7. Wait for final approval.
 8. Submit only where allowed and technically safe.
-9. Update tracker and generate preparation tasks.
+9. Update the Notion tracker and generate preparation tasks.
 
 ## Approval Gates
 
@@ -36,3 +36,8 @@ BackendScout must request approval before:
 - using browser automation on an authenticated site
 - changing job status to `submitted`
 
+## Notion-First Tracking
+
+The application tracker should use Notion as the human-facing source of truth.
+Local files may be used for raw scan snapshots, exports, or temporary drafts,
+but adding durable local storage requires a user decision first.

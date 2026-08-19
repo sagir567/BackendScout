@@ -9,8 +9,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-data/*.db
-data/*.sqlite
 data/raw/
 data/exports/
 applications/*/private/

@@ -19,7 +19,12 @@ def status() -> None:
     table = Table(title="BackendScout")
     table.add_column("Setting")
     table.add_column("Value")
-    table.add_row("DB path", str(settings.db_path))
+    table.add_row("Notion API version", settings.notion_api_version)
+    table.add_row(
+        "Notion applications data source",
+        "configured" if settings.notion_applications_data_source_id else "missing",
+    )
+    table.add_row("Notion API key", "configured" if settings.notion_api_key else "missing")
     table.add_row("CV archive root", str(settings.cv_archive_root))
     table.add_row("Fast model", settings.openai_model_fast)
     table.add_row("Balanced model", settings.openai_model_balanced)
@@ -29,16 +34,14 @@ def status() -> None:
 
 @app.command()
 def init_data() -> None:
-    """Create local data folders used by the project."""
-    settings = Settings()
+    """Create local non-authoritative folders used by the project."""
     paths = [
-        settings.db_path.parent,
-        Path("data/raw"),
-        Path("data/exports"),
-        Path("applications"),
+        "data/raw",
+        "data/exports",
+        "applications",
     ]
     for path in paths:
-        path.mkdir(parents=True, exist_ok=True)
+        Path(path).mkdir(parents=True, exist_ok=True)
         console.print(f"ready: {path}")
 
 
@@ -51,4 +54,3 @@ def statuses() -> None:
 
 if __name__ == "__main__":
     app()
-

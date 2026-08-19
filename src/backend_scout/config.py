@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: str | None = None
 
-    db_path: Path = Path("data/backend_scout.sqlite")
-    cv_archive_root: Path = Path("/Users/sagi/Documents/CV")
+    notion_api_key: str | None = None
+    notion_api_version: str = "2026-03-11"
+    notion_applications_data_source_id: str | None = None
 
+    cv_archive_root: Path = Path("/Users/sagi/Documents/CV")
