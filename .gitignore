@@ -11,6 +11,7 @@ build/
 *.egg-info/
 data/raw/
 data/exports/
+docs/
 applications/*/private/
 applications/*/*.pdf
 applications/*/*.docx

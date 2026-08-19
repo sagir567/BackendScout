@@ -1,5 +1,10 @@
 from backend_scout.models import ApplicationStatus, Job
-from backend_scout.notion import APPLICATIONS_PROPERTY_NAMES, build_job_page_properties
+from backend_scout.notion import (
+    APPLICATIONS_PROPERTY_NAMES,
+    APPLICATIONS_PROPERTY_TYPES,
+    build_job_page_properties,
+    validate_applications_data_source,
+)
 
 
 def test_build_job_page_properties_uses_data_source_schema_names() -> None:
@@ -23,3 +28,28 @@ def test_build_job_page_properties_uses_data_source_schema_names() -> None:
         {"name": "Python"},
         {"name": "PostgreSQL"},
     ]
+
+
+def test_validate_applications_data_source_accepts_expected_schema() -> None:
+    data_source = {
+        "properties": {
+            name: {"type": APPLICATIONS_PROPERTY_TYPES[key]}
+            for key, name in APPLICATIONS_PROPERTY_NAMES.items()
+        }
+    }
+
+    assert validate_applications_data_source(data_source) == []
+
+
+def test_validate_applications_data_source_reports_missing_or_wrong_properties() -> None:
+    data_source = {
+        "properties": {
+            "Role": {"type": "title"},
+            "Company": {"type": "number"},
+        }
+    }
+
+    problems = validate_applications_data_source(data_source)
+
+    assert "Property Company should be rich_text, got number" in problems
+    assert "Missing property: Status (status)" in problems

@@ -29,3 +29,10 @@ These rules apply to all work in this repository.
 - When explaining something the user is learning, give direct, step-by-step guidance.
 - When useful, create partial files with `TODO` placeholders for the user to fill in.
 - Prefer small learning checkpoints over large abstract explanations.
+
+## Documentation Policy
+
+- Do not commit the `docs/` folder to git. Treat it as local scratch notes and worksheets.
+- Continuously update `README.md` with the current project state and setup commands.
+- Continuously update `SYSTEM_BUILD_GUIDE.md` with the learning-oriented instructions for building this complex agent system.
+- Continuously update `REQUIREMENTS.md` and `requirements.txt` when install requirements or dependencies change.

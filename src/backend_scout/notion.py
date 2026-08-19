@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Self
 
 from backend_scout.models import ApplicationStatus, Job
 
@@ -20,6 +20,24 @@ APPLICATIONS_PROPERTY_NAMES = {
     "match_reason": "Match Reason",
     "description": "Description",
     "discovered_at": "Discovered At",
+}
+
+APPLICATIONS_PROPERTY_TYPES = {
+    "role": "title",
+    "company": "rich_text",
+    "status": "status",
+    "source": "rich_text",
+    "source_url": "url",
+    "location": "rich_text",
+    "remote_policy": "rich_text",
+    "employment_type": "rich_text",
+    "salary": "rich_text",
+    "match_score": "number",
+    "required_skills": "multi_select",
+    "years_experience": "rich_text",
+    "match_reason": "rich_text",
+    "description": "rich_text",
+    "discovered_at": "date",
 }
 
 
@@ -78,7 +96,7 @@ class NotionClient:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "NotionClient":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -122,6 +140,27 @@ def build_job_page_properties(
         }
 
     return properties
+
+
+def validate_applications_data_source(data_source: dict[str, Any]) -> list[str]:
+    """Return human-readable schema problems for the Applications data source."""
+    properties = data_source.get("properties") or {}
+    problems: list[str] = []
+
+    for key, expected_name in APPLICATIONS_PROPERTY_NAMES.items():
+        expected_type = APPLICATIONS_PROPERTY_TYPES[key]
+        notion_property = properties.get(expected_name)
+        if not notion_property:
+            problems.append(f"Missing property: {expected_name} ({expected_type})")
+            continue
+
+        actual_type = notion_property.get("type")
+        if actual_type != expected_type:
+            problems.append(
+                f"Property {expected_name} should be {expected_type}, got {actual_type or 'unknown'}"
+            )
+
+    return problems
 
 
 def _title(content: str) -> dict[str, Any]:

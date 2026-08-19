@@ -15,6 +15,16 @@ The project has two goals:
 - Human approval: Telegram first.
 - CV archive: existing CV folders stay outside this repo. Submitted CV versions can continue to be stored in company-named folders in `/Users/sagi/Documents/CV`.
 
+## Learning Guide
+
+This repo is also a learning artifact. Keep [SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md)
+updated as we build, so another developer can follow the same path and learn how
+to create a complex agent system with tools, state, approval gates, and external
+integrations.
+
+Keep [REQUIREMENTS.md](REQUIREMENTS.md) updated with everything needed to run
+the system.
+
 ## Safety Rules
 
 - Never submit an application without explicit approval.
@@ -35,11 +45,20 @@ The project has two goals:
 
 ## Local Setup
 
+Use `uv`. The project pins Python 3.12 with `.python-version`.
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-backend-scout --help
+brew install uv
+uv sync --extra dev
+uv run backend-scout --help
+uv run backend-scout notion check
+```
+
+If macOS hidden flags break editable imports after creating `.venv`, run:
+
+```bash
+chflags -R nohidden .venv
+uv sync --extra dev --reinstall-package backend-scout
 ```
 
 ## Notion Setup
@@ -52,7 +71,38 @@ Required environment values:
 
 ```bash
 NOTION_API_KEY=
+NOTION_API_VERSION=2026-03-11
 NOTION_APPLICATIONS_DATA_SOURCE_ID=
 ```
 
-See [docs/NOTION_SETUP.md](docs/NOTION_SETUP.md) for the planned tracker schema.
+The `Applications` data source should contain these properties:
+
+| Property | Type |
+| --- | --- |
+| Role | Title |
+| Company | Text |
+| Status | Status |
+| Source | Text |
+| Source URL | URL |
+| Location | Text |
+| Remote Policy | Text |
+| Employment Type | Text |
+| Salary | Text |
+| Match Score | Number |
+| Required Skills | Multi-select |
+| Years Experience | Text |
+| Match Reason | Text |
+| Description | Text |
+| Discovered At | Date |
+
+Verify the connection:
+
+```bash
+uv run backend-scout notion check
+```
+
+## Git Policy
+
+- `docs/` is local-only and should not be committed.
+- `.env` is local-only and must never be committed.
+- Ask Sagi before pushing to any remote.
