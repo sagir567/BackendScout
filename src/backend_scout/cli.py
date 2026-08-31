@@ -12,10 +12,15 @@ from backend_scout.candidate_profile import (
     load_candidate_profile,
 )
 from backend_scout.config import Settings
-from backend_scout.job_imports import load_manual_job_import
+from backend_scout.job_imports import (
+    job_with_match_result,
+    load_manual_job_import,
+    score_manual_job_import,
+    unique_scored_jobs,
+)
 from backend_scout.matcher import ScoredJob, score_jobs
 from backend_scout.models import ApplicationStatus, Job
-from backend_scout.notion import NotionClient, validate_applications_data_source
+from backend_scout.notion import NotionClient, upsert_job_page, validate_applications_data_source
 from backend_scout.yaml_files import YamlFileError
 
 app = typer.Typer(help="BackendScout job-search agent CLI.")
@@ -113,6 +118,7 @@ def jobs_validate(path: ManualJobPathArgument) -> None:
 @jobs_app.command("import")
 def jobs_import(
     path: ManualJobPathArgument,
+    profile_path: ScoreProfilePathOption = DEFAULT_PROFILE_PATH,
     write_notion: Annotated[
         bool,
         typer.Option(
@@ -124,14 +130,18 @@ def jobs_import(
     """Preview or write manually imported jobs to Notion."""
     try:
         manual_import = load_manual_job_import(path)
+        profile = load_candidate_profile(profile_path)
     except (ValidationError, YamlFileError) as exc:
         _print_load_error("Manual job import failed", exc)
         raise typer.Exit(1) from exc
 
-    _print_jobs_table(manual_import.jobs, "Manual Job Import Preview")
+    scored_jobs = unique_scored_jobs(score_manual_job_import(profile, manual_import))
+    _print_scored_jobs_table(scored_jobs, title="Manual Job Import Shortlist")
 
     if not write_notion:
-        console.print("[yellow]Preview only.[/yellow] Re-run with --write-notion to create Notion rows.")
+        console.print(
+            "[yellow]Preview only.[/yellow] Re-run with --write-notion to create Notion rows with fresh scoring."
+        )
         return
 
     settings = Settings()
@@ -155,9 +165,13 @@ def jobs_import(
                     console.print(f"- {problem}")
                 raise typer.Exit(1)
 
-            created = [
-                client.create_job_page(settings.notion_applications_data_source_id, job)
-                for job in manual_import.jobs
+            actions = [
+                upsert_job_page(
+                    client,
+                    settings.notion_applications_data_source_id,
+                    job_with_match_result(scored_job.job, scored_job),
+                )[0]
+                for scored_job in scored_jobs
             ]
     except typer.Exit:
         raise
@@ -166,7 +180,12 @@ def jobs_import(
         console.print(str(exc))
         raise typer.Exit(1) from exc
 
-    console.print(f"[green]Created {len(created)} Notion row(s).[/green]")
+    created_count = actions.count("created")
+    updated_count = actions.count("updated")
+    console.print(
+        f"[green]Synced {len(actions)} job(s) to Notion.[/green] "
+        f"Created: {created_count}, Updated: {updated_count}."
+    )
 
 
 @jobs_app.command("score")
@@ -182,8 +201,8 @@ def jobs_score(
         _print_load_error("Job scoring failed", exc)
         raise typer.Exit(1) from exc
 
-    scored_jobs = score_jobs(profile, manual_import.jobs)
-    _print_scored_jobs_table(scored_jobs)
+    scored_jobs = unique_scored_jobs(score_jobs(profile, manual_import.jobs))
+    _print_scored_jobs_table(scored_jobs, title="Job Match Summary")
     for scored_job in scored_jobs:
         _print_scored_job_details(scored_job)
 
@@ -254,8 +273,8 @@ def _print_jobs_table(jobs: list[Job], title: str) -> None:
     console.print(table)
 
 
-def _print_scored_jobs_table(scored_jobs: list[ScoredJob]) -> None:
-    table = Table(title="Job Match Summary")
+def _print_scored_jobs_table(scored_jobs: list[ScoredJob], title: str) -> None:
+    table = Table(title=title)
     table.add_column("Company")
     table.add_column("Role")
     table.add_column("Score")

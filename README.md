@@ -149,7 +149,23 @@ Real job import files should live under ignored `data/raw/`.
 The import command is preview-only by default. To create Notion rows, use:
 
 ```bash
-uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --write-notion
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml --write-notion
+```
+
+`jobs import` now recomputes `Match Score` and `Match Reason` from your local
+candidate profile before writing to Notion, so the tracker always reflects the
+current scoring rules rather than stale YAML values.
+
+Repeated imports are now stable:
+- duplicate jobs inside one YAML file are deduplicated before sync
+- an existing Notion row is updated instead of duplicated when the same job is imported again
+- existing workflow status is preserved, so a reviewed job does not get reset to `found`
+
+For a detailed shortlist view without writing to Notion:
+
+```bash
+uv run --no-editable backend-scout jobs score data/raw/company-role.yaml --profile-path config/candidate_profile.yaml
 ```
 
 ## Git Policy

@@ -173,8 +173,18 @@ uv run --no-editable pytest
 uv lock --check
 uv run --no-editable backend-scout profile check
 uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout jobs score examples/manual_job.example.yaml --profile-path config/candidate_profile.yaml
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml --write-notion
 uv run --no-editable backend-scout notion check
 ```
+
+Expected current import behavior:
+
+- Preview-only unless `--write-notion` is passed.
+- Recomputes `Match Score` and `Match Reason` from the local profile before syncing.
+- Deduplicates repeated copies of the same job inside one import file.
+- Updates an existing Notion row for the same job instead of creating duplicates.
+- Preserves existing approval status on updates.
 
 ## Local-Only Data Files
 

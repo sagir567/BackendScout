@@ -191,7 +191,7 @@ TODO:
 ```text
 - [x] Add manual import command.
 - [x] Add normalized Job model fields for parser output.
-- [ ] Add dedupe key strategy.
+- [x] Add dedupe key strategy.
 - [ ] Add first public collector.
 ```
 
@@ -204,6 +204,15 @@ uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --writ
 ```
 
 The import command is preview-only unless `--write-notion` is passed.
+
+Current import behavior:
+
+- `jobs score` gives a deterministic shortlist view without external writes.
+- `jobs import --write-notion` rescoring is always based on the latest local
+  candidate profile.
+- Duplicate copies of the same job in one YAML file are skipped during sync.
+- Existing Notion rows are updated in place when the same job is imported again.
+- Existing workflow status is preserved during updates so approval gates stay intact.
 
 ## Phase 5: Matching Agent
 
@@ -232,6 +241,16 @@ Scoring should consider:
 - Company/domain interest.
 - Salary if provided.
 - Risk of mismatch or overreach.
+
+Current progress as of 2026-08-31:
+
+- [x] Deterministic scoring engine with transparent weighted breakdown.
+- [x] Approval-gated status flow modeled before any future submission work.
+- [x] `jobs score` CLI for shortlist-style review.
+- [x] `jobs import --write-notion` now recomputes `Match Score` and `Match Reason`
+  from the local candidate profile before syncing Notion rows.
+- [x] Repeated imports dedupe identical jobs and update existing Notion rows.
+- [ ] Daily digest delivery channel.
 
 ## Phase 6: Human Approval Loop
 
@@ -311,10 +330,9 @@ After approval or submission, generate a prep packet:
 TODO:
 
 ```text
-- [ ] Fill proof_points in config/candidate_profile.yaml.
-- [ ] Run uv run --no-editable backend-scout profile check.
-- [ ] Validate a real manual job YAML under data/raw/.
-- [ ] Run uv run --no-editable pytest.
-- [ ] Run uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml.
-- [ ] Optionally write one approved manual job to Notion with --write-notion.
+- [ ] Add a first collector for one public job source.
+- [ ] Add a daily digest artifact generator from scored jobs.
+- [ ] Introduce Telegram approval transport on top of existing approval statuses.
+- [ ] Add CV draft file generation for `approved_to_tailor`.
+- [ ] Keep submission disabled until `approved_to_submit`.
 ```
