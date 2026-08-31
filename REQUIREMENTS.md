@@ -12,6 +12,7 @@ we add tools, services, APIs, packages, or system dependencies.
 | uv | Required | Official Python/project environment manager. |
 | Notion account | Required | Used as the human-facing application tracker. |
 | Notion internal integration | Required | Must have access to the `Applications` data source. |
+| PyYAML | Required package | Used for candidate profile and manual job import files. |
 | OpenAI API key | Planned | Needed once we add agentic parsing, matching, and CV tailoring. |
 | Telegram bot token | Planned | Needed once we add human approval via Telegram. |
 
@@ -19,10 +20,13 @@ we add tools, services, APIs, packages, or system dependencies.
 
 The canonical Python dependency list lives in `pyproject.toml`.
 
+Current runtime packages include Pydantic, Pydantic Settings, Typer, Rich,
+HTTPX, Beautiful Soup, python-dotenv, and PyYAML.
+
 The official install command is:
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --no-editable --link-mode copy
 ```
 
 For pip-compatible fallback installs, use:
@@ -61,9 +65,11 @@ Do not commit `.env`.
 
 ```bash
 brew install uv
-uv sync --extra dev
-uv run backend-scout --help
-uv run backend-scout notion check
+uv sync --extra dev --no-editable --link-mode copy
+uv run --no-editable backend-scout --help
+uv run --no-editable backend-scout notion check
+uv run --no-editable backend-scout profile check
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
 ```
 
 Pros:
@@ -85,19 +91,37 @@ On this Mac, the first `.venv` created by `uv` inherited the macOS `hidden`
 file flag. Python 3.12 skips hidden `.pth` files, which broke editable imports
 with `ModuleNotFoundError: No module named 'backend_scout'`.
 
+The official local setup now uses uv's `--no-editable --link-mode copy` options
+so the project is installed as a normal wheel inside `.venv`, avoiding the
+fragile editable marker and reducing hidden/dataless metadata inherited from
+uv's cache.
+
 If that happens, run:
 
 ```bash
 chflags -R nohidden .venv
-uv sync --extra dev --reinstall-package backend-scout
+uv sync --extra dev --no-editable --link-mode copy
+```
+
+If `.venv` under `Documents` still causes slow or stuck imports on this Mac,
+move the actual virtualenv outside the iCloud-backed folder and keep `.venv` as
+a symlink:
+
+```bash
+mv .venv .venv.documents-backup-2026-08-31
+uv venv /private/tmp/backendscout-venv
+ln -s /private/tmp/backendscout-venv .venv
+uv sync --extra dev --no-editable --link-mode copy
 ```
 
 After that, these commands should work:
 
 ```bash
-uv run backend-scout --help
-uv run pytest
-uv run backend-scout notion check
+uv run --no-editable backend-scout --help
+uv run --no-editable pytest
+uv run --no-editable backend-scout notion check
+uv run --no-editable backend-scout profile check
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
 ```
 
 ## Fallback Setup: Homebrew Python + venv/pip
@@ -112,6 +136,8 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 backend-scout --help
 backend-scout notion check
+backend-scout profile check
+backend-scout jobs validate examples/manual_job.example.yaml
 ```
 
 Pros:
@@ -142,7 +168,18 @@ PYTHONPATH=src \
 After dependencies are installed, prefer:
 
 ```bash
-uv run ruff check
-uv run pytest
-uv run backend-scout notion check
+uv run --no-editable ruff check
+uv run --no-editable pytest
+uv lock --check
+uv run --no-editable backend-scout profile check
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout notion check
 ```
+
+## Local-Only Data Files
+
+These files are intentionally ignored:
+
+- `config/candidate_profile.yaml`: real candidate profile, salary floor, and preferences.
+- `data/raw/`: real pasted job descriptions or manual job import files.
+- `.env`: local API tokens and service IDs.

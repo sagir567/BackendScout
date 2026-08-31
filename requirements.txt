@@ -1,6 +1,7 @@
 # Official workflow: uv sync --extra dev
 #
 # Keep package dependencies centralized in pyproject.toml.
+# Runtime dependencies, including PyYAML, are resolved from pyproject.toml.
 # This file gives pip users a fallback install command:
 #   python -m pip install -r requirements.txt
 -e .[dev]

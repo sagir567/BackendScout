@@ -49,16 +49,25 @@ Use `uv`. The project pins Python 3.12 with `.python-version`.
 
 ```bash
 brew install uv
-uv sync --extra dev
-uv run backend-scout --help
-uv run backend-scout notion check
+uv sync --extra dev --no-editable --link-mode copy
+uv run --no-editable backend-scout --help
+uv run --no-editable backend-scout notion check
+uv run --no-editable backend-scout profile check
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
 ```
 
-If macOS hidden flags break editable imports after creating `.venv`, run:
+The `--no-editable --link-mode copy` flags avoid a macOS hidden/dataless file
+issue seen on this machine when the project is installed editably under
+`Documents/`.
+
+If the CLI still hangs because `.venv` inherits iCloud/File Provider metadata
+from `Documents`, rebuild it outside the repo and keep `.venv` as a symlink:
 
 ```bash
-chflags -R nohidden .venv
-uv sync --extra dev --reinstall-package backend-scout
+mv .venv .venv.documents-backup-YYYY-MM-DD
+uv venv /private/tmp/backendscout-venv
+ln -s /private/tmp/backendscout-venv .venv
+uv sync --extra dev --no-editable --link-mode copy
 ```
 
 ## Notion Setup
@@ -98,7 +107,49 @@ The `Applications` data source should contain these properties:
 Verify the connection:
 
 ```bash
-uv run backend-scout notion check
+uv run --no-editable backend-scout notion check
+```
+
+## Candidate Profile
+
+Real candidate data lives in `config/candidate_profile.yaml`. That file is
+local-only and ignored by git.
+
+The committed starter is `config/candidate_profile.example.yaml`. The local
+profile should stay truthful and specific because later matching and CV
+tailoring will rely on it.
+
+Keep these profile fields current:
+- target roles and locations
+- salary floor in NIS
+- remote/hybrid/onsite preferences
+- concrete backend skills
+- proof points backed by real work, projects, publications, or public GitHub work
+
+Validate it:
+
+```bash
+uv run --no-editable backend-scout profile check
+```
+
+## Manual Job Import
+
+Use manual imports before adding scrapers. This lets us test parsing, validation,
+Notion writes, and the human workflow with jobs you choose.
+
+Committed example:
+
+```bash
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout jobs import examples/manual_job.example.yaml
+```
+
+Real job import files should live under ignored `data/raw/`.
+
+The import command is preview-only by default. To create Notion rows, use:
+
+```bash
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --write-notion
 ```
 
 ## Git Policy

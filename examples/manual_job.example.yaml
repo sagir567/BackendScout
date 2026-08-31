@@ -1,0 +1,20 @@
+jobs:
+  - source: manual
+    source_url: https://jobs.example.com/backend-engineer
+    company: Example Cloud
+    title: Backend Engineer
+    location: Tel Aviv, Israel
+    employment_type: Full-time
+    remote_policy: Hybrid, 2 days from home
+    salary_text: Not listed
+    description: |
+      Build backend APIs, background workers, and integrations for a cloud
+      product used by internal operations teams.
+    required_skills:
+      - Python
+      - FastAPI
+      - PostgreSQL
+      - Docker
+    years_experience: 2+ years
+    match_score: 78
+    match_reason: Strong backend/API overlap. Confirm cloud depth before applying.

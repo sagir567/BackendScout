@@ -65,14 +65,27 @@ Completed:
 - Connected a Notion `Applications` data source.
 - Added Notion schema validation.
 - Added root-level runtime requirements documentation.
+- Pushed the foundation to GitHub after explicit approval.
 
 TODO:
 
 ```text
 - [ ] Install uv.
-- [ ] Run uv sync --extra dev.
-- [ ] Run uv run backend-scout notion check.
+- [ ] Run uv sync --extra dev --no-editable --link-mode copy.
+- [ ] Run uv run --no-editable backend-scout notion check.
 - [ ] Create the real candidate profile file from config/candidate_profile.example.yaml.
+```
+
+macOS note for this machine:
+
+If the repo stays under `Documents` and `.venv` inherits File Provider metadata,
+keep the real virtualenv outside `Documents` and leave `.venv` as a symlink:
+
+```bash
+mv .venv .venv.documents-backup-2026-08-31
+uv venv /private/tmp/backendscout-venv
+ln -s /private/tmp/backendscout-venv .venv
+uv sync --extra dev --no-editable --link-mode copy
 ```
 
 ## Phase 2: Candidate Profile
@@ -83,6 +96,7 @@ Inputs:
 
 - Target roles.
 - Locations and remote/hybrid preferences.
+- Salary floor or compensation preferences.
 - Real skills.
 - Real projects and experience.
 - Constraints, such as roles to avoid.
@@ -93,6 +107,8 @@ Output file:
 config/candidate_profile.yaml
 ```
 
+This file is ignored by git because it contains real personal data.
+
 TODO template:
 
 ```yaml
@@ -101,6 +117,7 @@ target_roles:
   - Backend Engineer
 target_locations:
   - TODO
+salary_floor_nis: TODO
 work_preferences:
   remote: true
   hybrid: true
@@ -112,6 +129,12 @@ proof_points:
 constraints:
   require_truthful_cv_only: true
   require_approval_before_submit: true
+```
+
+Validation command:
+
+```bash
+uv run --no-editable backend-scout profile check
 ```
 
 ## Phase 3: Notion Tracker
@@ -142,7 +165,7 @@ Required properties:
 Validation command:
 
 ```bash
-uv run backend-scout notion check
+uv run --no-editable backend-scout notion check
 ```
 
 ## Phase 4: Job Collection
@@ -166,11 +189,21 @@ Rules:
 TODO:
 
 ```text
-- [ ] Add manual import command.
-- [ ] Add normalized Job model fields for parser output.
+- [x] Add manual import command.
+- [x] Add normalized Job model fields for parser output.
 - [ ] Add dedupe key strategy.
 - [ ] Add first public collector.
 ```
+
+Manual import commands:
+
+```bash
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout jobs import examples/manual_job.example.yaml
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --write-notion
+```
+
+The import command is preview-only unless `--write-notion` is passed.
 
 ## Phase 5: Matching Agent
 
@@ -195,6 +228,7 @@ Scoring should consider:
 - Required experience.
 - Skills overlap.
 - Location and remote policy.
+- Salary floor versus stated compensation.
 - Company/domain interest.
 - Salary if provided.
 - Risk of mismatch or overreach.
@@ -277,9 +311,10 @@ After approval or submission, generate a prep packet:
 TODO:
 
 ```text
-- [ ] Install uv locally.
-- [ ] Generate uv.lock.
-- [ ] If macOS hidden flags break editable imports, run chflags -R nohidden .venv.
-- [ ] Run uv run pytest.
-- [ ] Run uv run backend-scout notion check.
+- [ ] Fill proof_points in config/candidate_profile.yaml.
+- [ ] Run uv run --no-editable backend-scout profile check.
+- [ ] Validate a real manual job YAML under data/raw/.
+- [ ] Run uv run --no-editable pytest.
+- [ ] Run uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml.
+- [ ] Optionally write one approved manual job to Notion with --write-notion.
 ```

@@ -5,6 +5,7 @@ target_roles:
 target_locations:
   - Israel
   - Remote
+salary_floor_nis: 15000
 work_preferences:
   remote: true
   hybrid: true
@@ -21,7 +22,11 @@ nice_to_have_skills:
   - AI agents
   - Distributed systems
   - Cloud
+proof_points:
+  - TODO real project, work example, or measurable backend achievement
 constraints:
   require_truthful_cv_only: true
   require_approval_before_submit: true
-
+  roles_to_avoid:
+    - TODO optional role or company type to avoid
+  notes: TODO optional notes, such as preferred industries or GitHub portfolio links
