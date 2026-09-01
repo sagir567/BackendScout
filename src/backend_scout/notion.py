@@ -1,6 +1,6 @@
 from typing import Any, Self
 
-from backend_scout.models import ApplicationStatus, Job
+from backend_scout.models import ApplicationDigestItem, ApplicationStatus, Job
 
 NOTION_BASE_URL = "https://api.notion.com/v1"
 
@@ -74,6 +74,11 @@ class NotionClient:
         response.raise_for_status()
         return response.json()
 
+    def retrieve_page(self, page_id: str) -> dict[str, Any]:
+        response = self._client.get(f"/pages/{page_id}")
+        response.raise_for_status()
+        return response.json()
+
     def create_job_page(
         self,
         data_source_id: str,
@@ -97,6 +102,22 @@ class NotionClient:
         response = self._client.patch(
             f"/pages/{page_id}",
             json={"properties": build_job_page_properties(job, include_status=False)},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_application_status(
+        self,
+        page_id: str,
+        status: ApplicationStatus,
+    ) -> dict[str, Any]:
+        response = self._client.patch(
+            f"/pages/{page_id}",
+            json={
+                "properties": {
+                    APPLICATIONS_PROPERTY_NAMES["status"]: {"status": {"name": status.value}}
+                }
+            },
         )
         response.raise_for_status()
         return response.json()
@@ -174,6 +195,52 @@ def upsert_job_page(
     return "created", client.create_job_page(data_source_id, job, status=status)
 
 
+def list_jobs_by_status(
+    client: NotionClient,
+    data_source_id: str,
+    status: ApplicationStatus,
+    page_size: int = 20,
+) -> list[ApplicationDigestItem]:
+    query_result = client.query_data_source(
+        data_source_id,
+        {
+            "page_size": page_size,
+            "filter": {
+                "property": APPLICATIONS_PROPERTY_NAMES["status"],
+                "status": {"equals": status.value},
+            },
+        },
+    )
+    return [application_digest_item_from_page(page) for page in query_result.get("results", [])]
+
+
+def update_application_status(
+    client: NotionClient,
+    page_id: str,
+    status: ApplicationStatus,
+) -> dict[str, Any]:
+    return client.update_application_status(page_id, status)
+
+
+def application_digest_item_from_page(page: dict[str, Any]) -> ApplicationDigestItem:
+    properties = page.get("properties", {})
+    return ApplicationDigestItem(
+        notion_page_id=page["id"],
+        company=_extract_rich_text_value(properties, "company") or "Unknown Company",
+        title=_extract_title_value(properties, "role") or "Untitled Role",
+        status=ApplicationStatus(_extract_status_value(properties, "status") or ApplicationStatus.FOUND.value),
+        source=_extract_rich_text_value(properties, "source") or "unknown",
+        source_url=_extract_url_value(properties, "source_url") or "",
+        location=_extract_rich_text_value(properties, "location"),
+        remote_policy=_extract_rich_text_value(properties, "remote_policy"),
+        employment_type=_extract_rich_text_value(properties, "employment_type"),
+        salary_text=_extract_rich_text_value(properties, "salary"),
+        match_score=_extract_number_value(properties, "match_score"),
+        match_reason=_extract_rich_text_value(properties, "match_reason"),
+        required_skills=_extract_multi_select_values(properties, "required_skills"),
+    )
+
+
 def validate_applications_data_source(data_source: dict[str, Any]) -> list[str]:
     """Return human-readable schema problems for the Applications data source."""
     properties = data_source.get("properties") or {}
@@ -207,6 +274,54 @@ def _clip_text(content: str, limit: int = 1900) -> str:
     if len(content) <= limit:
         return content
     return content[: limit - 3].rstrip() + "..."
+
+
+def _extract_title_value(properties: dict[str, Any], property_key: str) -> str | None:
+    title_items = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("title", [])
+    return _join_notion_text(title_items)
+
+
+def _extract_rich_text_value(properties: dict[str, Any], property_key: str) -> str | None:
+    rich_text_items = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("rich_text", [])
+    return _join_notion_text(rich_text_items)
+
+
+def _extract_status_value(properties: dict[str, Any], property_key: str) -> str | None:
+    status_value = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("status")
+    if not isinstance(status_value, dict):
+        return None
+    return status_value.get("name")
+
+
+def _extract_url_value(properties: dict[str, Any], property_key: str) -> str | None:
+    value = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("url")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _extract_number_value(properties: dict[str, Any], property_key: str) -> int | None:
+    value = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("number")
+    return value if isinstance(value, int) else None
+
+
+def _extract_multi_select_values(properties: dict[str, Any], property_key: str) -> list[str]:
+    items = properties.get(APPLICATIONS_PROPERTY_NAMES[property_key], {}).get("multi_select", [])
+    return [item["name"] for item in items if isinstance(item, dict) and item.get("name")]
+
+
+def _join_notion_text(items: list[dict[str, Any]]) -> str | None:
+    parts = []
+    for item in items:
+        plain_text = item.get("plain_text")
+        if isinstance(plain_text, str) and plain_text:
+            parts.append(plain_text)
+            continue
+
+        text_content = item.get("text", {}).get("content")
+        if isinstance(text_content, str) and text_content:
+            parts.append(text_content)
+
+    joined = "".join(parts).strip()
+    return joined or None
 
 def _find_rich_text_equals_filter(property_name: str, value: str) -> dict[str, Any]:
     return {"property": property_name, "rich_text": {"equals": value}}

@@ -168,6 +168,27 @@ For a detailed shortlist view without writing to Notion:
 uv run --no-editable backend-scout jobs score data/raw/company-role.yaml --profile-path config/candidate_profile.yaml
 ```
 
+## Telegram Approval Loop
+
+Telegram is now the first approval channel. The current slice uses the raw Bot
+API through `httpx`, with two explicit commands:
+
+```bash
+uv run --no-editable backend-scout telegram check
+uv run --no-editable backend-scout telegram peek-updates
+uv run --no-editable backend-scout telegram send-digest --chat-id YOUR_TELEGRAM_USER_ID
+uv run --no-editable backend-scout telegram poll-once
+```
+
+Current behavior:
+- `telegram send-digest` reads jobs from Notion by status, sends one message per job, and moves `found` jobs to `digest_sent`
+- each Telegram message includes inline buttons for `Approve tailoring` and `Close`
+- `telegram poll-once` reads new callback updates once, applies valid status transitions, and stores the last processed Telegram update ID locally
+- only configured Telegram user IDs may trigger approval actions
+
+Use the setup worksheet in [TELEGRAM_SETUP_WORKSHEET.md](TELEGRAM_SETUP_WORKSHEET.md)
+to fill the local bot config without guessing.
+
 ## Git Policy
 
 - `docs/` is local-only and should not be committed.

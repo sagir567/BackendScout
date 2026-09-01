@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from backend_scout.cli import app
+from backend_scout.models import ApplicationDigestItem, ApplicationStatus
 
 runner = CliRunner()
 
@@ -273,3 +274,94 @@ jobs:
     assert "Created: 0, Updated: 1." in result.output
     assert len(synced_jobs) == 1
     assert synced_jobs[0][0] == "updated"
+
+
+def test_telegram_peek_updates_prints_pending_user_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeTelegramClient:
+        def __init__(self, bot_token: str) -> None:
+            self.bot_token = bot_token
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def get_updates(self, timeout: int = 0) -> list[dict[str, object]]:
+            return [
+                {
+                    "update_id": 41,
+                    "message": {
+                        "from": {"id": 12345},
+                        "text": "hello",
+                    },
+                }
+            ]
+
+    class FakeSettings:
+        telegram_bot_token = "token"
+
+    monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+    monkeypatch.setattr("backend_scout.cli.Settings", FakeSettings)
+
+    result = runner.invoke(app, ["telegram", "peek-updates"])
+
+    assert result.exit_code == 0
+    assert "user_id=12345" in result.output
+
+
+def test_telegram_send_digest_queries_found_jobs_and_sends_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = []
+
+    class FakeNotionClient:
+        def __init__(self, api_key: str, api_version: str) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    class FakeTelegramClient:
+        def __init__(self, bot_token: str) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    class FakeSettings:
+        telegram_bot_token = "token"
+        notion_api_key = "notion-token"
+        notion_api_version = "2026-03-11"
+        notion_applications_data_source_id = "data-source-123"
+
+    job = ApplicationDigestItem(
+        notion_page_id="page-123",
+        company="Example Cloud",
+        title="Backend Engineer",
+        status=ApplicationStatus.FOUND,
+        source="manual",
+        source_url="https://example.com/jobs/backend",
+        match_score=87,
+    )
+
+    monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
+    monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+    monkeypatch.setattr("backend_scout.cli.Settings", FakeSettings)
+    monkeypatch.setattr("backend_scout.cli.list_jobs_by_status", lambda *args, **kwargs: [job])
+    monkeypatch.setattr(
+        "backend_scout.cli.send_digest_messages",
+        lambda telegram_client, notion_client, chat_id, jobs: sent.append((chat_id, jobs)) or [{}],
+    )
+
+    result = runner.invoke(app, ["telegram", "send-digest", "--chat-id", "12345"])
+
+    assert result.exit_code == 0
+    assert "Sent 1 digest message(s) to chat 12345." in result.output
+    assert sent == [(12345, [job])]

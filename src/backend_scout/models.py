@@ -342,3 +342,21 @@ class Application(BaseModel):
 
     def validate_status_transition(self, next_status: ApplicationStatus) -> None:
         validate_application_status_transition(self.status, next_status)
+
+
+class ApplicationDigestItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    notion_page_id: str
+    company: str
+    title: str
+    status: ApplicationStatus
+    source: str
+    source_url: str
+    location: str | None = None
+    remote_policy: str | None = None
+    employment_type: str | None = None
+    salary_text: str | None = None
+    match_score: int | None = Field(default=None, ge=0, le=100)
+    match_reason: str | None = None
+    required_skills: list[str] = Field(default_factory=list)

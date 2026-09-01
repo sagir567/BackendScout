@@ -14,7 +14,8 @@ we add tools, services, APIs, packages, or system dependencies.
 | Notion internal integration | Required | Must have access to the `Applications` data source. |
 | PyYAML | Required package | Used for candidate profile and manual job import files. |
 | OpenAI API key | Planned | Needed once we add agentic parsing, matching, and CV tailoring. |
-| Telegram bot token | Planned | Needed once we add human approval via Telegram. |
+| Telegram bot token | Required for approval loop | Used for the Telegram digest and approval commands. |
+| Telegram allowed user IDs | Required for approval loop | Comma-separated numeric Telegram user IDs allowed to approve actions. |
 
 ## Python Package Requirements
 
@@ -48,6 +49,8 @@ Current required values:
 NOTION_API_KEY=TODO
 NOTION_API_VERSION=2026-03-11
 NOTION_APPLICATIONS_DATA_SOURCE_ID=TODO
+TELEGRAM_BOT_TOKEN=TODO
+TELEGRAM_ALLOWED_USER_IDS=TODO_COMMA_SEPARATED_NUMERIC_IDS
 CV_ARCHIVE_ROOT=/Users/sagi/Documents/CV
 ```
 
@@ -55,8 +58,6 @@ Planned values:
 
 ```bash
 OPENAI_API_KEY=TODO
-TELEGRAM_BOT_TOKEN=TODO
-TELEGRAM_ALLOWED_USER_IDS=TODO
 ```
 
 Do not commit `.env`.
@@ -70,6 +71,8 @@ uv run --no-editable backend-scout --help
 uv run --no-editable backend-scout notion check
 uv run --no-editable backend-scout profile check
 uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout telegram check
+uv run --no-editable backend-scout telegram peek-updates
 ```
 
 Pros:
@@ -176,6 +179,8 @@ uv run --no-editable backend-scout jobs validate examples/manual_job.example.yam
 uv run --no-editable backend-scout jobs score examples/manual_job.example.yaml --profile-path config/candidate_profile.yaml
 uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml --write-notion
 uv run --no-editable backend-scout notion check
+uv run --no-editable backend-scout telegram check
+uv run --no-editable backend-scout telegram peek-updates
 ```
 
 Expected current import behavior:
@@ -185,6 +190,14 @@ Expected current import behavior:
 - Deduplicates repeated copies of the same job inside one import file.
 - Updates an existing Notion row for the same job instead of creating duplicates.
 - Preserves existing approval status on updates.
+
+Expected current Telegram behavior:
+
+- `telegram check` verifies the bot token and prints the configured allowed IDs.
+- `telegram peek-updates` helps discover the numeric Telegram user ID before approvals are enabled.
+- `telegram send-digest --chat-id <id>` sends review messages for jobs in a chosen status.
+- Each digest message includes inline approval buttons.
+- `telegram poll-once` processes new approval clicks exactly once using a local offset file.
 
 ## Local-Only Data Files
 

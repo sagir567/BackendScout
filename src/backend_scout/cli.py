@@ -20,17 +20,22 @@ from backend_scout.job_imports import (
 )
 from backend_scout.matcher import ScoredJob, score_jobs
 from backend_scout.models import ApplicationStatus, Job
-from backend_scout.notion import NotionClient, upsert_job_page, validate_applications_data_source
+from backend_scout.notion import (
+    NotionClient,
+    list_jobs_by_status,
+    upsert_job_page,
+    validate_applications_data_source,
+)
+from backend_scout.telegram import TelegramClient, process_telegram_update, send_digest_messages
 from backend_scout.yaml_files import YamlFileError
 
 app = typer.Typer(help="BackendScout job-search agent CLI.")
 notion_app = typer.Typer(help="Notion integration commands.")
 profile_app = typer.Typer(help="Candidate profile commands.")
 jobs_app = typer.Typer(help="Manual job import commands.")
-app.add_typer(notion_app, name="notion")
-app.add_typer(profile_app, name="profile")
-app.add_typer(jobs_app, name="jobs")
+telegram_app = typer.Typer(help="Telegram approval commands.")
 console = Console()
+TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
 
 ProfilePathOption = Annotated[
     Path,
@@ -57,6 +62,12 @@ def status() -> None:
         "configured" if settings.notion_applications_data_source_id else "missing",
     )
     table.add_row("Notion API key", "configured" if settings.notion_api_key else "missing")
+    table.add_row("Telegram bot token", "configured" if settings.telegram_bot_token else "missing")
+    table.add_row(
+        "Telegram allowed user IDs",
+        ",".join(str(user_id) for user_id in sorted(settings.telegram_allowed_user_id_set))
+        or "missing",
+    )
     table.add_row("CV archive root", str(settings.cv_archive_root))
     table.add_row("Fast model", settings.openai_model_fast)
     table.add_row("Balanced model", settings.openai_model_balanced)
@@ -70,6 +81,7 @@ def init_data() -> None:
     paths = [
         "data/raw",
         "data/exports",
+        "data/telegram",
         "applications",
     ]
     for path in paths:
@@ -255,6 +267,190 @@ def notion_check() -> None:
     console.print(f"Readable sample rows: {result_count}")
 
 
+@telegram_app.command("check")
+def telegram_check() -> None:
+    """Verify Telegram bot configuration and connectivity."""
+    settings = Settings()
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+        raise typer.Exit(1)
+
+    try:
+        with TelegramClient(settings.telegram_bot_token) as client:
+            bot_info = client.get_me().get("result", {})
+    except ImportError:
+        console.print("[red]Missing dependency: httpx[/red]")
+        console.print("Run: uv sync --extra dev")
+        raise typer.Exit(1) from None
+    except Exception as exc:
+        console.print("[red]Telegram check failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    console.print("[green]Telegram connection OK[/green]")
+    console.print(f"Bot username: @{bot_info.get('username', 'unknown')}")
+    console.print(
+        f"Allowed user IDs: {', '.join(str(user_id) for user_id in sorted(settings.telegram_allowed_user_id_set)) or 'none configured'}"
+    )
+
+
+@telegram_app.command("send-digest")
+def telegram_send_digest(
+    chat_id: Annotated[int, typer.Option("--chat-id", help="Telegram chat ID to send the digest to.")],
+    status: Annotated[
+        ApplicationStatus,
+        typer.Option("--status", help="Only send jobs currently in this status."),
+    ] = ApplicationStatus.FOUND,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=25, help="Maximum jobs to send.")] = 10,
+) -> None:
+    """Send scored job summaries from Notion to Telegram and advance found jobs to digest_sent."""
+    settings = Settings()
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+        raise typer.Exit(1)
+    if not settings.notion_api_key:
+        console.print("[red]Missing NOTION_API_KEY in .env[/red]")
+        raise typer.Exit(1)
+    if not settings.notion_applications_data_source_id:
+        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
+        raise typer.Exit(1)
+
+    try:
+        with NotionClient(
+            api_key=settings.notion_api_key,
+            api_version=settings.notion_api_version,
+        ) as notion_client, TelegramClient(settings.telegram_bot_token) as telegram_client:
+            jobs = list_jobs_by_status(
+                notion_client,
+                settings.notion_applications_data_source_id,
+                status,
+                page_size=limit,
+            )
+            if not jobs:
+                console.print(f"[yellow]No jobs found with status {status.value}.[/yellow]")
+                return
+
+            sent_messages = send_digest_messages(
+                telegram_client,
+                notion_client,
+                chat_id,
+                jobs,
+            )
+    except Exception as exc:
+        console.print("[red]Telegram digest send failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    console.print(
+        f"[green]Sent {len(sent_messages)} digest message(s) to chat {chat_id}.[/green]"
+    )
+
+
+@telegram_app.command("peek-updates")
+def telegram_peek_updates(
+    limit: Annotated[
+        int,
+        typer.Option("--limit", min=1, max=20, help="Maximum updates to print."),
+    ] = 10,
+) -> None:
+    """Show recent Telegram updates without changing Notion or storing offsets."""
+    settings = Settings()
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+        raise typer.Exit(1)
+
+    try:
+        with TelegramClient(settings.telegram_bot_token) as telegram_client:
+            updates = telegram_client.get_updates(timeout=0)
+    except Exception as exc:
+        console.print("[red]Telegram update peek failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    if not updates:
+        console.print("[yellow]No pending Telegram updates.[/yellow]")
+        return
+
+    for update in updates[:limit]:
+        callback_query = update.get("callback_query")
+        message = update.get("message")
+        if isinstance(callback_query, dict):
+            from_user = callback_query.get("from", {})
+            console.print(
+                f"update_id={update.get('update_id')} callback from user_id={from_user.get('id')} "
+                f"data={callback_query.get('data')}"
+            )
+            continue
+
+        if isinstance(message, dict):
+            from_user = message.get("from", {})
+            console.print(
+                f"update_id={update.get('update_id')} message from user_id={from_user.get('id')} "
+                f"text={message.get('text')!r}"
+            )
+            continue
+
+        console.print(f"update_id={update.get('update_id')} unsupported update shape")
+
+
+@telegram_app.command("poll-once")
+def telegram_poll_once(
+    timeout_seconds: Annotated[
+        int,
+        typer.Option("--timeout-seconds", min=0, max=60, help="Long-poll timeout in seconds."),
+    ] = 0,
+) -> None:
+    """Poll Telegram once, process approval callbacks, and store the last update offset."""
+    settings = Settings()
+
+    if not settings.telegram_bot_token:
+        console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+        raise typer.Exit(1)
+    if not settings.notion_api_key:
+        console.print("[red]Missing NOTION_API_KEY in .env[/red]")
+        raise typer.Exit(1)
+    if not settings.notion_applications_data_source_id:
+        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
+        raise typer.Exit(1)
+    if not settings.telegram_allowed_user_id_set:
+        console.print("[red]Missing TELEGRAM_ALLOWED_USER_IDS in .env[/red]")
+        raise typer.Exit(1)
+
+    last_update_id = _load_last_telegram_update_id(TELEGRAM_OFFSET_PATH)
+    offset = last_update_id + 1 if last_update_id is not None else None
+
+    try:
+        with TelegramClient(settings.telegram_bot_token) as telegram_client, NotionClient(
+            api_key=settings.notion_api_key,
+            api_version=settings.notion_api_version,
+        ) as notion_client:
+            updates = telegram_client.get_updates(offset=offset, timeout=timeout_seconds)
+            processed_actions = [
+                action
+                for update in updates
+                if (action := process_telegram_update(
+                    telegram_client,
+                    notion_client,
+                    update,
+                    settings.telegram_allowed_user_id_set,
+                ))
+            ]
+    except Exception as exc:
+        console.print("[red]Telegram polling failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    if updates:
+        _store_last_telegram_update_id(TELEGRAM_OFFSET_PATH, max(update["update_id"] for update in updates))
+
+    console.print(
+        f"[green]Processed {len(processed_actions)} approval action(s) from {len(updates)} update(s).[/green]"
+    )
+
+
 def _print_jobs_table(jobs: list[Job], title: str) -> None:
     table = Table(title=title)
     table.add_column("Company")
@@ -343,6 +539,26 @@ def _print_load_error(title: str, exc: ValidationError | YamlFileError) -> None:
         return
 
     console.print(str(exc))
+
+
+def _load_last_telegram_update_id(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    content = path.read_text(encoding="utf-8").strip()
+    if not content:
+        return None
+    return int(content)
+
+
+def _store_last_telegram_update_id(path: Path, update_id: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(update_id), encoding="utf-8")
+
+
+app.add_typer(notion_app, name="notion")
+app.add_typer(profile_app, name="profile")
+app.add_typer(jobs_app, name="jobs")
+app.add_typer(telegram_app, name="telegram")
 
 
 if __name__ == "__main__":

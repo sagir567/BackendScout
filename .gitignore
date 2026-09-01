@@ -13,6 +13,7 @@ build/
 *.egg-info/
 data/raw/
 data/exports/
+data/telegram/
 docs/
 applications/*/private/
 applications/*/*.pdf

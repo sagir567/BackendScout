@@ -250,7 +250,7 @@ Current progress as of 2026-08-31:
 - [x] `jobs import --write-notion` now recomputes `Match Score` and `Match Reason`
   from the local candidate profile before syncing Notion rows.
 - [x] Repeated imports dedupe identical jobs and update existing Notion rows.
-- [ ] Daily digest delivery channel.
+- [x] Telegram digest send and one-shot approval polling over the raw Bot API.
 
 ## Phase 6: Human Approval Loop
 
@@ -274,6 +274,26 @@ Approval gates:
 - Before sending or uploading a CV.
 - Before sending recruiter messages.
 - Before marking an application as submitted.
+
+Current implementation as of 2026-08-31:
+
+- `telegram check` verifies the bot token and prints configured allowed user IDs.
+- `telegram peek-updates` shows pending Telegram user IDs and messages without
+  touching Notion state or the stored offset.
+- `telegram send-digest --chat-id <id>` pulls jobs from Notion by status and
+  sends one digest message per job.
+- Digest messages include inline buttons for `Approve tailoring` and `Close`.
+- Sending a digest moves `found` jobs to `digest_sent`.
+- `telegram poll-once` consumes Telegram callback updates once and stores the
+  last processed Telegram update ID in `data/telegram/last_update_id.txt`.
+- Only configured Telegram user IDs may trigger approval actions.
+- `Approve tailoring` transitions `digest_sent -> approved_to_tailor`.
+- `Close` transitions the current job to `closed` when that transition is valid.
+- Automated tests cover digest formatting, inline buttons, authorized and unauthorized
+  callbacks, the `found -> digest_sent` writeback, and the CLI handoff.
+- A live test on 2026-09-01 confirmed the configured Notion test table can create,
+  score, and send a test digest to the configured Telegram chat. The final callback
+  transition remains intentionally human-triggered by pressing a Telegram button.
 
 ## Phase 7: CV Tailoring
 
@@ -331,8 +351,8 @@ TODO:
 
 ```text
 - [ ] Add a first collector for one public job source.
-- [ ] Add a daily digest artifact generator from scored jobs.
-- [ ] Introduce Telegram approval transport on top of existing approval statuses.
 - [ ] Add CV draft file generation for `approved_to_tailor`.
+- [ ] Add a digest command that chooses the target Telegram chat automatically from config.
+- [ ] Add richer approval actions after CV generation, including `approved_to_submit`.
 - [ ] Keep submission disabled until `approved_to_submit`.
 ```

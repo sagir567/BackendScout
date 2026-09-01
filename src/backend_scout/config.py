@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,3 +20,23 @@ class Settings(BaseSettings):
     notion_applications_data_source_id: str | None = None
 
     cv_archive_root: Path = Path("/Users/sagi/Documents/CV")
+
+    @field_validator("telegram_allowed_user_ids", mode="before")
+    @classmethod
+    def normalize_telegram_allowed_user_ids(cls, value: str | None) -> str | None:
+        if value is None or not isinstance(value, str):
+            return value
+        normalized = ",".join(
+            part.strip() for part in value.split(",") if part.strip()
+        )
+        return normalized or None
+
+    @property
+    def telegram_allowed_user_id_set(self) -> set[int]:
+        if not self.telegram_allowed_user_ids:
+            return set()
+
+        values: set[int] = set()
+        for raw_value in self.telegram_allowed_user_ids.split(","):
+            values.add(int(raw_value))
+        return values
