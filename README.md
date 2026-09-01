@@ -1,196 +1,111 @@
 # BackendScout
 
-BackendScout is a local-first job-search agent for backend engineering roles.
+BackendScout is a local-first, human-approved job-search agent for backend
+engineering roles.
 
-The project has two goals:
+I am building it for two reasons: to make my job search more systematic, and
+to gain hands-on experience designing reliable AI-agent workflows with real
+tools, state, approvals, and external integrations.
 
-1. Practice building useful AI agents with real tools, state, approvals, and scheduled workflows.
-2. Make the job-search process calmer and more systematic: find relevant roles, score fit, request approval, tailor truthful CV versions, track submissions, and prepare for interviews.
+## What It Does
 
-## Current Approach
+- Imports and normalizes job opportunities.
+- Scores jobs with deterministic, explainable matching rules.
+- Uses Notion as the application tracker and source of workflow state.
+- Sends Telegram job digests with approval controls.
+- Keeps every application action behind explicit approval gates.
+- Is designed to generate truthful, job-specific CV drafts and interview-prep
+  material in later stages.
 
-- Core orchestration: Codex + OpenAI Agents SDK.
-- Runtime: Python.
-- Tracker: Notion-first. The Notion applications data source is the human-facing source of truth.
-- Human approval: Telegram first.
-- CV archive: existing CV folders stay outside this repo. Submitted CV versions can continue to be stored in company-named folders in `/Users/sagi/Documents/CV`.
+## Workflow
 
-## Learning Guide
+```text
+job found -> scored -> digest sent -> approved to tailor -> CV drafted
+-> approved to submit -> submitted
+```
 
-This repo is also a learning artifact. Keep [SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md)
-updated as we build, so another developer can follow the same path and learn how
-to create a complex agent system with tools, state, approval gates, and external
-integrations.
+Applications cannot be submitted until the relevant role and the exact CV
+draft have both been approved.
 
-Keep [REQUIREMENTS.md](REQUIREMENTS.md) updated with everything needed to run
-the system.
+## Current Capabilities
 
-## Safety Rules
+- YAML candidate-profile and manual-job validation.
+- Transparent matching with a 100-point score and a written breakdown.
+- Stable Notion imports that avoid duplicate job records.
+- Telegram digests with `Approve tailoring` and `Close` buttons.
+- Authorized Telegram callback processing and Notion status updates.
 
-- Never submit an application without explicit approval.
-- Never invent skills, employment history, degrees, companies, metrics, or dates.
-- Tailor wording and emphasis only from truthful candidate data.
-- Do not bypass CAPTCHA, login restrictions, platform Terms, or anti-abuse systems.
-- Do not add deliberate mistakes to disguise AI usage.
+## Privacy And Safety
 
-## Planned MVP
+This repository contains no real candidate profile, API token, Telegram ID, CV,
+or personal archive path. Those values belong only in local ignored files:
 
-1. Candidate profile and job preferences.
-2. Job collector interfaces.
-3. Job parser and deduplication.
-4. Match scoring.
-5. Telegram daily digest.
-6. Application tracker.
-7. CV tailoring with approval gates.
+- `.env` for service credentials and local paths.
+- `config/candidate_profile.yaml` for the real candidate profile.
+- `data/raw/` for manually imported job descriptions.
 
-## Local Setup
+BackendScout only tailors truthful information. It does not invent experience,
+bypass platform protections, or submit applications without explicit approval.
 
-Use `uv`. The project pins Python 3.12 with `.python-version`.
+## Technology
+
+- Python 3.12 and `uv`
+- Pydantic and PyYAML for validated local data
+- Notion API for application tracking
+- Telegram Bot API via `httpx` for approval messages
+- Pytest and Ruff for quality checks
+
+## Getting Started
 
 ```bash
 brew install uv
 uv sync --extra dev --no-editable --link-mode copy
-uv run --no-editable backend-scout --help
-uv run --no-editable backend-scout notion check
-uv run --no-editable backend-scout profile check
-uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+cp .env.example .env
+cp config/candidate_profile.example.yaml config/candidate_profile.yaml
 ```
 
-The `--no-editable --link-mode copy` flags avoid a macOS hidden/dataless file
-issue seen on this machine when the project is installed editably under
-`Documents/`.
-
-If the CLI still hangs because `.venv` inherits iCloud/File Provider metadata
-from `Documents`, rebuild it outside the repo and keep `.venv` as a symlink:
-
-```bash
-mv .venv .venv.documents-backup-YYYY-MM-DD
-uv venv /private/tmp/backendscout-venv
-ln -s /private/tmp/backendscout-venv .venv
-uv sync --extra dev --no-editable --link-mode copy
-```
-
-## Notion Setup
-
-BackendScout expects a Notion data source for applications. Create a Notion
-database/table, connect it to an internal Notion integration, then put the data
-source ID and token in `.env`.
-
-Required environment values:
-
-```bash
-NOTION_API_KEY=
-NOTION_API_VERSION=2026-03-11
-NOTION_APPLICATIONS_DATA_SOURCE_ID=
-```
-
-The `Applications` data source should contain these properties:
-
-| Property | Type |
-| --- | --- |
-| Role | Title |
-| Company | Text |
-| Status | Status |
-| Source | Text |
-| Source URL | URL |
-| Location | Text |
-| Remote Policy | Text |
-| Employment Type | Text |
-| Salary | Text |
-| Match Score | Number |
-| Required Skills | Multi-select |
-| Years Experience | Text |
-| Match Reason | Text |
-| Description | Text |
-| Discovered At | Date |
-
-Verify the connection:
-
-```bash
-uv run --no-editable backend-scout notion check
-```
-
-## Candidate Profile
-
-Real candidate data lives in `config/candidate_profile.yaml`. That file is
-local-only and ignored by git.
-
-The committed starter is `config/candidate_profile.example.yaml`. The local
-profile should stay truthful and specific because later matching and CV
-tailoring will rely on it.
-
-Keep these profile fields current:
-- target roles and locations
-- salary floor in NIS
-- remote/hybrid/onsite preferences
-- concrete backend skills
-- proof points backed by real work, projects, publications, or public GitHub work
-
-Validate it:
+Fill the `TODO` values in the two local files, then run:
 
 ```bash
 uv run --no-editable backend-scout profile check
-```
-
-## Manual Job Import
-
-Use manual imports before adding scrapers. This lets us test parsing, validation,
-Notion writes, and the human workflow with jobs you choose.
-
-Committed example:
-
-```bash
-uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
-uv run --no-editable backend-scout jobs import examples/manual_job.example.yaml
-```
-
-Real job import files should live under ignored `data/raw/`.
-
-The import command is preview-only by default. To create Notion rows, use:
-
-```bash
-uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml
-uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --profile-path config/candidate_profile.yaml --write-notion
-```
-
-`jobs import` now recomputes `Match Score` and `Match Reason` from your local
-candidate profile before writing to Notion, so the tracker always reflects the
-current scoring rules rather than stale YAML values.
-
-Repeated imports are now stable:
-- duplicate jobs inside one YAML file are deduplicated before sync
-- an existing Notion row is updated instead of duplicated when the same job is imported again
-- existing workflow status is preserved, so a reviewed job does not get reset to `found`
-
-For a detailed shortlist view without writing to Notion:
-
-```bash
-uv run --no-editable backend-scout jobs score data/raw/company-role.yaml --profile-path config/candidate_profile.yaml
-```
-
-## Telegram Approval Loop
-
-Telegram is now the first approval channel. The current slice uses the raw Bot
-API through `httpx`, with two explicit commands:
-
-```bash
+uv run --no-editable backend-scout notion check
 uv run --no-editable backend-scout telegram check
+uv run --no-editable pytest
+uv run --no-editable ruff check
+```
+
+## Manual Job Workflow
+
+Preview an example job without external writes:
+
+```bash
+uv run --no-editable backend-scout jobs validate examples/manual_job.example.yaml
+uv run --no-editable backend-scout jobs score examples/manual_job.example.yaml
+```
+
+Real job files go in ignored `data/raw/`. Write one to Notion only with an
+explicit flag:
+
+```bash
+uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --write-notion
+```
+
+## Telegram Workflow
+
+After configuring the bot token and authorized Telegram user IDs in `.env`:
+
+```bash
 uv run --no-editable backend-scout telegram peek-updates
-uv run --no-editable backend-scout telegram send-digest --chat-id YOUR_TELEGRAM_USER_ID
+uv run --no-editable backend-scout telegram send-digest --chat-id TELEGRAM_CHAT_ID
 uv run --no-editable backend-scout telegram poll-once
 ```
 
-Current behavior:
-- `telegram send-digest` reads jobs from Notion by status, sends one message per job, and moves `found` jobs to `digest_sent`
-- each Telegram message includes inline buttons for `Approve tailoring` and `Close`
-- `telegram poll-once` reads new callback updates once, applies valid status transitions, and stores the last processed Telegram update ID locally
-- only configured Telegram user IDs may trigger approval actions
+`send-digest` sends jobs whose current Notion status is `found` and advances
+them to `digest_sent`. `poll-once` processes button presses and records the
+valid next status in Notion.
 
-Use the setup worksheet in [TELEGRAM_SETUP_WORKSHEET.md](TELEGRAM_SETUP_WORKSHEET.md)
-to fill the local bot config without guessing.
+## Project Guide
 
-## Git Policy
-
-- `docs/` is local-only and should not be committed.
-- `.env` is local-only and must never be committed.
-- Ask Sagi before pushing to any remote.
+[SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md) documents the architecture,
+design decisions, and implementation roadmap. [REQUIREMENTS.md](REQUIREMENTS.md)
+lists runtime requirements and configuration details.

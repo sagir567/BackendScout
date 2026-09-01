@@ -6,7 +6,7 @@ These rules apply to all work in this repository.
 
 - Ask the user before choosing or changing meaningful technologies, services, frameworks, databases, APIs, providers, hosting, or automation tools.
 - Explain the tradeoffs briefly before asking for a decision.
-- Do not push to any remote repository without explicit user approval.
+- Do not push to any remote repository without explicit project-owner approval.
 - Do not submit job applications, send recruiter messages, upload CVs, or mark an application as submitted without explicit user approval.
 
 ## Storage Preference

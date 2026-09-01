@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     notion_api_version: str = "2026-03-11"
     notion_applications_data_source_id: str | None = None
 
-    cv_archive_root: Path = Path("/Users/sagi/Documents/CV")
+    cv_archive_root: Path = Path("applications")
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

@@ -7,7 +7,7 @@ from backend_scout.candidate_profile import candidate_profile_warnings, load_can
 from backend_scout.models import CandidateProfile
 
 VALID_PROFILE = {
-    "name": "Sagi",
+    "name": "Test Candidate",
     "target_roles": ["Backend Engineer", "Backend Engineer", "  Software Engineer  "],
     "target_locations": ["Israel", "Remote"],
     "salary_floor_nis": 15000,
@@ -67,7 +67,7 @@ def test_load_candidate_profile_reads_yaml_file(tmp_path: Path) -> None:
     profile_path = tmp_path / "candidate_profile.yaml"
     profile_path.write_text(
         """
-name: Sagi
+name: Test Candidate
 target_roles:
   - Backend Engineer
 target_locations:
@@ -91,6 +91,6 @@ constraints:
 
     profile = load_candidate_profile(profile_path)
 
-    assert profile.name == "Sagi"
+    assert profile.name == "Test Candidate"
     assert profile.salary_floor_nis == 15000
     assert "proof_points" in candidate_profile_warnings(profile)[0]

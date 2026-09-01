@@ -1,27 +1,20 @@
-name: Sagi Yosef Azulay
+name: TODO Candidate Name
 target_roles:
-  - Backend Engineer
-  - Software Engineer
+  - TODO Target Role
 target_locations:
-  - Israel
-  - Remote
-salary_floor_nis: 15000
+  - TODO Target Location
+salary_floor_nis: 0 # TODO replace with a personal minimum salary
 work_preferences:
   remote: true
   hybrid: true
   onsite: false
 seniority:
   min_years: 0
-  max_years: 6
+  max_years: 0 # TODO replace with the candidate's real range
 core_skills:
-  - Python
-  - Backend
-  - APIs
-  - Databases
+  - TODO Primary Skill
 nice_to_have_skills:
-  - AI agents
-  - Distributed systems
-  - Cloud
+  - TODO Optional Skill
 proof_points:
   - TODO real project, work example, or measurable backend achievement
 constraints:

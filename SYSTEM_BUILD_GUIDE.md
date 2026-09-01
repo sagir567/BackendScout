@@ -20,7 +20,8 @@ BackendScout is a job-search agent for backend engineering roles. It should:
 
 - Human approval is part of the architecture, not an afterthought.
 - The tracker source of truth is Notion.
-- The CV archive stays outside this repo at `/Users/sagi/Documents/CV`.
+- The CV archive stays outside this repo and is configured locally through
+  `CV_ARCHIVE_ROOT`.
 - The system must be truthful and interview-explainable.
 - Each agent should have a narrow job and structured inputs/outputs.
 - External actions should be wrapped in explicit tools.
@@ -316,7 +317,7 @@ Outputs:
 Approval:
 
 ```text
-No CV artifact is submitted or archived as submitted until Sagi approves it.
+No CV artifact is submitted or archived as submitted until the candidate approves it.
 ```
 
 ## Phase 8: Submission And Tracking

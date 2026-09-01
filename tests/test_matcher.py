@@ -11,7 +11,7 @@ from backend_scout.models import (
 def make_profile() -> CandidateProfile:
     return CandidateProfile.model_validate(
         {
-            "name": "Sagi",
+            "name": "Test Candidate",
             "target_roles": ["Backend Engineer", "Python Backend Engineer", "Software Engineer"],
             "target_locations": ["Israel", "Remote"],
             "salary_floor_nis": 15000,

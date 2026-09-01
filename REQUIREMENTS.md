@@ -7,7 +7,7 @@ we add tools, services, APIs, packages, or system dependencies.
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| macOS | Required | Current development machine is Sagi's Mac. |
+| macOS | Required | Supported local development environment. |
 | Python | Required | Python 3.12, pinned by `.python-version`. |
 | uv | Required | Official Python/project environment manager. |
 | Notion account | Required | Used as the human-facing application tracker. |
@@ -51,7 +51,7 @@ NOTION_API_VERSION=2026-03-11
 NOTION_APPLICATIONS_DATA_SOURCE_ID=TODO
 TELEGRAM_BOT_TOKEN=TODO
 TELEGRAM_ALLOWED_USER_IDS=TODO_COMMA_SEPARATED_NUMERIC_IDS
-CV_ARCHIVE_ROOT=/Users/sagi/Documents/CV
+CV_ARCHIVE_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_CV_ARCHIVE
 ```
 
 Planned values:
@@ -155,18 +155,11 @@ Tradeoffs:
 
 ## Current Verification Commands
 
-These work before the full environment is installed when using Codex's bundled
-Python runtime:
+This syntax check can run with any compatible Python runtime before the full
+environment is installed:
 
 ```bash
-PYTHONPYCACHEPREFIX=/private/tmp/backendscout_pycache \
-  /Users/sagi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  -m compileall src tests
-
-PYTHONPATH=src \
-  /Users/sagi/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  -c "from tests.test_models import test_application_statuses_include_approval_gates, test_job_match_score_is_bounded; from tests.test_notion import test_build_job_page_properties_uses_data_source_schema_names, test_validate_applications_data_source_accepts_expected_schema, test_validate_applications_data_source_reports_missing_or_wrong_properties; test_application_statuses_include_approval_gates(); test_job_match_score_is_bounded(); test_build_job_page_properties_uses_data_source_schema_names(); test_validate_applications_data_source_accepts_expected_schema(); test_validate_applications_data_source_reports_missing_or_wrong_properties(); print('lightweight tests passed')"
-```
+python -m compileall src tests
 
 After dependencies are installed, prefer:
 

@@ -52,7 +52,7 @@ def test_score_manual_job_import_returns_scored_jobs() -> None:
     manual_import = load_manual_job_import(Path("examples/manual_job.example.yaml"))
     profile = CandidateProfile.model_validate(
         {
-            "name": "Sagi",
+            "name": "Test Candidate",
             "target_roles": ["Backend Engineer"],
             "target_locations": ["Israel", "Remote"],
             "salary_floor_nis": 15000,
@@ -78,7 +78,7 @@ def test_job_with_match_result_overrides_stale_yaml_score() -> None:
     manual_import = load_manual_job_import(Path("examples/manual_job.example.yaml"))
     profile = CandidateProfile.model_validate(
         {
-            "name": "Sagi",
+            "name": "Test Candidate",
             "target_roles": ["Backend Engineer"],
             "target_locations": ["Israel", "Remote"],
             "salary_floor_nis": 15000,
@@ -124,7 +124,7 @@ def test_unique_scored_jobs_skips_duplicate_job_identities() -> None:
     manual_import = load_manual_job_import(Path("examples/manual_job.example.yaml"))
     profile = CandidateProfile.model_validate(
         {
-            "name": "Sagi",
+            "name": "Test Candidate",
             "target_roles": ["Backend Engineer"],
             "target_locations": ["Israel", "Remote"],
             "salary_floor_nis": 15000,

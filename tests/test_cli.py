@@ -13,7 +13,7 @@ runner = CliRunner()
 def write_profile(path: Path) -> None:
     path.write_text(
         """
-name: Sagi
+name: Test Candidate
 target_roles:
   - Backend Engineer
 target_locations:
