@@ -20,6 +20,9 @@ APPLICATIONS_PROPERTY_NAMES = {
     "match_reason": "Match Reason",
     "description": "Description",
     "discovered_at": "Discovered At",
+    "submission_channel": "Submission Channel",
+    "contact_source": "Contact Source",
+    "submission_record": "Submission Record",
 }
 
 APPLICATIONS_PROPERTY_TYPES = {
@@ -38,6 +41,9 @@ APPLICATIONS_PROPERTY_TYPES = {
     "match_reason": "rich_text",
     "description": "rich_text",
     "discovered_at": "date",
+    "submission_channel": "select",
+    "contact_source": "rich_text",
+    "submission_record": "rich_text",
 }
 
 
@@ -62,6 +68,18 @@ class NotionClient:
 
     def retrieve_data_source(self, data_source_id: str) -> dict[str, Any]:
         response = self._client.get(f"/data_sources/{data_source_id}")
+        response.raise_for_status()
+        return response.json()
+
+    def update_data_source_properties(
+        self,
+        data_source_id: str,
+        properties: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = self._client.patch(
+            f"/data_sources/{data_source_id}",
+            json={"properties": properties},
+        )
         response.raise_for_status()
         return response.json()
 
@@ -116,6 +134,29 @@ class NotionClient:
             json={
                 "properties": {
                     APPLICATIONS_PROPERTY_NAMES["status"]: {"status": {"name": status.value}}
+                }
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def record_submission(
+        self,
+        page_id: str,
+        channel: str,
+        contact_source: str,
+        record: str,
+    ) -> dict[str, Any]:
+        response = self._client.patch(
+            f"/pages/{page_id}",
+            json={
+                "properties": {
+                    APPLICATIONS_PROPERTY_NAMES["status"]: {
+                        "status": {"name": ApplicationStatus.SUBMITTED.value}
+                    },
+                    APPLICATIONS_PROPERTY_NAMES["submission_channel"]: {"select": {"name": channel}},
+                    APPLICATIONS_PROPERTY_NAMES["contact_source"]: _rich_text(contact_source),
+                    APPLICATIONS_PROPERTY_NAMES["submission_record"]: _rich_text(record),
                 }
             },
         )
@@ -241,12 +282,33 @@ def application_digest_item_from_page(page: dict[str, Any]) -> ApplicationDigest
     )
 
 
+def job_from_application_page(page: dict[str, Any]) -> Job:
+    properties = page.get("properties", {})
+    return Job(
+        source=_extract_rich_text_value(properties, "source") or "unknown",
+        source_url=_extract_url_value(properties, "source_url") or "",
+        company=_extract_rich_text_value(properties, "company") or "Unknown Company",
+        title=_extract_title_value(properties, "role") or "Untitled Role",
+        description=_extract_rich_text_value(properties, "description") or "",
+        location=_extract_rich_text_value(properties, "location"),
+        remote_policy=_extract_rich_text_value(properties, "remote_policy"),
+        employment_type=_extract_rich_text_value(properties, "employment_type"),
+        salary_text=_extract_rich_text_value(properties, "salary"),
+        match_score=_extract_number_value(properties, "match_score"),
+        match_reason=_extract_rich_text_value(properties, "match_reason"),
+        required_skills=_extract_multi_select_values(properties, "required_skills"),
+        years_experience=_extract_rich_text_value(properties, "years_experience"),
+    )
+
+
 def validate_applications_data_source(data_source: dict[str, Any]) -> list[str]:
     """Return human-readable schema problems for the Applications data source."""
     properties = data_source.get("properties") or {}
     problems: list[str] = []
 
     for key, expected_name in APPLICATIONS_PROPERTY_NAMES.items():
+        if key in {"submission_channel", "contact_source", "submission_record"}:
+            continue
         expected_type = APPLICATIONS_PROPERTY_TYPES[key]
         notion_property = properties.get(expected_name)
         if not notion_property:
@@ -260,6 +322,46 @@ def validate_applications_data_source(data_source: dict[str, Any]) -> list[str]:
             )
 
     return problems
+
+
+def validate_submission_data_source(data_source: dict[str, Any]) -> list[str]:
+    properties = data_source.get("properties", {})
+    problems = []
+    for key in ("submission_channel", "contact_source", "submission_record"):
+        name = APPLICATIONS_PROPERTY_NAMES[key]
+        actual_type = properties.get(name, {}).get("type")
+        if actual_type != APPLICATIONS_PROPERTY_TYPES[key]:
+            problems.append(f"{name} must be a {APPLICATIONS_PROPERTY_TYPES[key]} property")
+    return problems
+
+
+def missing_submission_property_definitions(data_source: dict[str, Any]) -> dict[str, Any]:
+    """Return only additive submission columns; never replace an existing column."""
+    properties = data_source.get("properties") or {}
+    definitions: dict[str, Any] = {}
+    for key, definition in {
+        "submission_channel": {
+            "select": {
+                "options": [
+                    {"name": "email", "color": "blue"},
+                    {"name": "portal", "color": "green"},
+                    {"name": "whatsapp", "color": "yellow"},
+                ]
+            }
+        },
+        "contact_source": {"rich_text": {}},
+        "submission_record": {"rich_text": {}},
+    }.items():
+        name = APPLICATIONS_PROPERTY_NAMES[key]
+        existing = properties.get(name)
+        if existing is None:
+            definitions[name] = definition
+        elif existing.get("type") != APPLICATIONS_PROPERTY_TYPES[key]:
+            raise ValueError(
+                f"Existing property {name} has type {existing.get('type')}; "
+                f"expected {APPLICATIONS_PROPERTY_TYPES[key]}"
+            )
+    return definitions
 
 
 def _title(content: str) -> dict[str, Any]:

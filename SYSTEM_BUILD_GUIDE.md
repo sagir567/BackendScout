@@ -162,6 +162,12 @@ Required properties:
 | Match Reason | Text |
 | Description | Text |
 | Discovered At | Date |
+| Submission Channel | Select, required only before real delivery |
+| Contact Source | Text, required only before real delivery |
+| Submission Record | Text, required only before real delivery |
+
+Use `notion add-submission-fields` to add these delivery-only columns to the
+configured data source. It is idempotent and refuses type conflicts.
 
 Validation command:
 
@@ -318,6 +324,42 @@ Approval:
 
 ```text
 No CV artifact is submitted or archived as submitted until the candidate approves it.
+
+Current implementation as of 2026-09-01:
+
+- A private `config/career_evidence.yaml` ledger is the only permitted source for
+  CV claims. The committed example contains placeholders only.
+- The OpenAI Responses API returns a structured draft with evidence IDs attached
+  to every summary and bullet; unsupported skills or citations are rejected.
+- `cv draft <notion-page-id>` only works from `approved_to_tailor` and produces
+  local DOCX and PDF files under the configured private archive root.
+- The artifact manifest stores a SHA-256 digest. Telegram's `Approve this CV`
+  action verifies that exact digest before transitioning to `approved_to_submit`.
+- The model response uses strict structured output. Every generated statement is
+  tied to private evidence IDs before document rendering.
+- A private `config/cv_style.yaml` presentation contract is included with the
+  model input and enforced again by the DOCX renderer. It currently hides the
+  headline under the candidate name and prohibits visible raw URLs.
+- DOCX contact and project links render as labeled external hyperlinks, such as
+  `GitHub` and `LinkedIn`, rather than printing full URLs.
+- The Telegram document sender uses multipart uploads and redacts request URLs
+  from failures so a bot token is never printed in an error message.
+- A live test created and delivered a one-page DOCX/PDF pair to the configured
+  Telegram chat, then verified the exact artifact checksum and `cv_drafted`
+  Notion status. Final approval remains human-triggered.
+- A live black-box acceptance test on 2026-09-02 exercised a fictional backend
+  job through scoring, Notion import, Telegram digest approval, OpenAI drafting,
+  DOCX/PDF rendering, Telegram delivery, checksum verification, and a Notion
+  audit that confirmed no submission occurred.
+- Telegram may reject acknowledgement of an old button click. The callback UI
+  acknowledgement is therefore best-effort after the durable Notion transition;
+  a stale acknowledgement cannot block the workflow or leave its offset stuck.
+- `Request changes` transitions `cv_drafted -> revision_requested`; feedback is
+  saved privately, and `cv revise` creates a new `vN` archive directory. The
+  former draft ID cannot approve the newer CV.
+- Link labels are set per URL in the private `cv_style.yaml`, which allows
+  personal GitHub, organization GitHub, LinkedIn, and project links to remain
+  distinct without exposing raw URLs.
 ```
 
 ## Phase 8: Submission And Tracking
@@ -330,12 +372,34 @@ Allowed:
 - Open browser-assisted flows.
 - Fill simple forms after approval where allowed.
 - Update Notion after approval.
+- Send a reviewed email after a final Telegram email-review approval.
 
 Not allowed:
 
 - Submit without approval.
 - Bypass anti-bot systems.
 - Misrepresent user data.
+- Guess employer contact addresses or numbers.
+- Automate a personal WhatsApp account.
+
+Current implementation:
+
+- Contact discovery accepts only details visibly present in the job description
+  and an explicit official company careers/contact URL. It saves a private local
+  record before an email review may name a recipient.
+- Gmail uses a local OAuth desktop flow with only `gmail.send`; its refresh token
+  is held in macOS Keychain. Telegram shows the recipient, source, exact body,
+  and approved attachment before the delivery button becomes available.
+- A Gmail success writes `submitted`, `email`, contact source, Gmail message ID,
+  timestamp context, and exact CV draft ID to Notion.
+- Portal preparation uses a dedicated visible Playwright profile. It fills only
+  clear name/email/phone/location fields and a file upload, then stops for all
+  ambiguous questions. CAPTCHA detection transitions to
+  `awaiting_human_verification`; Chrome Remote Desktop is human-operated.
+- `apply resume` may click an unambiguous submit control only after the final
+  CV/job approval. It records a portal submission only when the page visibly
+  confirms it; a click without confirmation stays `submission_prepared`.
+- WhatsApp remains prepared-user-send only. It is never auto-messaged.
 
 ## Phase 9: Interview Prep
 
@@ -351,9 +415,14 @@ After approval or submission, generate a prep packet:
 TODO:
 
 ```text
+- [x] Add a CV revision path so a candidate can request a corrected draft before final approval.
+- [x] Support custom labels for multiple links from the same service, for example
+  personal GitHub versus an organization or project GitHub.
+- [x] Add reviewed Gmail delivery with a Keychain-held OAuth token.
+- [x] Add contact discovery limited to the job post and explicit official company pages.
+- [x] Add conservative portal preparation and a human-verification workflow state.
 - [ ] Add a first collector for one public job source.
-- [ ] Add CV draft file generation for `approved_to_tailor`.
 - [ ] Add a digest command that chooses the target Telegram chat automatically from config.
-- [ ] Add richer approval actions after CV generation, including `approved_to_submit`.
+- [ ] Add job-specific interview preparation packets after tailoring approval.
 - [ ] Keep submission disabled until `approved_to_submit`.
 ```

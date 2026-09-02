@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     notion_applications_data_source_id: str | None = None
 
     cv_archive_root: Path = Path("applications")
+    gmail_oauth_client_secret_path: Path | None = None
+    browser_profile_root: Path = Path("browser-profile")
+    remote_desktop_instructions: str = (
+        "Open Chrome Remote Desktop on your phone and complete the human verification "
+        "in the prepared browser."
+    )
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod

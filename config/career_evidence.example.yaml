@@ -1,0 +1,30 @@
+identity:
+  full_name: TODO Candidate Name
+  email: TODO candidate@example.com
+  phone: TODO phone number
+  location: TODO City, Country
+  links:
+    - TODO https://github.com/username
+summary: TODO Write a concise, truthful professional summary.
+skills:
+  - category: TODO Backend
+    items:
+      - TODO Primary Skill
+experience:
+  - id: exp_todo_1
+    organization: TODO Organization
+    title: TODO Role Title
+    start_date: TODO YYYY-MM
+    end_date: TODO YYYY-MM or Present
+    bullets:
+      - id: exp_todo_1_bullet_1
+        text: TODO A truthful accomplishment, responsibility, or project detail.
+projects:
+  - id: project_todo_1
+    name: TODO Project Name
+    link: TODO https://github.com/username/project
+    bullets:
+      - id: project_todo_1_bullet_1
+        text: TODO A truthful project detail.
+education: []
+publications: []

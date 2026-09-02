@@ -3,6 +3,8 @@
 .venv
 .venv/
 config/candidate_profile.yaml
+config/career_evidence.yaml
+config/cv_style.yaml
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -14,6 +16,11 @@ build/
 data/raw/
 data/exports/
 data/telegram/
+data/revisions/
+data/outreach/
+data/contacts/
+data/whatsapp/
+browser-profile/
 docs/
 applications/*/private/
 applications/*/*.pdf

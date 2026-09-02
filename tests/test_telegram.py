@@ -1,6 +1,10 @@
+import httpx
+
 from backend_scout.models import ApplicationDigestItem, ApplicationStatus
 from backend_scout.telegram import (
     TelegramApprovalAction,
+    TelegramClient,
+    build_cv_draft_reply_markup,
     build_digest_reply_markup,
     encode_callback_data,
     format_digest_message,
@@ -37,10 +41,11 @@ def test_format_digest_message_includes_key_job_fields() -> None:
 def test_parse_callback_data_round_trips() -> None:
     payload = encode_callback_data(TelegramApprovalAction.APPROVE_TO_TAILOR, "page-123")
 
-    action, page_id = parse_callback_data(payload)
+    action, page_id, draft_id = parse_callback_data(payload)
 
     assert action == TelegramApprovalAction.APPROVE_TO_TAILOR
     assert page_id == "page-123"
+    assert draft_id is None
 
 
 def test_build_digest_reply_markup_contains_expected_actions() -> None:
@@ -49,6 +54,39 @@ def test_build_digest_reply_markup_contains_expected_actions() -> None:
     buttons = markup["inline_keyboard"][0]
     assert buttons[0]["text"] == "Approve tailoring"
     assert buttons[1]["text"] == "Close"
+
+
+def test_build_cv_draft_reply_markup_binds_approval_to_draft_id() -> None:
+    markup = build_cv_draft_reply_markup("page-123", "deadbeef")
+
+    approve_button = markup["inline_keyboard"][0][0]
+    assert approve_button["text"] == "Approve this CV"
+    assert approve_button["callback_data"] == "approve_to_submit:page-123:deadbeef"
+
+
+def test_send_document_uses_multipart_form_data(tmp_path) -> None:
+    received_content_type = ""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal received_content_type
+        received_content_type = request.headers["content-type"]
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    document_path = tmp_path / "cv_draft.pdf"
+    document_path.write_bytes(b"test pdf")
+    client = TelegramClient("test-token")
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://example.test/bottest-token",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        result = client.send_document(12345, document_path, "Review this draft")
+    finally:
+        client.close()
+
+    assert received_content_type.startswith("multipart/form-data;")
+    assert result["result"]["message_id"] == 1
 
 
 def test_send_digest_messages_sends_buttons_and_advances_found_job() -> None:
@@ -190,3 +228,59 @@ def test_process_telegram_update_ignores_unapproved_user() -> None:
     )
 
     assert result is None
+
+
+def test_process_telegram_update_keeps_approval_when_callback_acknowledgement_expires() -> None:
+    updated_statuses = []
+
+    class FakeTelegramClient:
+        def answer_callback_query(self, callback_query_id: str, text: str) -> dict[str, object]:
+            raise ValueError("query is too old")
+
+        def edit_message_reply_markup(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def send_message(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def retrieve_page(self, page_id: str) -> dict[str, object]:
+            return {
+                "id": page_id,
+                "properties": {
+                    "Role": {"title": [{"plain_text": "Backend Engineer"}]},
+                    "Company": {"rich_text": [{"plain_text": "Example Cloud"}]},
+                    "Status": {"status": {"name": "digest_sent"}},
+                    "Source": {"rich_text": [{"plain_text": "manual"}]},
+                    "Source URL": {"url": "https://example.com/jobs/backend"},
+                    "Location": {"rich_text": []},
+                    "Remote Policy": {"rich_text": []},
+                    "Employment Type": {"rich_text": []},
+                    "Salary": {"rich_text": []},
+                    "Match Score": {"number": 87},
+                    "Required Skills": {"multi_select": []},
+                    "Years Experience": {"rich_text": []},
+                    "Match Reason": {"rich_text": []},
+                    "Description": {"rich_text": [{"plain_text": "Build APIs."}]},
+                    "Discovered At": {"date": {"start": "2026-09-01"}},
+                },
+            }
+
+        def update_application_status(self, page_id: str, status: ApplicationStatus) -> dict[str, object]:
+            updated_statuses.append((page_id, status))
+            return {"id": page_id}
+
+    update = {
+        "update_id": 13,
+        "callback_query": {
+            "id": "expired-callback",
+            "from": {"id": 12345},
+            "data": "approve_to_tailor:page-123",
+            "message": {"message_id": 99, "chat": {"id": 12345}},
+        },
+    }
+
+    result = process_telegram_update(FakeTelegramClient(), FakeNotionClient(), update, {12345})
+
+    assert result == "approved_to_tailor"
+    assert updated_statuses == [("page-123", ApplicationStatus.APPROVED_TO_TAILOR)]

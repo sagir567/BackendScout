@@ -1,0 +1,15 @@
+# This private presentation contract is applied to every generated CV.
+# Copy it to config/cv_style.yaml, then edit the TODO rules as your preferences evolve.
+include_headline: false
+target_page_count: 1
+show_raw_urls: false
+link_labels:
+  https://github.com/username: GitHub
+  https://github.com/organization: Project GitHub
+  https://linkedin.com/in/username: LinkedIn
+writing_rules:
+  - Use concise, professional language.
+  - Preserve ownership qualifiers such as AI-assisted, directed, reviewed, or collaborated when evidence contains them.
+  - Never include raw URLs in visible CV text. Render known links as meaningful hyperlink labels.
+  - Keep technical skills in the Technical Skills section and weave only relevant skills naturally into the summary and evidence-backed bullets.
+  - TODO Add a presentation preference after reviewing a draft.

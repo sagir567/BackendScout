@@ -1,6 +1,10 @@
+import json
+from collections.abc import Callable
 from enum import Enum
+from pathlib import Path
 from typing import Any, Self
 
+from backend_scout.cv_artifacts import load_manifest, verify_manifest
 from backend_scout.models import (
     ApplicationDigestItem,
     ApplicationStatus,
@@ -11,12 +15,17 @@ from backend_scout.notion import (
     application_digest_item_from_page,
     update_application_status,
 )
+from backend_scout.revisions import save_revision_feedback
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
 
 class TelegramApprovalAction(str, Enum):
     APPROVE_TO_TAILOR = "approve_to_tailor"
+    APPROVE_TO_SUBMIT = "approve_to_submit"
+    REQUEST_REVISION = "request_revision"
+    SEND_EMAIL = "send_email"
+    CONFIRM_WHATSAPP = "confirm_whatsapp"
     CLOSE = "close"
 
 
@@ -26,7 +35,6 @@ class TelegramClient:
 
         self._client = httpx.Client(
             base_url=f"{base_url}/bot{bot_token}",
-            headers={"Content-Type": "application/json"},
             timeout=30.0,
         )
 
@@ -49,6 +57,24 @@ class TelegramClient:
         if reply_markup:
             payload["reply_markup"] = reply_markup
         return self._post("sendMessage", payload)
+
+    def send_document(
+        self,
+        chat_id: int,
+        document_path: Path,
+        caption: str,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"chat_id": str(chat_id), "caption": caption}
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        with document_path.open("rb") as document:
+            response = self._client.post(
+                "/sendDocument",
+                data=payload,
+                files={"document": (document_path.name, document)},
+            )
+        return self._parse_response(response, "sendDocument")
 
     def answer_callback_query(self, callback_query_id: str, text: str) -> dict[str, Any]:
         return self._post("answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text})
@@ -75,10 +101,17 @@ class TelegramClient:
 
     def _post(self, method: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         response = self._client.post(f"/{method}", json=payload or {})
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise ValueError(f"Telegram API {method} failed: {data}")
+        return self._parse_response(response, method)
+
+    @staticmethod
+    def _parse_response(response: Any, method: str) -> dict[str, Any]:
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if response.is_error or not data.get("ok"):
+            detail = data.get("description") or f"HTTP {response.status_code}"
+            raise ValueError(f"Telegram API {method} failed: {detail}")
         return data
 
 
@@ -118,15 +151,90 @@ def build_digest_reply_markup(page_id: str) -> dict[str, Any]:
     }
 
 
-def encode_callback_data(action: TelegramApprovalAction, page_id: str) -> str:
-    return f"{action.value}:{page_id}"
+def build_cv_draft_reply_markup(page_id: str, draft_id: str) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Approve this CV",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.APPROVE_TO_SUBMIT, page_id, draft_id
+                    ),
+                },
+                {
+                    "text": "Request changes",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.REQUEST_REVISION, page_id, draft_id
+                    ),
+                },
+            ],
+            [
+                {
+                    "text": "Close",
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                },
+            ]
+        ]
+    }
 
 
-def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str]:
-    action_value, separator, page_id = data.partition(":")
+def build_email_review_reply_markup(page_id: str, review_id: str) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Send approved email",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.SEND_EMAIL, page_id, review_id
+                    ),
+                },
+                {
+                    "text": "Close",
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                },
+            ]
+        ]
+    }
+
+
+def build_whatsapp_handoff_reply_markup(page_id: str, handoff_id: str) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "I sent this WhatsApp",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CONFIRM_WHATSAPP, page_id, handoff_id
+                    ),
+                },
+                {
+                    "text": "Close",
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                },
+            ]
+        ]
+    }
+
+
+def encode_callback_data(
+    action: TelegramApprovalAction,
+    page_id: str,
+    draft_id: str | None = None,
+) -> str:
+    payload = f"{action.value}:{page_id}"
+    if draft_id:
+        payload = f"{payload}:{draft_id}"
+    if len(payload.encode("utf-8")) > 64:
+        raise ValueError("Telegram callback payload exceeds 64 bytes")
+    return payload
+
+
+def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str, str | None]:
+    action_value, separator, remainder = data.partition(":")
+    page_id, _draft_separator, draft_id = remainder.partition(":")
     if not separator or not page_id:
         raise ValueError("Invalid callback payload")
-    return TelegramApprovalAction(action_value), page_id
+    return TelegramApprovalAction(action_value), page_id, draft_id or None
 
 
 def send_digest_messages(
@@ -158,22 +266,45 @@ def process_telegram_update(
     notion_client: NotionClient,
     update: dict[str, Any],
     allowed_user_ids: set[int],
+    cv_archive_root: Path | None = None,
+    email_delivery_handler: Callable[[str, str], None] | None = None,
+    whatsapp_confirmation_handler: Callable[[str, str], None] | None = None,
 ) -> str | None:
     callback_query = update.get("callback_query")
     if not isinstance(callback_query, dict):
-        return None
+        return _process_revision_message(telegram_client, notion_client, update, allowed_user_ids)
 
     from_user = callback_query.get("from", {})
     user_id = from_user.get("id")
     if not isinstance(user_id, int) or user_id not in allowed_user_ids:
         return None
 
-    action, page_id = parse_callback_data(callback_query.get("data", ""))
+    action, page_id, draft_id = parse_callback_data(callback_query.get("data", ""))
     page = notion_client.retrieve_page(page_id)
     application = application_digest_item_from_page(page)
     next_status = _status_for_action(action)
+    if action in {
+        TelegramApprovalAction.APPROVE_TO_SUBMIT,
+        TelegramApprovalAction.REQUEST_REVISION,
+    }:
+        if cv_archive_root is None or not draft_id:
+            raise ValueError("CV review action requires an exact draft artifact")
+        manifest = load_manifest(cv_archive_root, application.company, page_id)
+        verify_manifest(manifest, draft_id)
     validate_application_status_transition(application.status, next_status)
-    update_application_status(notion_client, page_id, next_status)
+    if action == TelegramApprovalAction.SEND_EMAIL:
+        if not draft_id or email_delivery_handler is None:
+            raise ValueError("Email delivery requires a reviewed email record")
+        email_delivery_handler(page_id, draft_id)
+    if action == TelegramApprovalAction.CONFIRM_WHATSAPP:
+        if not draft_id or whatsapp_confirmation_handler is None:
+            raise ValueError("WhatsApp confirmation requires a prepared handoff record")
+        whatsapp_confirmation_handler(page_id, draft_id)
+    if action not in {
+        TelegramApprovalAction.SEND_EMAIL,
+        TelegramApprovalAction.CONFIRM_WHATSAPP,
+    }:
+        update_application_status(notion_client, page_id, next_status)
 
     message = callback_query.get("message", {})
     chat = message.get("chat", {})
@@ -181,22 +312,74 @@ def process_telegram_update(
     chat_id = chat.get("id")
     callback_query_id = callback_query.get("id")
     if isinstance(callback_query_id, str):
-        telegram_client.answer_callback_query(
-            callback_query_id,
-            f"{application.company} -> {next_status.value}",
-        )
+        try:
+            telegram_client.answer_callback_query(
+                callback_query_id,
+                f"{application.company} -> {next_status.value}",
+            )
+        except ValueError:
+            # Telegram callback acknowledgements expire quickly. The durable Notion
+            # transition has already succeeded and must not be rolled back by UI feedback.
+            pass
     if isinstance(chat_id, int) and isinstance(message_id, int):
-        telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
-        telegram_client.send_message(
-            chat_id,
-            f"Updated {application.company} - {application.title} to {next_status.value}.",
-        )
+        try:
+            telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
+            message_text = f"Updated {application.company} - {application.title} to {next_status.value}."
+            if action == TelegramApprovalAction.REQUEST_REVISION:
+                message_text = (
+                    f"Send revision feedback as /revise_{page_id} followed by the changes you want."
+                )
+            telegram_client.send_message(
+                chat_id,
+                message_text,
+            )
+        except ValueError:
+            pass
     return next_status.value
 
 
 def _status_for_action(action: TelegramApprovalAction) -> ApplicationStatus:
     if action == TelegramApprovalAction.APPROVE_TO_TAILOR:
         return ApplicationStatus.APPROVED_TO_TAILOR
+    if action == TelegramApprovalAction.APPROVE_TO_SUBMIT:
+        return ApplicationStatus.APPROVED_TO_SUBMIT
+    if action == TelegramApprovalAction.REQUEST_REVISION:
+        return ApplicationStatus.REVISION_REQUESTED
+    if action == TelegramApprovalAction.SEND_EMAIL:
+        return ApplicationStatus.SUBMITTED
+    if action == TelegramApprovalAction.CONFIRM_WHATSAPP:
+        return ApplicationStatus.SUBMITTED
     if action == TelegramApprovalAction.CLOSE:
         return ApplicationStatus.CLOSED
     raise ValueError(f"Unsupported Telegram approval action: {action.value}")
+
+
+def _process_revision_message(
+    telegram_client: TelegramClient,
+    notion_client: NotionClient,
+    update: dict[str, Any],
+    allowed_user_ids: set[int],
+) -> str | None:
+    message = update.get("message")
+    if not isinstance(message, dict):
+        return None
+    sender = message.get("from", {})
+    user_id = sender.get("id")
+    text = message.get("text")
+    if not isinstance(user_id, int) or user_id not in allowed_user_ids or not isinstance(text, str):
+        return None
+    command, separator, feedback = text.partition(" ")
+    if not separator or not command.startswith("/revise_"):
+        return None
+    page_id = command.removeprefix("/revise_")
+    application = application_digest_item_from_page(notion_client.retrieve_page(page_id))
+    if application.status != ApplicationStatus.REVISION_REQUESTED:
+        raise ValueError("Revision feedback is only accepted after Request changes")
+    save_revision_feedback(page_id, feedback)
+    chat = message.get("chat", {})
+    if isinstance(chat.get("id"), int):
+        telegram_client.send_message(
+            chat["id"],
+            f"Saved revision feedback for {application.company}. Run cv revise to create versioned files.",
+        )
+    return "revision_feedback_saved"

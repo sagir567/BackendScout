@@ -1,8 +1,11 @@
+import pytest
+
 from backend_scout.models import ApplicationStatus, Job
 from backend_scout.notion import (
     APPLICATIONS_PROPERTY_NAMES,
     APPLICATIONS_PROPERTY_TYPES,
     build_job_page_properties,
+    missing_submission_property_definitions,
     upsert_job_page,
     validate_applications_data_source,
 )
@@ -54,6 +57,18 @@ def test_validate_applications_data_source_reports_missing_or_wrong_properties()
 
     assert "Property Company should be rich_text, got number" in problems
     assert "Missing property: Status (status)" in problems
+
+
+def test_submission_field_definitions_are_additive_and_refuse_wrong_existing_types() -> None:
+    definitions = missing_submission_property_definitions({"properties": {}})
+
+    assert definitions["Submission Channel"]["select"]["options"][0]["name"] == "email"
+    assert definitions["Contact Source"] == {"rich_text": {}}
+
+    with pytest.raises(ValueError, match="Submission Channel"):
+        missing_submission_property_definitions(
+            {"properties": {"Submission Channel": {"type": "rich_text"}}}
+        )
 
 
 def test_build_job_page_properties_can_preserve_existing_status_on_update() -> None:

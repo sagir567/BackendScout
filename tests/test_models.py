@@ -98,3 +98,26 @@ def test_application_status_transition_allows_submit_only_after_submit_approval(
     )
 
     application.validate_status_transition(ApplicationStatus.SUBMITTED)
+
+
+def test_application_status_transition_supports_revision_and_human_verification() -> None:
+    job = Job(
+        source="manual",
+        source_url="https://example.com/jobs/backend",
+        company="Example",
+        title="Backend Engineer",
+        description="Build APIs.",
+    )
+
+    Application(job=job, status=ApplicationStatus.CV_DRAFTED).validate_status_transition(
+        ApplicationStatus.REVISION_REQUESTED
+    )
+    Application(job=job, status=ApplicationStatus.REVISION_REQUESTED).validate_status_transition(
+        ApplicationStatus.APPROVED_TO_TAILOR
+    )
+    Application(job=job, status=ApplicationStatus.SUBMISSION_PREPARED).validate_status_transition(
+        ApplicationStatus.AWAITING_HUMAN_VERIFICATION
+    )
+    Application(job=job, status=ApplicationStatus.AWAITING_HUMAN_VERIFICATION).validate_status_transition(
+        ApplicationStatus.SUBMISSION_PREPARED
+    )

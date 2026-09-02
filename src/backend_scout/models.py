@@ -5,12 +5,38 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+def _normalize_required_string(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("must not be blank")
+    return normalized
+
+
+def _normalize_optional_string(value: Any) -> Any:
+    if value is None or not isinstance(value, str):
+        return value
+    return value.strip() or None
+
+
+def _normalize_string_list(values: Any) -> Any:
+    if not isinstance(values, list):
+        return values
+    normalized = [value.strip() if isinstance(value, str) else value for value in values]
+    normalized = [value for value in normalized if not isinstance(value, str) or value]
+    return list(dict.fromkeys(normalized))
+
+
 class ApplicationStatus(str, Enum):
     FOUND = "found"
     DIGEST_SENT = "digest_sent"
     APPROVED_TO_TAILOR = "approved_to_tailor"
     CV_DRAFTED = "cv_drafted"
+    REVISION_REQUESTED = "revision_requested"
     APPROVED_TO_SUBMIT = "approved_to_submit"
+    SUBMISSION_PREPARED = "submission_prepared"
+    AWAITING_HUMAN_VERIFICATION = "awaiting_human_verification"
     SUBMITTED = "submitted"
     RECRUITER_REPLY = "recruiter_reply"
     INTERVIEW = "interview"
@@ -218,6 +244,217 @@ class CandidateProfile(BaseModel):
         return normalized
 
 
+class EvidenceBullet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    text: str
+
+    _normalize_id = field_validator("id", mode="before")(_normalize_required_string)
+    _normalize_text = field_validator("text", mode="before")(_normalize_required_string)
+
+
+class SkillGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str
+    items: list[str] = Field(min_length=1)
+
+    _normalize_category = field_validator("category", mode="before")(_normalize_required_string)
+    _normalize_items = field_validator("items", mode="before")(_normalize_string_list)
+
+
+class ExperienceEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    organization: str
+    title: str
+    start_date: str
+    end_date: str
+    location: str | None = None
+    bullets: list[EvidenceBullet] = Field(min_length=1)
+
+    _normalize_id = field_validator("id", mode="before")(_normalize_required_string)
+    _normalize_organization = field_validator("organization", mode="before")(
+        _normalize_required_string
+    )
+    _normalize_title = field_validator("title", mode="before")(_normalize_required_string)
+    _normalize_start_date = field_validator("start_date", mode="before")(_normalize_required_string)
+    _normalize_end_date = field_validator("end_date", mode="before")(_normalize_required_string)
+    _normalize_location = field_validator("location", mode="before")(_normalize_optional_string)
+
+
+class ProjectEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    link: str | None = None
+    bullets: list[EvidenceBullet] = Field(min_length=1)
+
+    _normalize_id = field_validator("id", mode="before")(_normalize_required_string)
+    _normalize_name = field_validator("name", mode="before")(_normalize_required_string)
+    _normalize_link = field_validator("link", mode="before")(_normalize_optional_string)
+
+
+class EducationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    institution: str
+    credential: str
+    end_date: str | None = None
+
+    _normalize_institution = field_validator("institution", mode="before")(_normalize_required_string)
+    _normalize_credential = field_validator("credential", mode="before")(_normalize_required_string)
+    _normalize_end_date = field_validator("end_date", mode="before")(_normalize_optional_string)
+
+
+class PublicationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    venue: str
+    year: str
+
+    _normalize_title = field_validator("title", mode="before")(_normalize_required_string)
+    _normalize_venue = field_validator("venue", mode="before")(_normalize_required_string)
+    _normalize_year = field_validator("year", mode="before")(_normalize_required_string)
+
+
+class CandidateIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str
+    email: str
+    phone: str | None = None
+    location: str | None = None
+    links: list[str] = Field(default_factory=list)
+
+    _normalize_name = field_validator("full_name", mode="before")(_normalize_required_string)
+    _normalize_email = field_validator("email", mode="before")(_normalize_required_string)
+    _normalize_phone = field_validator("phone", mode="before")(_normalize_optional_string)
+    _normalize_location = field_validator("location", mode="before")(_normalize_optional_string)
+    _normalize_links = field_validator("links", mode="before")(_normalize_string_list)
+
+
+class CareerEvidence(BaseModel):
+    """Private factual material that is allowed to appear in a tailored CV."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    identity: CandidateIdentity
+    summary: str | None = None
+    skills: list[SkillGroup] = Field(min_length=1)
+    experience: list[ExperienceEvidence] = Field(default_factory=list)
+    projects: list[ProjectEvidence] = Field(default_factory=list)
+    education: list[EducationEvidence] = Field(default_factory=list)
+    publications: list[PublicationEvidence] = Field(default_factory=list)
+
+    _normalize_summary = field_validator("summary", mode="before")(_normalize_optional_string)
+
+    @model_validator(mode="after")
+    def require_unique_evidence_ids(self) -> Self:
+        evidence_ids = [item.id for item in self.experience]
+        evidence_ids.extend(item.id for item in self.projects)
+        evidence_ids.extend(
+            bullet.id for item in self.experience for bullet in item.bullets
+        )
+        evidence_ids.extend(bullet.id for item in self.projects for bullet in item.bullets)
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("career evidence IDs must be unique")
+        return self
+
+    def evidence_ids(self) -> set[str]:
+        ids = {item.id for item in self.experience}
+        ids.update(item.id for item in self.projects)
+        ids.update(bullet.id for item in self.experience for bullet in item.bullets)
+        ids.update(bullet.id for item in self.projects for bullet in item.bullets)
+        return ids
+
+
+class CvStyle(BaseModel):
+    """Private presentation rules applied to every generated CV."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    include_headline: bool = False
+    target_page_count: int = Field(default=1, ge=1, le=2)
+    show_raw_urls: bool = False
+    link_labels: dict[str, str] = Field(default_factory=dict)
+    writing_rules: list[str] = Field(default_factory=list)
+
+    _normalize_writing_rules = field_validator("writing_rules", mode="before")(
+        _normalize_string_list
+    )
+
+    @field_validator("link_labels", mode="before")
+    @classmethod
+    def normalize_link_labels(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        return {
+            str(url).strip(): str(label).strip()
+            for url, label in value.items()
+            if str(url).strip() and str(label).strip()
+        }
+
+    @model_validator(mode="after")
+    def require_hidden_raw_urls(self) -> Self:
+        if self.show_raw_urls:
+            raise ValueError("show_raw_urls must stay false")
+        return self
+
+
+class TailoredBullet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    evidence_ids: list[str] = Field(min_length=1)
+
+    _normalize_text = field_validator("text", mode="before")(_normalize_required_string)
+    _normalize_evidence_ids = field_validator("evidence_ids", mode="before")(
+        _normalize_string_list
+    )
+
+
+class TailoredExperience(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    bullets: list[TailoredBullet] = Field(min_length=1)
+
+    _normalize_evidence_id = field_validator("evidence_id", mode="before")(_normalize_required_string)
+
+
+class TailoredProject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    bullets: list[TailoredBullet] = Field(min_length=1)
+
+    _normalize_evidence_id = field_validator("evidence_id", mode="before")(_normalize_required_string)
+
+
+class TailoredCv(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headline: str | None = None
+    summary: str | None = None
+    summary_evidence_ids: list[str] = Field(default_factory=list)
+    skills: list[SkillGroup] = Field(default_factory=list)
+    experience: list[TailoredExperience] = Field(default_factory=list)
+    projects: list[TailoredProject] = Field(default_factory=list)
+    education: list[EducationEvidence] = Field(default_factory=list)
+    publications: list[PublicationEvidence] = Field(default_factory=list)
+
+    _normalize_headline = field_validator("headline", mode="before")(_normalize_optional_string)
+    _normalize_summary = field_validator("summary", mode="before")(_normalize_optional_string)
+    _normalize_summary_evidence_ids = field_validator("summary_evidence_ids", mode="before")(
+        _normalize_string_list
+    )
+
+
 class ManualJobImport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -281,8 +518,26 @@ APPLICATION_STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] 
     ApplicationStatus.FOUND: {ApplicationStatus.DIGEST_SENT, ApplicationStatus.CLOSED},
     ApplicationStatus.DIGEST_SENT: {ApplicationStatus.APPROVED_TO_TAILOR, ApplicationStatus.CLOSED},
     ApplicationStatus.APPROVED_TO_TAILOR: {ApplicationStatus.CV_DRAFTED, ApplicationStatus.CLOSED},
-    ApplicationStatus.CV_DRAFTED: {ApplicationStatus.APPROVED_TO_SUBMIT, ApplicationStatus.CLOSED},
-    ApplicationStatus.APPROVED_TO_SUBMIT: {ApplicationStatus.SUBMITTED, ApplicationStatus.CLOSED},
+    ApplicationStatus.CV_DRAFTED: {
+        ApplicationStatus.REVISION_REQUESTED,
+        ApplicationStatus.APPROVED_TO_SUBMIT,
+        ApplicationStatus.CLOSED,
+    },
+    ApplicationStatus.REVISION_REQUESTED: {ApplicationStatus.APPROVED_TO_TAILOR, ApplicationStatus.CLOSED},
+    ApplicationStatus.APPROVED_TO_SUBMIT: {
+        ApplicationStatus.SUBMISSION_PREPARED,
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.CLOSED,
+    },
+    ApplicationStatus.SUBMISSION_PREPARED: {
+        ApplicationStatus.AWAITING_HUMAN_VERIFICATION,
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.CLOSED,
+    },
+    ApplicationStatus.AWAITING_HUMAN_VERIFICATION: {
+        ApplicationStatus.SUBMISSION_PREPARED,
+        ApplicationStatus.CLOSED,
+    },
     ApplicationStatus.SUBMITTED: {
         ApplicationStatus.RECRUITER_REPLY,
         ApplicationStatus.INTERVIEW,
