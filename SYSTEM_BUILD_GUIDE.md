@@ -323,8 +323,12 @@ Current implementation as of 2026-08-31:
   it alive across terminal sessions and write only local ignored logs.
 - The listener processes only authorized callback buttons and the explicit
   `/tailor_<page-id>`, `/revise_<page-id>`, `/draft_<page-id>`,
-  `/prepare_<page-id>`, `/status`, and `/scout` commands. Free-form messages
-  do not authorize delivery or external submission.
+  `/prepare_<page-id>`, `/status`, `/jobs`, `/today`, `/submit_status`, and
+  `/scout` commands. Free-form messages do not authorize delivery or external
+  submission.
+- `/jobs` lists actionable open applications, `/today` lists recent tracked
+  jobs, and `/submit_status` lists jobs ready for portal preparation or final
+  submit progress.
 - Telegram callback queries are acknowledged immediately before slower Notion,
   Gmail, or browser work starts, so buttons should stop blinking quickly.
 - `Approve tailoring` can create a local queued CV draft task, and `/scout`,

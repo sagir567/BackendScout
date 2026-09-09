@@ -538,6 +538,95 @@ def test_process_telegram_message_sends_status_counts() -> None:
     assert "submitted: 1" in sent_messages[0][1]
 
 
+def test_process_telegram_message_sends_actionable_jobs() -> None:
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def query_data_source(self, data_source_id: str, payload: dict[str, object]) -> dict[str, object]:
+            return {
+                "results": [
+                    _application_page("page-1", ApplicationStatus.DIGEST_SENT),
+                    _application_page("page-2", ApplicationStatus.SUBMITTED),
+                ]
+            }
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/jobs"}},
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        data_source_id="data-source-123",
+    )
+
+    assert result == "jobs_sent"
+    assert "BackendScout production jobs" in sent_messages[0][1]
+    assert "page-1" in sent_messages[0][1]
+    assert "page-2" not in sent_messages[0][1]
+
+
+def test_process_telegram_message_sends_latest_jobs() -> None:
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def query_data_source(self, data_source_id: str, payload: dict[str, object]) -> dict[str, object]:
+            return {"results": [_application_page("page-1", ApplicationStatus.SUBMITTED)]}
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/today"}},
+        {12345},
+        data_source_id="data-source-123",
+    )
+
+    assert result == "today_sent"
+    assert "Latest test tracked jobs" in sent_messages[0][1]
+    assert "page-1" in sent_messages[0][1]
+
+
+def test_process_telegram_message_sends_submit_status_jobs() -> None:
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def query_data_source(self, data_source_id: str, payload: dict[str, object]) -> dict[str, object]:
+            return {
+                "results": [
+                    _application_page("page-1", ApplicationStatus.APPROVED_TO_SUBMIT),
+                    _application_page("page-2", ApplicationStatus.CV_DRAFTED),
+                ]
+            }
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/submit_status"}},
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        data_source_id="data-source-123",
+    )
+
+    assert result == "submit_status_sent"
+    assert "ready for portal progress" in sent_messages[0][1]
+    assert "page-1" in sent_messages[0][1]
+    assert "page-2" not in sent_messages[0][1]
+
+
 def test_process_telegram_message_queues_today_scout(monkeypatch: pytest.MonkeyPatch) -> None:
     queued = []
     sent_messages = []

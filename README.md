@@ -221,6 +221,9 @@ processes authorized button actions plus supported commands:
 
 ```text
 /status
+/jobs
+/today
+/submit_status
 /scout
 /draft_NOTION_PAGE_ID
 /prepare_NOTION_PAGE_ID
@@ -228,8 +231,10 @@ processes authorized button actions plus supported commands:
 /revise_NOTION_PAGE_ID Make the summary tighter.
 ```
 
-Ordinary text cannot authorize delivery or submission. Buttons are acknowledged
-quickly, and longer work is queued for a worker command:
+`/jobs` shows open actionable applications, `/today` shows recent tracked jobs,
+and `/submit_status` shows jobs ready for portal progress. Ordinary text cannot
+authorize delivery or submission. Buttons are acknowledged quickly, and longer
+work is queued for a worker command:
 
 ```bash
 uv run --no-editable backend-scout tasks list

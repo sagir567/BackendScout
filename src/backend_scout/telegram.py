@@ -501,6 +501,35 @@ def _process_message(
         counts = _application_status_counts(notion_client, data_source_id)
         confirmation = _format_status_counts(counts, tracker)
         result = "status_sent"
+    elif command.casefold() in {"/jobs", "jobs"}:
+        applications = _application_summaries(
+            notion_client,
+            data_source_id,
+            {
+                ApplicationStatus.FOUND,
+                ApplicationStatus.DIGEST_SENT,
+                ApplicationStatus.APPROVED_TO_TAILOR,
+                ApplicationStatus.CV_DRAFTED,
+                ApplicationStatus.APPROVED_TO_SUBMIT,
+                ApplicationStatus.SUBMISSION_PREPARED,
+            },
+            limit=10,
+        )
+        confirmation = _format_application_list(f"BackendScout {tracker.value} jobs", applications)
+        result = "jobs_sent"
+    elif command.casefold() in {"/today", "today"}:
+        applications = _application_summaries(notion_client, data_source_id, None, limit=10)
+        confirmation = _format_application_list(f"Latest {tracker.value} tracked jobs", applications)
+        result = "today_sent"
+    elif command.casefold() in {"/submit_status", "/submit-status", "submit status"}:
+        applications = _application_summaries(
+            notion_client,
+            data_source_id,
+            {ApplicationStatus.APPROVED_TO_SUBMIT, ApplicationStatus.SUBMISSION_PREPARED},
+            limit=10,
+        )
+        confirmation = _format_application_list(f"{tracker.value.title()} jobs ready for portal progress", applications)
+        result = "submit_status_sent"
     elif command.casefold() in {"/scout", "/scout_today", "scout"} or text.strip().casefold() in {
         "run scout",
         "run today's scout",
@@ -602,6 +631,38 @@ def _application_status_counts(notion_client: NotionClient, data_source_id: str 
             continue
         counts[application_digest_item_from_page(page).status.value] += 1
     return counts
+
+
+def _application_summaries(
+    notion_client: NotionClient,
+    data_source_id: str | None,
+    statuses: set[ApplicationStatus] | None,
+    *,
+    limit: int,
+) -> list[ApplicationDigestItem]:
+    if data_source_id is None:
+        return []
+    result = notion_client.query_data_source(data_source_id, {"page_size": 100})
+    applications: list[ApplicationDigestItem] = []
+    for page in result.get("results", []):
+        if not isinstance(page, dict):
+            continue
+        item = application_digest_item_from_page(page)
+        if statuses is None or item.status in statuses:
+            applications.append(item)
+        if len(applications) >= limit:
+            break
+    return applications
+
+
+def _format_application_list(title: str, applications: list[ApplicationDigestItem]) -> str:
+    if not applications:
+        return f"{title}: none right now."
+    lines = [title]
+    for item in applications:
+        score = item.match_score if item.match_score is not None else "?"
+        lines.append(f"- {item.company} - {item.title} | {item.status.value} | score {score} | id {item.notion_page_id}")
+    return "\n".join(lines)
 
 
 def _format_status_counts(counts: Counter[str], tracker: TrackerName) -> str:
