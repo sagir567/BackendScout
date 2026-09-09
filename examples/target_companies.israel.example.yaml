@@ -1,0 +1,51 @@
+# Starter public ATS sources for Israel-focused backend scouting.
+# Copy selected entries into ignored config/target_companies.yaml.
+#
+# Keep broad aggregator-style feeds disabled by default until the morning digest
+# has enough ranking and per-source limits to avoid noise.
+companies:
+  - name: Pagaya Israel
+    provider: greenhouse
+    board_token: pagayais
+    enabled: true
+    notes: Israeli engineering organization; public Greenhouse board.
+  - name: Bluevine Israel
+    provider: greenhouse
+    board_token: bluevineisrael
+    enabled: true
+    notes: Israeli engineering organization; public Greenhouse board.
+  - name: Forter
+    provider: greenhouse
+    board_token: forter
+    enabled: true
+    notes: Tel Aviv engineering roles; public Greenhouse board.
+  - name: Pi Security
+    provider: ashby
+    board_token: pi-security
+    enabled: true
+    notes: Israeli security company; public Ashby board.
+  - name: Lendbuzz
+    provider: lever
+    board_token: lendbuzz
+    enabled: true
+    notes: Tel Aviv engineering roles; public Lever board.
+  - name: HUMAN
+    provider: ashby
+    board_token: HUMAN
+    enabled: true
+    notes: Tel Aviv hybrid engineering roles; public Ashby board.
+  - name: Unit
+    provider: ashby
+    board_token: unit
+    enabled: true
+    notes: Tel Aviv backend engineering roles; public Ashby board.
+  - name: Bjak / A1
+    provider: ashby
+    board_token: bjakcareer
+    enabled: false
+    notes: Broad Ashby feed with some Israel AI/backend roles; enable only for wider remote experiments.
+  - name: Jobgether
+    provider: lever
+    board_token: jobgether
+    enabled: false
+    notes: Very broad partner/aggregator feed; enable only after adding per-source caps.

@@ -32,3 +32,11 @@ def test_target_company_yaml_rejects_unknown_provider(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="provider"):
         load_target_companies(path)
+
+
+def test_israel_starter_target_company_example_validates() -> None:
+    targets = load_target_companies(Path("examples/target_companies.israel.example.yaml"))
+
+    enabled = [target for target in targets.companies if target.enabled]
+    assert len(enabled) >= 7
+    assert {target.provider for target in enabled} >= {AtsProvider.GREENHOUSE, AtsProvider.LEVER, AtsProvider.ASHBY}
