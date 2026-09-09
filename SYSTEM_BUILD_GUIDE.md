@@ -227,6 +227,8 @@ Public ATS collector progress:
   usefully.
 - [x] Keep the automatic shortlist high-precision by requiring meaningful
   target-role relevance before a collected job enters the digest.
+- [x] Add optional private `scouting_preferences.yaml` controls for preferred,
+  maybe, and excluded title keywords plus minimum score/relevance thresholds.
 - [x] Add a `launchd` template that invokes the same tested CLI command used
   for a manual daily collection.
 - [ ] Add a reviewed source for Israeli job aggregators only after confirming a

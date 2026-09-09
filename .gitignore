@@ -6,6 +6,7 @@ config/candidate_profile.yaml
 config/career_evidence.yaml
 config/cv_style.yaml
 config/repo_sources.yaml
+config/scouting_preferences.yaml
 config/target_companies.yaml
 __pycache__/
 *.py[cod]

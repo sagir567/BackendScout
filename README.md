@@ -96,6 +96,7 @@ uv sync --extra dev --no-editable --link-mode copy
 cp .env.example .env
 cp config/candidate_profile.example.yaml config/candidate_profile.yaml
 cp config/repo_sources.example.yaml config/repo_sources.yaml
+cp config/scouting_preferences.example.yaml config/scouting_preferences.yaml
 ```
 
 After pulling source changes, rebuild the copied local package before running
@@ -147,8 +148,13 @@ Preview a collection without writing external state:
 
 ```bash
 uv run --no-editable backend-scout collect validate
+uv run --no-editable backend-scout collect preferences-check
 uv run --no-editable backend-scout collect run
 ```
+
+Tune the ignored `config/scouting_preferences.yaml` file when the digest feels
+too broad or too strict. It controls preferred titles, maybe titles, excluded
+titles, minimum score, and minimum role relevance for automatic scouting only.
 
 After reviewing the preview, sync new jobs to the default test tracker:
 

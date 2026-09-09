@@ -81,6 +81,12 @@ from backend_scout.repo_scanner import (
     scan_repositories,
 )
 from backend_scout.revisions import load_revision_feedback
+from backend_scout.scouting_preferences import (
+    DEFAULT_SCOUTING_PREFERENCES_PATH,
+    ScoutingPreferences,
+    load_scouting_preferences,
+    public_collection_digest_candidate,
+)
 from backend_scout.submission import prepare_visible_submission, submit_visible_submission
 from backend_scout.tailoring_notes import load_tailoring_note
 from backend_scout.targets import DEFAULT_TARGET_COMPANIES_PATH, load_target_companies
@@ -144,6 +150,10 @@ CvStylePathOption = Annotated[
 TargetCompaniesPathOption = Annotated[
     Path,
     typer.Option("--targets-path", help="Private target-company YAML path."),
+]
+ScoutingPreferencesPathOption = Annotated[
+    Path,
+    typer.Option("--preferences-path", help="Optional private scouting-preferences YAML path."),
 ]
 RepoSourcesPathOption = Annotated[
     Path,
@@ -441,9 +451,30 @@ def collect_validate(targets_path: TargetCompaniesPathOption = DEFAULT_TARGET_CO
         console.print(f"- {target.name} ({target.provider.value})")
 
 
+@collect_app.command("preferences-check")
+def collect_preferences_check(
+    preferences_path: ScoutingPreferencesPathOption = DEFAULT_SCOUTING_PREFERENCES_PATH,
+) -> None:
+    """Validate optional private scouting digest preferences."""
+    try:
+        preferences = load_scouting_preferences(preferences_path)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Scouting preference validation failed", exc)
+        raise typer.Exit(1) from exc
+
+    source = str(preferences_path) if preferences_path.exists() else "built-in defaults"
+    console.print(f"[green]Scouting preferences OK:[/green] {source}")
+    console.print(f"Preferred title keywords: {', '.join(preferences.preferred_title_keywords) or 'none'}")
+    console.print(f"Maybe title keywords: {', '.join(preferences.maybe_title_keywords) or 'none'}")
+    console.print(f"Excluded title keywords: {', '.join(preferences.excluded_title_keywords) or 'none'}")
+    console.print(f"Minimum match score: {preferences.minimum_match_score}")
+    console.print(f"Minimum role relevance: {preferences.minimum_role_relevance_points}/25")
+
+
 @collect_app.command("run")
 def collect_run(
     targets_path: TargetCompaniesPathOption = DEFAULT_TARGET_COMPANIES_PATH,
+    preferences_path: ScoutingPreferencesPathOption = DEFAULT_SCOUTING_PREFERENCES_PATH,
     profile_path: ScoreProfilePathOption = DEFAULT_PROFILE_PATH,
     write_notion: Annotated[
         bool, typer.Option("--write-notion", help="Sync filtered jobs to Notion; default is preview only.")
@@ -461,6 +492,7 @@ def collect_run(
         raise typer.BadParameter("--send-digest requires --write-notion")
     try:
         targets = load_target_companies(targets_path)
+        preferences = load_scouting_preferences(preferences_path)
         profile = load_candidate_profile(profile_path)
     except (ValidationError, YamlFileError) as exc:
         _print_load_error("Public collection setup failed", exc)
@@ -475,7 +507,7 @@ def collect_run(
             failures.append(f"{target.name}: {exc}")
     israel_relevant = [job for job in collected if is_israel_or_remote(job)]
     scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))
-    shortlist = [scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job)]
+    shortlist = [scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job, preferences)]
     _print_scored_jobs_table(shortlist, title="Public ATS Collection Shortlist")
     console.print(
         f"Collected {len(collected)} public job(s); Israel/remote filter kept {len(israel_relevant)}; "
@@ -528,18 +560,8 @@ def collect_run(
         console.print(f"[green]Sent {len(created_pages)} new-job digest message(s).[/green]")
 
 
-def _is_public_collection_shortlist(scored_job: ScoredJob) -> bool:
-    if scored_job.result.recommended_action.value not in {"apply", "maybe"}:
-        return False
-    role_points = next(
-        (
-            item.points_awarded
-            for item in scored_job.result.score_breakdown
-            if item.component == "role_relevance"
-        ),
-        0,
-    )
-    return role_points >= 15
+def _is_public_collection_shortlist(scored_job: ScoredJob, preferences: ScoutingPreferences) -> bool:
+    return public_collection_digest_candidate(scored_job, preferences)
 
 
 @repos_app.command("validate")

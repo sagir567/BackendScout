@@ -1,0 +1,25 @@
+# Copy to ignored config/scouting_preferences.yaml and tune for the morning digest.
+# These preferences do not change the transparent match score; they only decide
+# which scored public jobs are comfortable enough to show in Telegram.
+preferred_title_keywords:
+  - Backend
+  - Backend Engineer
+  - Software Engineer
+  - Python Engineer
+  - Server
+maybe_title_keywords:
+  - Unity
+  - Game Developer
+  - AI Engineer
+  - Automation
+excluded_title_keywords:
+  - Product Manager
+  - Data Scientist
+  - BI
+  - DevOps
+  - System Administrator
+  - Sysadmin
+  - Customer Success
+  - Solutions Consultant
+minimum_match_score: 55
+minimum_role_relevance_points: 15

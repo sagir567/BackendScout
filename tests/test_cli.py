@@ -118,6 +118,17 @@ def test_jobs_score_outputs_score_and_action(tmp_path: Path) -> None:
     assert "Breakdown:" in result.output
 
 
+def test_collect_preferences_check_accepts_example_file() -> None:
+    result = runner.invoke(
+        app,
+        ["collect", "preferences-check", "--preferences-path", "config/scouting_preferences.example.yaml"],
+    )
+
+    assert result.exit_code == 0
+    assert "Scouting preferences OK" in result.output
+    assert "Minimum match score: 55" in result.output
+
+
 def test_jobs_import_write_notion_uses_fresh_scoring(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     profile_path = tmp_path / "candidate_profile.yaml"
     write_profile(profile_path)
