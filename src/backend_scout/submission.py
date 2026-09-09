@@ -25,6 +25,7 @@ class BrowserPreparationResult:
 
 
 HUMAN_VERIFICATION_MARKERS = ("captcha", "recaptcha", "hcaptcha", "turnstile", "verify you are human")
+FRAME_HUMAN_VERIFICATION_MARKERS = ("hcaptcha", "turnstile", "challenge")
 SUBMISSION_CONFIRMATION_MARKERS = (
     "application received",
     "application submitted",
@@ -39,8 +40,11 @@ def is_explicit_apply_now_label(text: str) -> bool:
 
 
 def contains_human_verification(page_text: str, frame_urls: list[str] | None = None) -> bool:
-    haystack = " ".join([page_text, *(frame_urls or [])]).casefold()
-    return any(marker in haystack for marker in HUMAN_VERIFICATION_MARKERS)
+    text = page_text.casefold()
+    if any(marker in text for marker in HUMAN_VERIFICATION_MARKERS):
+        return True
+    frame_haystack = " ".join(frame_urls or []).casefold()
+    return any(marker in frame_haystack for marker in FRAME_HUMAN_VERIFICATION_MARKERS)
 
 
 def is_submission_confirmation(page_text: str) -> bool:
@@ -107,10 +111,15 @@ def _fill_safe_fields(
         (link for link in evidence.identity.links if "linkedin.com" in link.casefold()), ""
     )
     candidates = (
-        ("first_name", 'input[name="first_name" i], input[id="first_name" i]', name_parts[0], "First Name"),
+        (
+            "first_name",
+            'input[name="first_name" i], input[id="first_name" i], input[name="firstName" i], input[id="inputFirstName" i]',
+            name_parts[0],
+            "First Name",
+        ),
         (
             "last_name",
-            'input[name="last_name" i], input[id="last_name" i]',
+            'input[name="last_name" i], input[id="last_name" i], input[name="lastName" i], input[id="inputLastName" i]',
             name_parts[1] if len(name_parts) > 1 else "",
             "Last Name",
         ),
@@ -121,26 +130,31 @@ def _fill_safe_fields(
         ("linkedin", 'input[name="linkedin" i], input[id="linkedin" i]', linkedin_url, "LinkedIn Profile"),
     )
     filled: list[str] = []
-    for field, selector, value, label in candidates:
-        if not value:
-            continue
-        locator = page.locator(selector).first
-        if not locator.count() or not locator.is_visible():
-            locator = page.get_by_label(label, exact=True).first
-        if locator.count() and locator.is_visible() and locator.input_value() == "":
-            locator.fill(value)
-            filled.append(field)
+    scopes = _form_scopes(page)
+    for scope in scopes:
+        for field, selector, value, label in candidates:
+            if not value:
+                continue
+            locator = scope.locator(selector).first
+            if not locator.count() or not locator.is_visible():
+                locator = scope.get_by_label(label, exact=True).first
+            if locator.count() and locator.is_visible() and locator.input_value() == "":
+                locator.fill(value)
+                filled.append(field)
 
-    upload = page.locator(
-        'input[type="file"][id*="resume" i], input[type="file"][name*="resume" i], '
-        'input[type="file"]'
-    ).first
-    if upload.count():
-        upload.set_input_files(str(approved_attachment))
-        if upload.input_value():
-            filled.append("cv_attachment")
+        upload = scope.locator(
+            'input[type="file"][id*="resume" i], input[type="file"][name*="resume" i], '
+            'input[type="file"][id*="cv" i], input[type="file"][name*="cv" i], '
+            'input[type="file"]'
+        ).first
+        if upload.count():
+            upload.set_input_files(str(approved_attachment))
+            if upload.input_value():
+                filled.append("cv_attachment")
+                break
     if form_answers:
-        filled.extend(_fill_candidate_confirmed_answers(page, form_answers))
+        for scope in scopes:
+            filled.extend(_fill_candidate_confirmed_answers(scope, form_answers))
     unresolved = _unresolved_required_fields(page)
     if "cv_attachment" not in filled:
         unresolved = (*unresolved, "cv_attachment")
@@ -179,7 +193,7 @@ def _fill_candidate_confirmed_answers(page, answers: ApplicationFormAnswers) -> 
             locator.fill(value)
         filled.append(field_key)
     for field_name, label in answers.checkbox_values.items():
-        inputs = page.locator(f'input[type="checkbox"][name="{field_name}"]')
+        inputs = page.locator(f'input[type="checkbox"][name="{field_name}"], input[type="radio"][name="{field_name}"]')
         for index in range(inputs.count()):
             checkbox = inputs.nth(index)
             nearby_text = checkbox.evaluate(
@@ -228,37 +242,46 @@ def _matches_confirmed_option(option_text: str, value: str) -> bool:
 def _unresolved_required_fields(page) -> tuple[str, ...]:
     """Return visible required controls still blank after conservative preparation."""
     unresolved: list[str] = []
-    required_controls = page.locator(
-        'input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"], '
-        'input[required]:not([type="checkbox"]), textarea[required], select[required]'
-    )
-    for index in range(required_controls.count()):
-        control = required_controls.nth(index)
-        label = _control_label(control)
-        if not control.is_visible() or not label:
-            continue
-        if not _control_has_value(control):
-            unresolved.append(label)
+    for scope in _form_scopes(page):
+        required_controls = scope.locator(
+            'input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"], '
+            'input[required]:not([type="checkbox"]):not([type="radio"]), textarea[required], select[required]'
+        )
+        for index in range(required_controls.count()):
+            control = required_controls.nth(index)
+            label = _control_label(control)
+            if not control.is_visible() or not label:
+                continue
+            if not _control_has_value(control):
+                unresolved.append(label)
 
-    required_checkboxes = page.locator('input[type="checkbox"][required]')
-    checked_groups: set[str] = set()
-    checkbox_groups: dict[str, list[object]] = {}
-    for index in range(required_checkboxes.count()):
-        checkbox = required_checkboxes.nth(index)
-        if not checkbox.is_visible():
-            continue
-        key = checkbox.get_attribute("name") or checkbox.get_attribute("id") or f"checkbox-{index}"
-        checkbox_groups.setdefault(key, []).append(checkbox)
-        if checkbox.is_checked():
-            checked_groups.add(key)
-    for key, checkboxes in checkbox_groups.items():
-        if key not in checked_groups:
-            unresolved.append(_control_label(checkboxes[0]) or key)
+        required_choices = scope.locator('input[type="checkbox"][required], input[type="radio"][required]')
+        checked_groups: set[str] = set()
+        choice_groups: dict[str, list[object]] = {}
+        for index in range(required_choices.count()):
+            choice = required_choices.nth(index)
+            if not choice.is_visible():
+                continue
+            key = choice.get_attribute("name") or choice.get_attribute("id") or f"choice-{index}"
+            choice_groups.setdefault(key, []).append(choice)
+            if choice.is_checked():
+                checked_groups.add(key)
+        for key, choices in choice_groups.items():
+            if key not in checked_groups:
+                unresolved.append(_control_label(choices[0]) or key)
     return tuple(dict.fromkeys(unresolved))
 
 
+def _form_scopes(page) -> list[object]:
+    return [page, *(frame for frame in page.frames if frame != page.main_frame)]
+
+
 def _control_label(control) -> str | None:
-    return control.get_attribute("aria-label") or control.get_attribute("id") or control.get_attribute("name")
+    return (
+        control.get_attribute("aria-label")
+        or control.get_attribute("name")
+        or control.get_attribute("id")
+    )
 
 
 def _control_has_value(control) -> bool:
@@ -287,7 +310,7 @@ def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:
 
 
 def _follow_verified_apply_link(page) -> None:
-    """Follow only an explicit Apply Now link; never click a submit control here."""
+    """Follow only an explicit opening apply CTA; never click a final submit control here."""
     links = page.locator("a")
     for index in range(links.count()):
         link = links.nth(index)
@@ -296,6 +319,17 @@ def _follow_verified_apply_link(page) -> None:
         destination = resolve_apply_now_url(page.url, link.get_attribute("href"))
         if destination and destination != page.url:
             page.goto(destination, wait_until="domcontentloaded")
+        return
+    buttons = page.locator("button")
+    for index in range(buttons.count()):
+        button = buttons.nth(index)
+        label = button.inner_text().strip()
+        if not button.is_visible() or not re.fullmatch(r"apply(?: for this job| now)?", label, flags=re.IGNORECASE):
+            continue
+        if button.evaluate("element => Boolean(element.closest('form'))"):
+            continue
+        button.click()
+        page.wait_for_timeout(2_000)
         return
 
 
