@@ -30,3 +30,10 @@ def test_load_cv_style_rejects_visible_raw_urls(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="show_raw_urls"):
         load_cv_style(path)
+
+
+def test_cv_style_rejects_multi_page_target() -> None:
+    with pytest.raises(ValueError, match="less than or equal to 1"):
+        from backend_scout.models import CvStyle
+
+        CvStyle(target_page_count=2)

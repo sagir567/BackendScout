@@ -3,6 +3,7 @@ import pytest
 from backend_scout.models import (
     Application,
     ApplicationStatus,
+    CvEvidenceCoverage,
     Job,
     MatchRecommendation,
     MatchResult,
@@ -50,6 +51,16 @@ def test_match_result_requires_breakdown_total_to_equal_score() -> None:
             salary_assessment=SalaryAssessment.UNKNOWN,
             location_assessment="unknown",
             reason_summary="Recommendation: maybe. Strong Python overlap.",
+        )
+
+
+def test_cv_evidence_coverage_requires_a_consistent_score() -> None:
+    with pytest.raises(ValueError, match="coverage_score"):
+        CvEvidenceCoverage(
+            coverage_score=75,
+            covered_requirements=["Python"],
+            missing_requirements=["Kubernetes"],
+            summary="Evidence supports one of two requirements.",
         )
 
 
@@ -120,4 +131,21 @@ def test_application_status_transition_supports_revision_and_human_verification(
     )
     Application(job=job, status=ApplicationStatus.AWAITING_HUMAN_VERIFICATION).validate_status_transition(
         ApplicationStatus.SUBMISSION_PREPARED
+    )
+
+
+def test_application_status_transition_supports_assessment_after_submission() -> None:
+    job = Job(
+        source="manual",
+        source_url="https://example.com/jobs/backend",
+        company="Example",
+        title="Backend Engineer",
+        description="Build APIs.",
+    )
+
+    Application(job=job, status=ApplicationStatus.SUBMITTED).validate_status_transition(
+        ApplicationStatus.ASSESSMENT
+    )
+    Application(job=job, status=ApplicationStatus.ASSESSMENT).validate_status_transition(
+        ApplicationStatus.INTERVIEW
     )

@@ -13,3 +13,5 @@ writing_rules:
   - Never include raw URLs in visible CV text. Render known links as meaningful hyperlink labels.
   - Keep technical skills in the Technical Skills section and weave only relevant skills naturally into the summary and evidence-backed bullets.
   - TODO Add a presentation preference after reviewing a draft.
+tailoring_guidance:
+  - Use precise technology names from the evidence. For example, describe verified C# and .NET 8 work as C#/.NET 8 experience; do not imply Kotlin, AWS, or SaaS experience unless evidence supports it.

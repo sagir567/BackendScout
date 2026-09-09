@@ -1,9 +1,11 @@
 import json
+from collections import Counter
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any, Self
 
+from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import load_manifest, verify_manifest
 from backend_scout.models import (
     ApplicationDigestItem,
@@ -16,6 +18,8 @@ from backend_scout.notion import (
     update_application_status,
 )
 from backend_scout.revisions import save_revision_feedback
+from backend_scout.tailoring_notes import save_tailoring_note
+from backend_scout.task_queue import QueuedTaskKind, enqueue_task
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
@@ -26,6 +30,7 @@ class TelegramApprovalAction(str, Enum):
     REQUEST_REVISION = "request_revision"
     SEND_EMAIL = "send_email"
     CONFIRM_WHATSAPP = "confirm_whatsapp"
+    AUTHORIZE_PORTAL_SUBMIT = "authorize_portal_submit"
     CLOSE = "close"
 
 
@@ -75,6 +80,21 @@ class TelegramClient:
                 files={"document": (document_path.name, document)},
             )
         return self._parse_response(response, "sendDocument")
+
+    def send_photo(
+        self,
+        chat_id: int,
+        photo_path: Path,
+        caption: str,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"chat_id": str(chat_id), "caption": caption}
+        with photo_path.open("rb") as photo:
+            response = self._client.post(
+                "/sendPhoto",
+                data=payload,
+                files={"photo": (photo_path.name, photo)},
+            )
+        return self._parse_response(response, "sendPhoto")
 
     def answer_callback_query(self, callback_query_id: str, text: str) -> dict[str, Any]:
         return self._post("answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text})
@@ -132,84 +152,116 @@ def format_digest_message(item: ApplicationDigestItem) -> str:
     return "\n".join(lines)
 
 
-def build_digest_reply_markup(page_id: str) -> dict[str, Any]:
+def build_digest_reply_markup(page_id: str, tracker: TrackerName = TrackerName.TEST) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
                 {
                     "text": "Approve tailoring",
                     "callback_data": encode_callback_data(
-                        TelegramApprovalAction.APPROVE_TO_TAILOR, page_id
+                        TelegramApprovalAction.APPROVE_TO_TAILOR, page_id, tracker=tracker
                     ),
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
                 },
             ]
         ]
     }
 
 
-def build_cv_draft_reply_markup(page_id: str, draft_id: str) -> dict[str, Any]:
+def build_cv_draft_reply_markup(
+    page_id: str, draft_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
                 {
                     "text": "Approve this CV",
                     "callback_data": encode_callback_data(
-                        TelegramApprovalAction.APPROVE_TO_SUBMIT, page_id, draft_id
+                        TelegramApprovalAction.APPROVE_TO_SUBMIT, page_id, draft_id, tracker
                     ),
                 },
                 {
                     "text": "Request changes",
                     "callback_data": encode_callback_data(
-                        TelegramApprovalAction.REQUEST_REVISION, page_id, draft_id
+                        TelegramApprovalAction.REQUEST_REVISION, page_id, draft_id, tracker
                     ),
                 },
             ],
             [
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
                 },
             ]
         ]
     }
 
 
-def build_email_review_reply_markup(page_id: str, review_id: str) -> dict[str, Any]:
+def build_email_review_reply_markup(
+    page_id: str, review_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
                 {
                     "text": "Send approved email",
                     "callback_data": encode_callback_data(
-                        TelegramApprovalAction.SEND_EMAIL, page_id, review_id
+                        TelegramApprovalAction.SEND_EMAIL, page_id, review_id, tracker
                     ),
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
                 },
             ]
         ]
     }
 
 
-def build_whatsapp_handoff_reply_markup(page_id: str, handoff_id: str) -> dict[str, Any]:
+def build_whatsapp_handoff_reply_markup(
+    page_id: str, handoff_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
                 {
                     "text": "I sent this WhatsApp",
                     "callback_data": encode_callback_data(
-                        TelegramApprovalAction.CONFIRM_WHATSAPP, page_id, handoff_id
+                        TelegramApprovalAction.CONFIRM_WHATSAPP, page_id, handoff_id, tracker
                     ),
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id),
+                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
+                },
+            ]
+        ]
+    }
+
+
+def build_portal_submit_reply_markup(
+    page_id: str, authorization_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Submit now",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
+                        page_id,
+                        authorization_id,
+                        tracker,
+                    ),
+                },
+                {
+                    "text": "Close",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
                 },
             ]
         ]
@@ -220,8 +272,18 @@ def encode_callback_data(
     action: TelegramApprovalAction,
     page_id: str,
     draft_id: str | None = None,
+    tracker: TrackerName = TrackerName.TEST,
 ) -> str:
-    payload = f"{action.value}:{page_id}"
+    action_code = {
+        TelegramApprovalAction.APPROVE_TO_TAILOR: "t",
+        TelegramApprovalAction.APPROVE_TO_SUBMIT: "s",
+        TelegramApprovalAction.REQUEST_REVISION: "r",
+        TelegramApprovalAction.SEND_EMAIL: "e",
+        TelegramApprovalAction.CONFIRM_WHATSAPP: "w",
+        TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT: "p",
+        TelegramApprovalAction.CLOSE: "c",
+    }[action]
+    payload = f"{action_code}:{tracker.value[0]}:{page_id}"
     if draft_id:
         payload = f"{payload}:{draft_id}"
     if len(payload.encode("utf-8")) > 64:
@@ -229,12 +291,26 @@ def encode_callback_data(
     return payload
 
 
-def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str, str | None]:
-    action_value, separator, remainder = data.partition(":")
-    page_id, _draft_separator, draft_id = remainder.partition(":")
-    if not separator or not page_id:
+def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str, str | None, TrackerName]:
+    parts = data.split(":")
+    if len(parts) < 2:
         raise ValueError("Invalid callback payload")
-    return TelegramApprovalAction(action_value), page_id, draft_id or None
+    legacy_actions = {action.value for action in TelegramApprovalAction}
+    if parts[0] in legacy_actions:
+        return TelegramApprovalAction(parts[0]), parts[1], parts[2] if len(parts) > 2 else None, TrackerName.TEST
+    action = {
+        "t": TelegramApprovalAction.APPROVE_TO_TAILOR,
+        "s": TelegramApprovalAction.APPROVE_TO_SUBMIT,
+        "r": TelegramApprovalAction.REQUEST_REVISION,
+        "e": TelegramApprovalAction.SEND_EMAIL,
+        "w": TelegramApprovalAction.CONFIRM_WHATSAPP,
+        "p": TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
+        "c": TelegramApprovalAction.CLOSE,
+    }.get(parts[0])
+    tracker = {"t": TrackerName.TEST, "p": TrackerName.PRODUCTION}.get(parts[1])
+    if action is None or tracker is None or len(parts) < 3 or not parts[2]:
+        raise ValueError("Invalid callback payload")
+    return action, parts[2], parts[3] if len(parts) > 3 else None, tracker
 
 
 def send_digest_messages(
@@ -242,6 +318,7 @@ def send_digest_messages(
     notion_client: NotionClient,
     chat_id: int,
     items: list[ApplicationDigestItem],
+    tracker: TrackerName = TrackerName.TEST,
 ) -> list[dict[str, Any]]:
     sent_messages: list[dict[str, Any]] = []
     for item in items:
@@ -249,7 +326,7 @@ def send_digest_messages(
             telegram_client.send_message(
                 chat_id,
                 format_digest_message(item),
-                reply_markup=build_digest_reply_markup(item.notion_page_id),
+                reply_markup=build_digest_reply_markup(item.notion_page_id, tracker),
             )
         )
         if item.status == ApplicationStatus.FOUND:
@@ -269,20 +346,40 @@ def process_telegram_update(
     cv_archive_root: Path | None = None,
     email_delivery_handler: Callable[[str, str], None] | None = None,
     whatsapp_confirmation_handler: Callable[[str, str], None] | None = None,
+    tracker: TrackerName = TrackerName.TEST,
+    data_source_id: str | None = None,
+    portal_submission_authorization_handler: Callable[[str, str], None] | None = None,
 ) -> str | None:
     callback_query = update.get("callback_query")
     if not isinstance(callback_query, dict):
-        return _process_revision_message(telegram_client, notion_client, update, allowed_user_ids)
+        return _process_message(telegram_client, notion_client, update, allowed_user_ids, tracker, data_source_id)
 
     from_user = callback_query.get("from", {})
     user_id = from_user.get("id")
     if not isinstance(user_id, int) or user_id not in allowed_user_ids:
         return None
 
-    action, page_id, draft_id = parse_callback_data(callback_query.get("data", ""))
+    action, page_id, draft_id, callback_tracker = parse_callback_data(callback_query.get("data", ""))
+    if callback_tracker != tracker:
+        raise ValueError("Telegram action belongs to a different tracker")
+    callback_query_id = callback_query.get("id")
+    if isinstance(callback_query_id, str):
+        try:
+            telegram_client.answer_callback_query(callback_query_id, "Received. Processing...")
+        except ValueError:
+            pass
     page = notion_client.retrieve_page(page_id)
+    _assert_page_tracker(page, data_source_id)
     application = application_digest_item_from_page(page)
-    next_status = _status_for_action(action)
+    if action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
+        if not draft_id or portal_submission_authorization_handler is None:
+            raise ValueError("Portal submission requires a pending final approval")
+        if application.status != ApplicationStatus.SUBMISSION_PREPARED:
+            raise ValueError("Portal submission can only be authorized after browser preparation")
+        portal_submission_authorization_handler(page_id, draft_id)
+        next_status = application.status
+    else:
+        next_status = _status_for_action(action)
     if action in {
         TelegramApprovalAction.APPROVE_TO_SUBMIT,
         TelegramApprovalAction.REQUEST_REVISION,
@@ -291,7 +388,8 @@ def process_telegram_update(
             raise ValueError("CV review action requires an exact draft artifact")
         manifest = load_manifest(cv_archive_root, application.company, page_id)
         verify_manifest(manifest, draft_id)
-    validate_application_status_transition(application.status, next_status)
+    if action != TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
+        validate_application_status_transition(application.status, next_status)
     if action == TelegramApprovalAction.SEND_EMAIL:
         if not draft_id or email_delivery_handler is None:
             raise ValueError("Email delivery requires a reviewed email record")
@@ -303,6 +401,7 @@ def process_telegram_update(
     if action not in {
         TelegramApprovalAction.SEND_EMAIL,
         TelegramApprovalAction.CONFIRM_WHATSAPP,
+        TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
     }:
         update_application_status(notion_client, page_id, next_status)
 
@@ -310,17 +409,6 @@ def process_telegram_update(
     chat = message.get("chat", {})
     message_id = message.get("message_id")
     chat_id = chat.get("id")
-    callback_query_id = callback_query.get("id")
-    if isinstance(callback_query_id, str):
-        try:
-            telegram_client.answer_callback_query(
-                callback_query_id,
-                f"{application.company} -> {next_status.value}",
-            )
-        except ValueError:
-            # Telegram callback acknowledgements expire quickly. The durable Notion
-            # transition has already succeeded and must not be rolled back by UI feedback.
-            pass
     if isinstance(chat_id, int) and isinstance(message_id, int):
         try:
             telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
@@ -328,6 +416,11 @@ def process_telegram_update(
             if action == TelegramApprovalAction.REQUEST_REVISION:
                 message_text = (
                     f"Send revision feedback as /revise_{page_id} followed by the changes you want."
+                )
+            elif action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
+                message_text = (
+                    f"Final portal submission approved for {application.company}. "
+                    "Run apply resume within 15 minutes."
                 )
             telegram_client.send_message(
                 chat_id,
@@ -349,16 +442,20 @@ def _status_for_action(action: TelegramApprovalAction) -> ApplicationStatus:
         return ApplicationStatus.SUBMITTED
     if action == TelegramApprovalAction.CONFIRM_WHATSAPP:
         return ApplicationStatus.SUBMITTED
+    if action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
+        return ApplicationStatus.SUBMISSION_PREPARED
     if action == TelegramApprovalAction.CLOSE:
         return ApplicationStatus.CLOSED
     raise ValueError(f"Unsupported Telegram approval action: {action.value}")
 
 
-def _process_revision_message(
+def _process_message(
     telegram_client: TelegramClient,
     notion_client: NotionClient,
     update: dict[str, Any],
     allowed_user_ids: set[int],
+    tracker: TrackerName,
+    data_source_id: str | None,
 ) -> str | None:
     message = update.get("message")
     if not isinstance(message, dict):
@@ -368,18 +465,84 @@ def _process_revision_message(
     text = message.get("text")
     if not isinstance(user_id, int) or user_id not in allowed_user_ids or not isinstance(text, str):
         return None
-    command, separator, feedback = text.partition(" ")
-    if not separator or not command.startswith("/revise_"):
-        return None
-    page_id = command.removeprefix("/revise_")
-    application = application_digest_item_from_page(notion_client.retrieve_page(page_id))
-    if application.status != ApplicationStatus.REVISION_REQUESTED:
-        raise ValueError("Revision feedback is only accepted after Request changes")
-    save_revision_feedback(page_id, feedback)
+    command, _, feedback = text.strip().partition(" ")
+    feedback = feedback.strip()
     chat = message.get("chat", {})
-    if isinstance(chat.get("id"), int):
+    chat_id = chat.get("id")
+    if command.casefold() in {"/status", "status"}:
+        counts = _application_status_counts(notion_client, data_source_id)
+        confirmation = _format_status_counts(counts, tracker)
+        result = "status_sent"
+    elif command.casefold() in {"/scout", "/scout_today", "scout"} or text.strip().casefold() in {
+        "run scout",
+        "run today's scout",
+        "run todays scout",
+    }:
+        payload: dict[str, Any] = {}
+        if isinstance(chat_id, int):
+            payload["chat_id"] = chat_id
+        task = enqueue_task(QueuedTaskKind.SCOUT_TODAY, tracker, payload)
+        confirmation = f"Queued today's {tracker.value} scout. Task: {task.task_id}."
+        result = "scout_queued"
+    elif command.startswith("/revise_"):
+        if not feedback:
+            raise ValueError("Revision feedback cannot be empty")
+        page_id = command.removeprefix("/revise_")
+        page = notion_client.retrieve_page(page_id)
+        _assert_page_tracker(page, data_source_id)
+        application = application_digest_item_from_page(page)
+        if application.status != ApplicationStatus.REVISION_REQUESTED:
+            raise ValueError("Revision feedback is only accepted after Request changes")
+        save_revision_feedback(page_id, feedback)
+        confirmation = f"Saved revision feedback for {application.company}. Run cv revise to create versioned files."
+        result = "revision_feedback_saved"
+    elif command.startswith("/tailor_"):
+        if not feedback:
+            raise ValueError("Tailoring note cannot be empty")
+        page_id = command.removeprefix("/tailor_")
+        page = notion_client.retrieve_page(page_id)
+        _assert_page_tracker(page, data_source_id)
+        application = application_digest_item_from_page(page)
+        if application.status not in {ApplicationStatus.DIGEST_SENT, ApplicationStatus.APPROVED_TO_TAILOR}:
+            raise ValueError("Tailoring notes are accepted only before a CV draft is created")
+        save_tailoring_note(page_id, tracker.value, feedback)
+        confirmation = f"Saved tailoring note for {application.company}. It will guide the next evidence-only CV draft."
+        result = "tailoring_note_saved"
+    else:
+        return None
+    if isinstance(chat_id, int):
         telegram_client.send_message(
-            chat["id"],
-            f"Saved revision feedback for {application.company}. Run cv revise to create versioned files.",
+            chat_id,
+            confirmation,
         )
-    return "revision_feedback_saved"
+    return result
+
+
+def _assert_page_tracker(page: dict[str, Any], data_source_id: str | None) -> None:
+    if data_source_id is None:
+        return
+    parent = page.get("parent")
+    if not isinstance(parent, dict):
+        return
+    page_data_source_id = parent.get("data_source_id")
+    if page_data_source_id is not None and page_data_source_id != data_source_id:
+        raise ValueError("Notion page belongs to a different tracker")
+
+
+def _application_status_counts(notion_client: NotionClient, data_source_id: str | None) -> Counter[str]:
+    if data_source_id is None:
+        return Counter()
+    result = notion_client.query_data_source(data_source_id, {"page_size": 100})
+    counts: Counter[str] = Counter()
+    for page in result.get("results", []):
+        if not isinstance(page, dict):
+            continue
+        counts[application_digest_item_from_page(page).status.value] += 1
+    return counts
+
+
+def _format_status_counts(counts: Counter[str], tracker: TrackerName) -> str:
+    if not counts:
+        return f"BackendScout {tracker.value} status: no tracked applications found."
+    parts = [f"{status}: {count}" for status, count in sorted(counts.items())]
+    return f"BackendScout {tracker.value} status\n" + "\n".join(parts)

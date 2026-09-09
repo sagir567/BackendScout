@@ -152,6 +152,7 @@ Required properties:
 | Status | Status |
 | Source | Text |
 | Source URL | URL |
+| Application URL | URL, required before portal preparation |
 | Location | Text |
 | Remote Policy | Text |
 | Employment Type | Text |
@@ -166,13 +167,14 @@ Required properties:
 | Contact Source | Text, required only before real delivery |
 | Submission Record | Text, required only before real delivery |
 
-Use `notion add-submission-fields` to add these delivery-only columns to the
-configured data source. It is idempotent and refuses type conflicts.
+Use `notion add-submission-fields --tracker production` to add the application
+URL and delivery-only columns to the production data source. It is idempotent
+and refuses type conflicts.
 
 Validation command:
 
 ```bash
-uv run --no-editable backend-scout notion check
+uv run --no-editable backend-scout notion check --tracker test
 ```
 
 ## Phase 4: Job Collection
@@ -211,6 +213,19 @@ uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --writ
 ```
 
 The import command is preview-only unless `--write-notion` is passed.
+
+Public ATS collector progress:
+
+- [x] Add Greenhouse, Lever, and Ashby collectors that use published job-board
+  JSON only; none calls an ATS application endpoint.
+- [x] Add a private `target_companies.yaml` worksheet with enabled/disabled
+  boards and Israel-relevant starter companies.
+- [x] Filter collection results to Israel locations or remote roles before
+  transparent scoring and Notion sync.
+- [x] Add a `launchd` template that invokes the same tested CLI command used
+  for a manual daily collection.
+- [ ] Add a reviewed source for Israeli job aggregators only after confirming a
+  stable public feed and its permitted use.
 
 Current import behavior:
 
@@ -293,6 +308,17 @@ Current implementation as of 2026-08-31:
 - Sending a digest moves `found` jobs to `digest_sent`.
 - `telegram poll-once` consumes Telegram callback updates once and stores the
   last processed Telegram update ID in `data/telegram/last_update_id.txt`.
+- `telegram listen --tracker production` continuously long-polls the production
+  workflow. `scripts/run_telegram_listener.sh` and its `launchd` template keep
+  it alive across terminal sessions and write only local ignored logs.
+- The listener processes only authorized callback buttons and the explicit
+  `/tailor_<page-id>`, `/revise_<page-id>`, `/status`, and `/scout` commands.
+  Free-form messages do not authorize a draft, delivery, or external submission.
+- Telegram callback queries are acknowledged immediately before slower Notion,
+  Gmail, or browser work starts, so buttons should stop blinking quickly.
+- `/scout` creates a local queued `scout_today` task. `tasks worker-once` can
+  run that task through the same production collector and digest path used by
+  the morning scheduler.
 - Only configured Telegram user IDs may trigger approval actions.
 - `Approve tailoring` transitions `digest_sent -> approved_to_tailor`.
 - `Close` transitions the current job to `closed` when that transition is valid.
@@ -324,6 +350,7 @@ Approval:
 
 ```text
 No CV artifact is submitted or archived as submitted until the candidate approves it.
+```
 
 Current implementation as of 2026-09-01:
 
@@ -342,6 +369,20 @@ Current implementation as of 2026-09-01:
   headline under the candidate name and prohibits visible raw URLs.
 - DOCX contact and project links render as labeled external hyperlinks, such as
   `GitHub` and `LinkedIn`, rather than printing full URLs.
+- The final PDF must be exactly one page and use at least 90% of the usable
+  page height. BackendScout measures the rendered PDF locally with pdfplumber,
+  selects the fullest valid layout candidate, and fails before delivery if it
+  cannot satisfy both conditions.
+- Before drafting, `cv coverage <notion-page-id>` measures the factual evidence
+  ledger against the job's explicit requirements. Its 90/100 target is separate
+  from the match score: tailoring can improve presentation, but it cannot make a
+  job more suitable or introduce unsupported qualifications. Below target, CV
+  creation pauses and produces targeted factual questions. Confirmed answers are
+  added to the private evidence ledger; a skill gap remains open until backed by
+  real work or a completed project.
+- The first version presents coverage questions in the active conversation. Its
+  result is transport-neutral so Telegram can send the same questions and store
+  the answers in a later approval-loop slice.
 - The Telegram document sender uses multipart uploads and redacts request URLs
   from failures so a bot token is never printed in an error message.
 - A live test created and delivered a one-page DOCX/PDF pair to the configured
@@ -360,7 +401,13 @@ Current implementation as of 2026-09-01:
 - Link labels are set per URL in the private `cv_style.yaml`, which allows
   personal GitHub, organization GitHub, LinkedIn, and project links to remain
   distinct without exposing raw URLs.
-```
+- The private `tailoring_guidance` list in `cv_style.yaml` holds reusable
+  precision rules. It can describe how verified technologies should be named,
+  but cannot authorize unsupported claims.
+- Before a draft exists, an authorized user can send
+  `/tailor_<page-id> <instruction>` in Telegram. The private note is scoped to
+  the selected tracker and incorporated into the next draft as emphasis-only
+  guidance. Its SHA-256 digest is retained in the immutable draft manifest.
 
 ## Phase 8: Submission And Tracking
 
@@ -384,21 +431,56 @@ Not allowed:
 
 Current implementation:
 
+- Two Notion data sources separate testing from real applications. Tracker-aware
+  commands default to `test`; production commands must pass
+  `--tracker production`. Telegram callback payloads include a compact tracker
+  code and reject cross-tracker actions.
+- `jobs promote` copies one test row to a fresh production workflow only after a
+  verified direct company `Application URL` is supplied. It preserves the
+  discovery `Source URL`, recalculates the score, and requires new approvals.
+- `notion add-submission-fields` provisions the delivery properties and every
+  workflow value used by the status machine. It preserves existing Notion
+  status options while adding only missing values.
+
 - Contact discovery accepts only details visibly present in the job description
   and an explicit official company careers/contact URL. It saves a private local
   record before an email review may name a recipient.
-- Gmail uses a local OAuth desktop flow with only `gmail.send`; its refresh token
-  is held in macOS Keychain. Telegram shows the recipient, source, exact body,
-  and approved attachment before the delivery button becomes available.
+- Gmail uses a local OAuth desktop flow with `gmail.send` and `gmail.readonly`;
+  its refresh token is held in macOS Keychain. Send is used only for approved
+  outreach, and readonly is used for inbox status tracking. Telegram shows the
+  recipient, source, exact body, and approved attachment before the delivery
+  button becomes available.
 - A Gmail success writes `submitted`, `email`, contact source, Gmail message ID,
   timestamp context, and exact CV draft ID to Notion.
 - Portal preparation uses a dedicated visible Playwright profile. It fills only
   clear name/email/phone/location fields and a file upload, then stops for all
   ambiguous questions. CAPTCHA detection transitions to
   `awaiting_human_verification`; Chrome Remote Desktop is human-operated.
-- `apply resume` may click an unambiguous submit control only after the final
-  CV/job approval. It records a portal submission only when the page visibly
-  confirms it; a click without confirmation stays `submission_prepared`.
+- The portal submit path verifies that the exact approved PDF is attached to
+  the Resume/CV input in the active browser session. Missing required fields or
+  an unverified attachment prevent the submit click.
+- When an official careers page uses a public `Apply Now` link to hand off to
+  an ATS, portal preparation follows that navigation before field detection.
+- Ambiguous form answers are saved only after candidate confirmation, in a
+  private per-application record that is bound to its Notion page and tracker.
+- A candidate may explicitly save a response as private reusable guidance. It
+  remains editable per role and never overrides job-specific candidate input.
+- Portal adapters prefer accessible field labels and native file inputs over
+  generated DOM IDs, including Wix-hosted forms.
+- `apply request-submit` sends a final Telegram review that names the company,
+  role, portal host, and exact CV draft. Its private authorization is bound to
+  the page, tracker, portal URL, DOCX checksum, and PDF checksum; it expires
+  after 15 minutes and can be consumed once.
+- `apply resume` may click an unambiguous submit control only after that final
+  Telegram approval. If a CAPTCHA appears after that click, it keeps the
+  visible browser open for the configured remote-verification wait window (600
+  seconds by default), without solving or inspecting the challenge. It records
+  a portal submission only when the page visibly confirms it; a click without
+  confirmation stays `submission_prepared` and consumes the approval
+  conservatively.
+- On confirmed portal success, BackendScout captures a full-page screenshot,
+  stores it under the private proof root, hashes it, sends it to Telegram, and
+  appends the proof path/checksum to Notion's submission record.
 - WhatsApp remains prepared-user-send only. It is never auto-messaged.
 
 ## Phase 9: Interview Prep
@@ -410,6 +492,30 @@ After approval or submission, generate a prep packet:
 - Missing skills checklist.
 - Mini-project ideas if a gap is meaningful.
 
+## Phase 10: Repository Evidence And Inbox Intelligence
+
+The agent should become better at learning from existing proof without making
+unsupported claims.
+
+Repository scanner rules:
+
+- Scan only configured local Git roots and public GitHub owners.
+- Detect languages, frameworks, dependency files, Docker, CI/CD, test tools, and
+  high-level project metadata.
+- Produce proposals only. A detected technology is not added to the profile or
+  evidence ledger until approved in Telegram.
+- Use repository evidence to ask better factual questions, not to inflate CV
+  claims.
+
+Inbox watcher rules:
+
+- Use Gmail readonly metadata/snippets to classify obvious application updates.
+- Mark confirmations, rejections, assessments, interviews, and offers only when
+  the signal is clear and the email matches an existing application.
+- Send morning digest updates by default; notify immediately only for messages
+  that need action, such as an interview or assessment.
+- Keep ambiguous recruiting messages as review items instead of changing Notion.
+
 ## Current Next Checkpoint
 
 TODO:
@@ -420,9 +526,17 @@ TODO:
   personal GitHub versus an organization or project GitHub.
 - [x] Add reviewed Gmail delivery with a Keychain-held OAuth token.
 - [x] Add contact discovery limited to the job post and explicit official company pages.
-- [x] Add conservative portal preparation and a human-verification workflow state.
-- [ ] Add a first collector for one public job source.
-- [ ] Add a digest command that chooses the target Telegram chat automatically from config.
+- [x] Add conservative portal preparation, a human-verification workflow state,
+  and a one-time final Telegram submit authorization tied to the exact CV files.
+- [x] Add public Greenhouse, Lever, and Ashby collectors for Israel-relevant roles.
+- [x] Add a digest command that chooses the target Telegram chat automatically from config.
+- [x] Add test/production Notion tracker separation and explicit promotion.
+- [x] Add private global and Telegram per-job CV tailoring guidance.
+- [x] Add Linux/HPC and multithreading evidence coverage for the Infinidat role.
+- [x] Add read-only repository scanning with proposal reports and Telegram review.
+- [x] Add fast Telegram callback acknowledgements, `/status`, `/scout`, and a local task queue.
+- [x] Add portal proof screenshot capture and Notion audit fields.
+- [x] Add Gmail readonly mailbox classification and a 15-minute launchd watcher template.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
-- [ ] Keep submission disabled until `approved_to_submit`.
+- [x] Keep submission disabled until `approved_to_submit`.
 ```

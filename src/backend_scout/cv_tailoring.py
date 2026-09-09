@@ -66,6 +66,7 @@ def generate_tailored_cv(
     api_key: str,
     model: str,
     revision_feedback: str | None = None,
+    tailoring_note: str | None = None,
 ) -> TailoredCv:
     """Generate a structured CV draft with strict evidence citations."""
     from openai import OpenAI
@@ -79,6 +80,7 @@ def generate_tailored_cv(
                 "career_evidence": evidence.model_dump(mode="json"),
                 "cv_style": style.model_dump(mode="json"),
                 "revision_feedback": revision_feedback,
+                "tailoring_note": tailoring_note,
             },
             ensure_ascii=False,
         ),

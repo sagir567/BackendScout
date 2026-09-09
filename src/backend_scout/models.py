@@ -39,6 +39,7 @@ class ApplicationStatus(str, Enum):
     AWAITING_HUMAN_VERIFICATION = "awaiting_human_verification"
     SUBMITTED = "submitted"
     RECRUITER_REPLY = "recruiter_reply"
+    ASSESSMENT = "assessment"
     INTERVIEW = "interview"
     REJECTED = "rejected"
     OFFER = "offer"
@@ -68,6 +69,7 @@ class Job(BaseModel):
 
     source: str
     source_url: str
+    application_url: str | None = None
     company: str
     title: str
     location: str | None = None
@@ -94,6 +96,7 @@ class Job(BaseModel):
         return normalized
 
     @field_validator(
+        "application_url",
         "location",
         "employment_type",
         "remote_policy",
@@ -379,12 +382,16 @@ class CvStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     include_headline: bool = False
-    target_page_count: int = Field(default=1, ge=1, le=2)
+    target_page_count: int = Field(default=1, ge=1, le=1)
     show_raw_urls: bool = False
     link_labels: dict[str, str] = Field(default_factory=dict)
     writing_rules: list[str] = Field(default_factory=list)
+    tailoring_guidance: list[str] = Field(default_factory=list)
 
     _normalize_writing_rules = field_validator("writing_rules", mode="before")(
+        _normalize_string_list
+    )
+    _normalize_tailoring_guidance = field_validator("tailoring_guidance", mode="before")(
         _normalize_string_list
     )
 
@@ -514,6 +521,40 @@ class MatchResult(BaseModel):
         return self
 
 
+class CvEvidenceCoverage(BaseModel):
+    """How well the factual evidence ledger covers a job's explicit requirements."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    coverage_score: int = Field(ge=0, le=100)
+    target_score: int = Field(default=90, ge=1, le=100)
+    covered_requirements: list[str] = Field(default_factory=list)
+    missing_requirements: list[str] = Field(default_factory=list)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    clarification_questions: list[str] = Field(default_factory=list)
+    summary: str
+
+    @field_validator(
+        "covered_requirements",
+        "missing_requirements",
+        "supporting_evidence_ids",
+        "clarification_questions",
+        mode="before",
+    )
+    @classmethod
+    def normalize_coverage_lists(cls, values: Any) -> Any:
+        return CandidateProfile.normalize_string_lists(values)
+
+    _normalize_summary = field_validator("summary", mode="before")(_normalize_required_string)
+
+    @model_validator(mode="after")
+    def require_coverage_lists_to_match_score(self) -> Self:
+        total = len(self.covered_requirements) + len(self.missing_requirements)
+        if total and self.coverage_score != round((len(self.covered_requirements) / total) * 100):
+            raise ValueError("coverage_score must match covered and missing requirement counts")
+        return self
+
+
 APPLICATION_STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.FOUND: {ApplicationStatus.DIGEST_SENT, ApplicationStatus.CLOSED},
     ApplicationStatus.DIGEST_SENT: {ApplicationStatus.APPROVED_TO_TAILOR, ApplicationStatus.CLOSED},
@@ -540,12 +581,20 @@ APPLICATION_STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] 
     },
     ApplicationStatus.SUBMITTED: {
         ApplicationStatus.RECRUITER_REPLY,
+        ApplicationStatus.ASSESSMENT,
         ApplicationStatus.INTERVIEW,
         ApplicationStatus.REJECTED,
         ApplicationStatus.OFFER,
         ApplicationStatus.CLOSED,
     },
     ApplicationStatus.RECRUITER_REPLY: {
+        ApplicationStatus.ASSESSMENT,
+        ApplicationStatus.INTERVIEW,
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.OFFER,
+        ApplicationStatus.CLOSED,
+    },
+    ApplicationStatus.ASSESSMENT: {
         ApplicationStatus.INTERVIEW,
         ApplicationStatus.REJECTED,
         ApplicationStatus.OFFER,
@@ -608,6 +657,7 @@ class ApplicationDigestItem(BaseModel):
     status: ApplicationStatus
     source: str
     source_url: str
+    application_url: str | None = None
     location: str | None = None
     remote_policy: str | None = None
     employment_type: str | None = None

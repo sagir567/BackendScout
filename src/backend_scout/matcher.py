@@ -26,21 +26,71 @@ SKILL_ALIASES = {
     "redis": {"redis"},
     "docker": {"docker", "containers", "containerization"},
     "azure": {"azure", "azure vm", "azure vms", "azure cloud"},
-    "postgresql": {"postgresql", "postgres", "psql"},
+    "postgresql": {"postgresql", "postgres", "psql", "relational database", "relational databases"},
     "cosmos db": {"cosmos db", "azure cosmos db", "cosmos"},
     "backend systems": {"backend", "backend systems", "server side", "distributed backend"},
     "data pipelines": {"data pipeline", "data pipelines", "etl"},
     "c#": {"c#", "c sharp"},
+    "dotnet": {"net", "net 8", "dotnet", "dotnet 8", "asp net core", "aspnet core"},
+    "oop": {"oop", "object oriented programming", "object oriented"},
+    "sql": {"sql", "postgresql", "postgres", "relational database", "relational databases"},
+    "ci cd": {"ci cd", "cicd", "continuous integration", "continuous delivery"},
+    "cloud": {"cloud", "cloud computing", "azure", "gcs", "google cloud storage"},
+    "c++": {"c++", "cpp", "c plus plus"},
+    "linux": {"linux", "linux based", "linux-based"},
+    "git": {"git", "github", "version control"},
+    "computer science degree": {
+        "b sc computer science",
+        "bsc computer science",
+        "b sc computer science or equivalent",
+        "bsc computer science or equivalent",
+        "computer science degree",
+        "computer science or equivalent",
+    },
+    "problem solving": {"problem solving", "problem-solving", "algorithmic thinking"},
+    "large codebase": {
+        "large codebase",
+        "large code base",
+        "large codebase comprehension",
+        "large code base comprehension",
+        "complex codebase",
+        "complex code base",
+    },
+    "multithreading": {
+        "multithreading",
+        "multithreaded debugging",
+        "multithreaded programming",
+        "multithreaded programming and debugging",
+        "multi threading",
+        "multi threaded",
+        "multi threaded debugging",
+        "multi-threaded",
+        "multi-threaded debugging",
+        "concurrency",
+        "threading",
+    },
+    "storage": {"storage", "data storage", "cloud storage"},
+    "clustered systems": {"clustered systems", "clustered", "distributed systems"},
+    "performance": {
+        "performance",
+        "performance oriented development",
+        "performance-oriented development",
+        "performance optimization",
+    },
+    "enterprise software": {"enterprise software", "enterprise class software", "enterprise-class software"},
 }
 
 BACKEND_SIGNAL_KEYWORDS = {
     "backend",
     "api",
     "apis",
+    "c++",
     "fastapi",
+    "linux",
     "microservice",
     "microservices",
     "server",
+    "side",
     "database",
     "databases",
     "redis",
@@ -51,6 +101,19 @@ BACKEND_SIGNAL_KEYWORDS = {
 }
 
 UNKNOWN_SALARY_MARKERS = {"not listed", "not provided", "unknown", "competitive", "tbd", "n/a"}
+ISRAEL_LOCATION_TERMS = {
+    "israel",
+    "tel aviv",
+    "telaviv",
+    "herzliya",
+    "haifa",
+    "jerusalem",
+    "raanana",
+    "netanya",
+    "petah tikva",
+    "rishon lezion",
+    "beer sheva",
+}
 
 
 @dataclass(frozen=True)
@@ -116,7 +179,9 @@ def _score_role_relevance(
     title_tokens = _keyword_set(job.title)
     description_tokens = _keyword_set(job.description)
     target_role_hits = [
-        role for role in profile.target_roles if _normalize_text(role) in title or title in _normalize_text(role)
+        role
+        for role in profile.target_roles
+        if _roles_match(_normalize_text(role), title)
     ]
 
     roles_to_avoid = [_normalize_text(role) for role in profile.constraints.roles_to_avoid]
@@ -140,6 +205,18 @@ def _score_role_relevance(
         "backend" in _normalize_text(role) or "python" in _normalize_text(role)
         for role in target_role_hits
     )
+
+    if target_role_hits and has_backend_signals:
+        strengths.append("Title aligns directly with your target roles and the description has backend signals.")
+        return (
+            ScoreBreakdownItem(
+                component="role_relevance",
+                points_awarded=ROLE_RELEVANCE_MAX,
+                points_max=ROLE_RELEVANCE_MAX,
+                reason="Direct target-role match with backend or server-side signals.",
+            ),
+            False,
+        )
 
     if direct_backend_target_hit or has_backend_title:
         strengths.append("Title aligns directly with your backend target roles.")
@@ -574,6 +651,15 @@ def _canonical_skill(skill: str) -> str:
     return normalized_skill
 
 
+def _roles_match(normalized_target_role: str, normalized_title: str) -> bool:
+    if normalized_target_role in normalized_title or normalized_title in normalized_target_role:
+        return True
+    software_roles = {"software engineer", "software developer"}
+    return normalized_target_role in software_roles and any(
+        role in normalized_title for role in software_roles
+    )
+
+
 def _extract_minimum_years(years_text: str | None) -> int | None:
     if not years_text:
         return None
@@ -610,6 +696,10 @@ def _location_matches(profile: CandidateProfile, location: str | None) -> bool:
         if normalized_target == "remote":
             continue
         if normalized_target in normalized_location or normalized_location in normalized_target:
+            return True
+        if normalized_target == "israel" and any(
+            term in normalized_location for term in ISRAEL_LOCATION_TERMS
+        ):
             return True
 
     return False

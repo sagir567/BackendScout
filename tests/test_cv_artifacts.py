@@ -23,9 +23,25 @@ def test_manifest_binds_a_draft_to_its_exact_docx(tmp_path: Path) -> None:
     loaded = load_manifest(tmp_path, "Example Cloud", "page-123")
 
     verify_manifest(loaded, written.draft_id)
+    assert loaded.tracker == "test"
+    assert loaded.pdf_sha256 is not None
     docx_path.write_bytes(b"changed docx bytes")
     with pytest.raises(ValueError, match="changed after"):
         verify_manifest(loaded, written.draft_id)
+
+
+def test_manifest_rejects_a_changed_pdf_when_it_has_a_checksum(tmp_path: Path) -> None:
+    directory = draft_directory(tmp_path, "Example Cloud", "page-123")
+    directory.mkdir(parents=True)
+    docx_path = directory / "cv_draft.docx"
+    pdf_path = directory / "cv_draft.pdf"
+    docx_path.write_bytes(b"docx")
+    pdf_path.write_bytes(b"original pdf")
+    manifest = write_manifest(directory, "page-123", "Example Cloud", "Backend Engineer", docx_path, pdf_path)
+
+    pdf_path.write_bytes(b"changed pdf")
+    with pytest.raises(ValueError, match="PDF changed"):
+        verify_manifest(manifest, manifest.draft_id)
 
 
 def test_latest_versioned_manifest_rejects_an_older_draft_approval(tmp_path: Path) -> None:
@@ -49,3 +65,25 @@ def test_latest_versioned_manifest_rejects_an_older_draft_approval(tmp_path: Pat
     assert latest.draft_id == second_manifest.draft_id
     with pytest.raises(ValueError, match="does not match"):
         verify_manifest(latest, first_manifest.draft_id)
+
+
+def test_manifest_records_the_tracker_and_tailoring_note_digest(tmp_path: Path) -> None:
+    directory = draft_directory(tmp_path, "Example", "page-9")
+    directory.mkdir(parents=True)
+    docx_path, pdf_path = directory / "cv.docx", directory / "cv.pdf"
+    docx_path.write_bytes(b"docx")
+    pdf_path.write_bytes(b"pdf")
+
+    manifest = write_manifest(
+        directory,
+        "page-9",
+        "Example",
+        "Backend Engineer",
+        docx_path,
+        pdf_path,
+        tracker="production",
+        tailoring_note="Emphasize the verified .NET 8 project.",
+    )
+
+    assert manifest.tracker == "production"
+    assert manifest.tailoring_note_sha256 is not None

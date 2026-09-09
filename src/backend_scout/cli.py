@@ -1,59 +1,101 @@
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
+import httpx
 import typer
 from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from backend_scout.application_answers import load_application_form_answers
 from backend_scout.candidate_profile import (
     DEFAULT_PROFILE_PATH,
     candidate_profile_warnings,
     load_candidate_profile,
 )
 from backend_scout.career_evidence import DEFAULT_CAREER_EVIDENCE_PATH, load_career_evidence
-from backend_scout.config import Settings
+from backend_scout.collectors import collect_public_jobs, is_israel_or_remote
+from backend_scout.config import Settings, TrackerName
 from backend_scout.contact_records import require_verified_contact, save_contacts
 from backend_scout.contacts import discover_job_post_contacts, discover_official_page_contacts
 from backend_scout.cv_artifacts import (
+    draft_directory,
     load_manifest,
     next_draft_directory,
     verify_manifest,
     write_manifest,
 )
-from backend_scout.cv_documents import convert_docx_to_pdf, create_cv_docx
+from backend_scout.cv_coverage import CV_EVIDENCE_COVERAGE_TARGET, assess_cv_evidence_coverage
+from backend_scout.cv_documents import render_checked_cv_artifacts
 from backend_scout.cv_style import DEFAULT_CV_STYLE_PATH, load_cv_style
 from backend_scout.cv_tailoring import (
     build_evidence_only_draft,
     generate_tailored_cv,
     validate_tailored_cv_against_evidence,
 )
-from backend_scout.gmail import connect_gmail, gmail_connected, send_email
+from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
 from backend_scout.job_imports import (
     job_with_match_result,
     load_manual_job_import,
     score_manual_job_import,
     unique_scored_jobs,
 )
+from backend_scout.mailbox import (
+    DEFAULT_MAILBOX_QUERY,
+    classify_gmail_message,
+    format_mailbox_digest,
+    match_message_to_application,
+)
 from backend_scout.matcher import ScoredJob, score_jobs
-from backend_scout.models import ApplicationStatus, Job
+from backend_scout.models import (
+    ApplicationDigestItem,
+    ApplicationStatus,
+    CvEvidenceCoverage,
+    Job,
+    can_transition_application_status,
+)
 from backend_scout.notion import (
     NotionClient,
     application_digest_item_from_page,
     job_from_application_page,
     list_jobs_by_status,
     missing_submission_property_definitions,
+    missing_workflow_status_property_definition,
+    missing_workflow_statuses,
     upsert_job_page,
     validate_applications_data_source,
     validate_submission_data_source,
 )
 from backend_scout.outreach import build_email_review, load_email_review, save_email_review
+from backend_scout.portal_authorizations import (
+    authorize_portal_submit,
+    consume_portal_submit_authorization,
+    create_portal_submit_authorization,
+    find_pending_portal_submit_authorization,
+)
+from backend_scout.repo_scanner import (
+    DEFAULT_REPO_SOURCES_PATH,
+    format_repo_scan_report,
+    load_repo_sources,
+    scan_repositories,
+)
 from backend_scout.revisions import load_revision_feedback
 from backend_scout.submission import prepare_visible_submission, submit_visible_submission
+from backend_scout.tailoring_notes import load_tailoring_note
+from backend_scout.targets import DEFAULT_TARGET_COMPANIES_PATH, load_target_companies
+from backend_scout.task_queue import (
+    DEFAULT_TASK_QUEUE_PATH,
+    QueuedTaskKind,
+    QueuedTaskStatus,
+    list_tasks,
+    mark_task_status,
+)
 from backend_scout.telegram import (
     TelegramClient,
     build_cv_draft_reply_markup,
     build_email_review_reply_markup,
+    build_portal_submit_reply_markup,
     build_whatsapp_handoff_reply_markup,
     process_telegram_update,
     send_digest_messages,
@@ -75,6 +117,9 @@ cv_app = typer.Typer(help="Truthful, approval-gated CV draft commands.")
 gmail_app = typer.Typer(help="Gmail OAuth setup and reviewed email delivery.")
 contacts_app = typer.Typer(help="Discover and review verified employer contacts.")
 apply_app = typer.Typer(help="Prepare conservative browser-assisted submissions.")
+collect_app = typer.Typer(help="Collect public ATS jobs for Israel and approved remote work.")
+repos_app = typer.Typer(help="Scan Git repositories and propose evidence updates.")
+tasks_app = typer.Typer(help="Run queued Telegram-first work items.")
 console = Console()
 TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
 
@@ -95,6 +140,50 @@ CvStylePathOption = Annotated[
     Path,
     typer.Option("--style-path", help="Private CV style YAML path."),
 ]
+TargetCompaniesPathOption = Annotated[
+    Path,
+    typer.Option("--targets-path", help="Private target-company YAML path."),
+]
+RepoSourcesPathOption = Annotated[
+    Path,
+    typer.Option("--path", help="Private repository-source YAML path."),
+]
+TrackerOption = Annotated[
+    TrackerName,
+    typer.Option("--tracker", help="Notion tracker to use. Defaults to the isolated test tracker."),
+]
+
+
+def _tracker_data_source_id(settings: Settings, tracker: TrackerName) -> str | None:
+    resolver = getattr(settings, "applications_data_source_id_for", None)
+    if callable(resolver):
+        return resolver(tracker)
+    if tracker == TrackerName.PRODUCTION:
+        return getattr(settings, "notion_production_applications_data_source_id", None)
+    return getattr(settings, "notion_test_applications_data_source_id", None) or getattr(
+        settings, "notion_applications_data_source_id", None
+    )
+
+
+def _require_tracker_data_source_id(settings: Settings, tracker: TrackerName) -> str:
+    data_source_id = _tracker_data_source_id(settings, tracker)
+    if data_source_id:
+        return data_source_id
+    env_name = (
+        "NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID"
+        if tracker == TrackerName.PRODUCTION
+        else "NOTION_TEST_APPLICATIONS_DATA_SOURCE_ID"
+    )
+    raise ValueError(f"Missing {env_name} in .env")
+
+
+def _require_page_in_tracker(page: dict[str, object], data_source_id: str) -> None:
+    parent = page.get("parent")
+    if not isinstance(parent, dict):
+        return
+    page_data_source_id = parent.get("data_source_id")
+    if page_data_source_id is not None and page_data_source_id != data_source_id:
+        raise ValueError("Notion page belongs to a different tracker")
 
 
 @app.command()
@@ -107,8 +196,12 @@ def status() -> None:
     table.add_column("Value")
     table.add_row("Notion API version", settings.notion_api_version)
     table.add_row(
-        "Notion applications data source",
-        "configured" if settings.notion_applications_data_source_id else "missing",
+        "Notion test data source",
+        "configured" if _tracker_data_source_id(settings, TrackerName.TEST) else "missing",
+    )
+    table.add_row(
+        "Notion production data source",
+        "configured" if _tracker_data_source_id(settings, TrackerName.PRODUCTION) else "missing",
     )
     table.add_row("Notion API key", "configured" if settings.notion_api_key else "missing")
     table.add_row("Telegram bot token", "configured" if settings.telegram_bot_token else "missing")
@@ -187,6 +280,7 @@ def jobs_import(
             help="Create Notion rows. Without this flag the command is preview-only.",
         ),
     ] = False,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Preview or write manually imported jobs to Notion."""
     try:
@@ -209,16 +303,18 @@ def jobs_import(
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
-    if not settings.notion_applications_data_source_id:
-        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
-        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     try:
         with NotionClient(
             api_key=settings.notion_api_key,
             api_version=settings.notion_api_version,
         ) as client:
-            data_source = client.retrieve_data_source(settings.notion_applications_data_source_id)
+            data_source = client.retrieve_data_source(data_source_id)
             problems = validate_applications_data_source(data_source)
             if problems:
                 console.print("[yellow]Connected to Notion, but the Applications schema needs fixes:[/yellow]")
@@ -229,7 +325,7 @@ def jobs_import(
             actions = [
                 upsert_job_page(
                     client,
-                    settings.notion_applications_data_source_id,
+                    data_source_id,
                     job_with_match_result(scored_job.job, scored_job),
                 )[0]
                 for scored_job in scored_jobs
@@ -270,8 +366,294 @@ def jobs_score(
     console.print(f"[green]Scored {len(scored_jobs)} job(s).[/green]")
 
 
+@jobs_app.command("promote")
+def jobs_promote(
+    test_page_id: Annotated[str, typer.Argument(help="Notion page ID from the test tracker.")],
+    application_url: Annotated[
+        str,
+        typer.Option("--application-url", help="Verified official company application URL."),
+    ],
+    chat_id: Annotated[
+        int | None,
+        typer.Option("--chat-id", help="Telegram chat ID; defaults to the configured daily chat."),
+    ] = None,
+    profile_path: ScoreProfilePathOption = DEFAULT_PROFILE_PATH,
+) -> None:
+    """Copy one reviewed test job into production as a fresh approval workflow."""
+    settings = Settings()
+    if not settings.notion_api_key or not settings.telegram_bot_token:
+        console.print("[red]Notion and Telegram configuration are required for promotion.[/red]")
+        raise typer.Exit(1)
+    try:
+        test_data_source_id = _require_tracker_data_source_id(settings, TrackerName.TEST)
+        production_data_source_id = _require_tracker_data_source_id(settings, TrackerName.PRODUCTION)
+        profile = load_candidate_profile(profile_path)
+    except (ValueError, ValidationError, YamlFileError) as exc:
+        _print_load_error("Job promotion failed", exc)
+        raise typer.Exit(1) from exc
+
+    try:
+        with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
+            test_page = notion_client.retrieve_page(test_page_id)
+            _require_page_in_tracker(test_page, test_data_source_id)
+            test_job = job_from_application_page(test_page)
+            promoted_job = test_job.model_copy(update={"application_url": application_url})
+            scored_job = score_jobs(profile, [promoted_job])[0]
+            production_job = job_with_match_result(scored_job.job, scored_job)
+            production_schema = notion_client.retrieve_data_source(production_data_source_id)
+            problems = validate_applications_data_source(production_schema)
+            if problems:
+                raise ValueError("Production tracker schema needs fixes: " + "; ".join(problems))
+            if notion_client.find_job_page(production_data_source_id, production_job):
+                raise ValueError("A matching production application already exists; it was not changed")
+            production_page = notion_client.create_job_page(production_data_source_id, production_job)
+            item = application_digest_item_from_page(production_page)
+            resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+            with TelegramClient(settings.telegram_bot_token) as telegram_client:
+                send_digest_messages(
+                    telegram_client,
+                    notion_client,
+                    resolved_chat_id,
+                    [item],
+                    TrackerName.PRODUCTION,
+                )
+    except Exception as exc:
+        console.print("[red]Job promotion failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    console.print(f"[green]Promoted {production_job.company} - {production_job.title} to production.[/green]")
+    console.print(f"Production page ID: {production_page['id']}")
+
+
+@collect_app.command("validate")
+def collect_validate(targets_path: TargetCompaniesPathOption = DEFAULT_TARGET_COMPANIES_PATH) -> None:
+    """Validate the private public-ATS target-company list without network calls."""
+    try:
+        targets = load_target_companies(targets_path)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Target-company validation failed", exc)
+        raise typer.Exit(1) from exc
+    enabled = [target for target in targets.companies if target.enabled]
+    console.print(f"[green]Target companies OK:[/green] {len(enabled)} enabled of {len(targets.companies)} total.")
+    for target in enabled:
+        console.print(f"- {target.name} ({target.provider.value})")
+
+
+@collect_app.command("run")
+def collect_run(
+    targets_path: TargetCompaniesPathOption = DEFAULT_TARGET_COMPANIES_PATH,
+    profile_path: ScoreProfilePathOption = DEFAULT_PROFILE_PATH,
+    write_notion: Annotated[
+        bool, typer.Option("--write-notion", help="Sync filtered jobs to Notion; default is preview only.")
+    ] = False,
+    send_digest: Annotated[
+        bool, typer.Option("--send-digest", help="Send Telegram messages for newly created jobs after syncing.")
+    ] = False,
+    chat_id: Annotated[
+        int | None, typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat.")
+    ] = None,
+    tracker: TrackerOption = TrackerName.TEST,
+) -> None:
+    """Collect, filter, score, and optionally sync public Israel-relevant ATS jobs."""
+    if send_digest and not write_notion:
+        raise typer.BadParameter("--send-digest requires --write-notion")
+    try:
+        targets = load_target_companies(targets_path)
+        profile = load_candidate_profile(profile_path)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Public collection setup failed", exc)
+        raise typer.Exit(1) from exc
+
+    collected: list[Job] = []
+    failures: list[str] = []
+    for target in (item for item in targets.companies if item.enabled):
+        try:
+            collected.extend(collect_public_jobs(target))
+        except (httpx.HTTPError, TypeError, ValueError) as exc:
+            failures.append(f"{target.name}: {exc}")
+    israel_relevant = [job for job in collected if is_israel_or_remote(job)]
+    scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))
+    shortlist = [
+        scored_job
+        for scored_job in scored_jobs
+        if scored_job.result.recommended_action.value in {"apply", "maybe"}
+    ]
+    _print_scored_jobs_table(shortlist, title="Public ATS Collection Shortlist")
+    console.print(
+        f"Collected {len(collected)} public job(s); Israel/remote filter kept {len(israel_relevant)}; "
+        f"unique scored jobs: {len(scored_jobs)}; apply/maybe shortlist: {len(shortlist)}."
+    )
+    for failure in failures:
+        console.print(f"[yellow]Collector warning:[/yellow] {failure}")
+    if not write_notion:
+        console.print("[yellow]Preview only. Re-run with --write-notion to sync new jobs.[/yellow]")
+        return
+
+    settings = Settings()
+    if not settings.notion_api_key:
+        console.print("[red]Notion configuration is required for syncing.[/red]")
+        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    created_pages: list[dict[str, object]] = []
+    try:
+        with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
+            schema_problems = validate_applications_data_source(
+                notion_client.retrieve_data_source(data_source_id)
+            )
+            if schema_problems:
+                raise ValueError("; ".join(schema_problems))
+            for scored_job in shortlist:
+                action, page = upsert_job_page(
+                    notion_client,
+                    data_source_id,
+                    job_with_match_result(scored_job.job, scored_job),
+                )
+                if action == "created":
+                    created_pages.append(page)
+            if send_digest and created_pages:
+                resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+                if not settings.telegram_bot_token:
+                    raise ValueError("TELEGRAM_BOT_TOKEN is required for --send-digest")
+                items = [application_digest_item_from_page(page) for page in created_pages]
+                with TelegramClient(settings.telegram_bot_token) as telegram_client:
+                    send_digest_messages(telegram_client, notion_client, resolved_chat_id, items, tracker)
+    except Exception as exc:
+        console.print("[red]Public collection sync failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"[green]Synced {len(shortlist)} shortlisted job(s); created {len(created_pages)} new Notion row(s).[/green]")
+    if send_digest:
+        console.print(f"[green]Sent {len(created_pages)} new-job digest message(s).[/green]")
+
+
+@repos_app.command("validate")
+def repos_validate(path: RepoSourcesPathOption = DEFAULT_REPO_SOURCES_PATH) -> None:
+    """Validate private local and public GitHub repository scan sources."""
+    try:
+        sources = load_repo_sources(path)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Repository-source validation failed", exc)
+        raise typer.Exit(1) from exc
+    enabled_local = [source for source in sources.local_repositories if source.enabled]
+    enabled_github = [source for source in sources.github_repositories if source.enabled]
+    console.print(
+        f"[green]Repository sources OK:[/green] {len(enabled_local)} local, "
+        f"{len(enabled_github)} public GitHub owner(s)."
+    )
+
+
+@repos_app.command("scan")
+def repos_scan(
+    path: RepoSourcesPathOption = DEFAULT_REPO_SOURCES_PATH,
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Ignored JSON report path for evidence proposals."),
+    ] = Path("data/repo_scans/latest.json"),
+    send_telegram: Annotated[
+        bool,
+        typer.Option("--send-telegram", help="Send the proposal summary to Telegram for review."),
+    ] = False,
+    chat_id: Annotated[
+        int | None,
+        typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat."),
+    ] = None,
+    tracker: TrackerOption = TrackerName.TEST,
+) -> None:
+    """Scan configured Git repositories and propose evidence updates without applying them."""
+    try:
+        sources = load_repo_sources(path)
+        report = scan_repositories(sources)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Repository scan failed", exc)
+        raise typer.Exit(1) from exc
+    except (OSError, ValueError) as exc:
+        console.print("[red]Repository scan failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    summary = format_repo_scan_report(report)
+    console.print(summary)
+    console.print(f"[green]Saved proposal report:[/green] {output}")
+    if send_telegram:
+        settings = Settings()
+        if not settings.telegram_bot_token:
+            console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+            raise typer.Exit(1)
+        resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+        with TelegramClient(settings.telegram_bot_token) as telegram_client:
+            telegram_client.send_message(
+                resolved_chat_id,
+                summary + "\n\nThese are proposals only. Approve evidence before adding it to the CV ledger.",
+            )
+        console.print(f"[green]Sent repository scan summary to chat {resolved_chat_id}.[/green]")
+
+
+@tasks_app.command("list")
+def tasks_list(
+    queue_path: Annotated[
+        Path,
+        typer.Option("--queue-path", help="Ignored local task queue JSON path."),
+    ] = DEFAULT_TASK_QUEUE_PATH,
+) -> None:
+    """List queued and recently processed Telegram-first tasks."""
+    tasks = list_tasks(queue_path)
+    table = Table(title="BackendScout Tasks")
+    table.add_column("ID")
+    table.add_column("Kind")
+    table.add_column("Tracker")
+    table.add_column("Status")
+    table.add_column("Error")
+    for task in tasks:
+        table.add_row(
+            task.task_id,
+            task.kind.value,
+            task.tracker.value,
+            task.status.value,
+            task.last_error or "-",
+        )
+    console.print(table)
+
+
+@tasks_app.command("worker-once")
+def tasks_worker_once(
+    queue_path: Annotated[
+        Path,
+        typer.Option("--queue-path", help="Ignored local task queue JSON path."),
+    ] = DEFAULT_TASK_QUEUE_PATH,
+) -> None:
+    """Process one queued task and exit."""
+    queued = list_tasks(queue_path, QueuedTaskStatus.QUEUED)
+    if not queued:
+        console.print("[yellow]No queued tasks.[/yellow]")
+        return
+    task = queued[0]
+    mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=queue_path)
+    try:
+        if task.kind == QueuedTaskKind.SCOUT_TODAY:
+            collect_run(
+                write_notion=True,
+                send_digest=True,
+                chat_id=task.payload.get("chat_id"),
+                tracker=task.tracker,
+            )
+        else:
+            raise ValueError(f"No worker is implemented yet for {task.kind.value}")
+    except Exception as exc:
+        mark_task_status(task.task_id, QueuedTaskStatus.FAILED, str(exc), queue_path)
+        console.print(f"[red]Task {task.task_id} failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    mark_task_status(task.task_id, QueuedTaskStatus.DONE, path=queue_path)
+    console.print(f"[green]Task {task.task_id} completed.[/green]")
+
+
 @notion_app.command("check")
-def notion_check() -> None:
+def notion_check(tracker: TrackerOption = TrackerName.TEST) -> None:
     """Verify the Notion Applications data source connection and schema."""
     settings = Settings()
 
@@ -279,18 +661,20 @@ def notion_check() -> None:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
 
-    if not settings.notion_applications_data_source_id:
-        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
-        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     try:
         with NotionClient(
             api_key=settings.notion_api_key,
             api_version=settings.notion_api_version,
         ) as client:
-            data_source = client.retrieve_data_source(settings.notion_applications_data_source_id)
+            data_source = client.retrieve_data_source(data_source_id)
             query_result = client.query_data_source(
-                settings.notion_applications_data_source_id,
+                data_source_id,
                 {"page_size": 1},
             )
     except ImportError:
@@ -317,22 +701,32 @@ def notion_check() -> None:
 
 
 @notion_app.command("add-submission-fields")
-def notion_add_submission_fields() -> None:
+def notion_add_submission_fields(tracker: TrackerOption = TrackerName.TEST) -> None:
     """Add the three delivery audit columns to the configured Applications data source."""
     settings = Settings()
-    if not settings.notion_api_key or not settings.notion_applications_data_source_id:
+    if not settings.notion_api_key:
         console.print("[red]Notion configuration is required.[/red]")
         raise typer.Exit(1)
     try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    try:
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
-            data_source = notion_client.retrieve_data_source(settings.notion_applications_data_source_id)
+            data_source = notion_client.retrieve_data_source(data_source_id)
             definitions = missing_submission_property_definitions(data_source)
+            definitions.update(missing_workflow_status_property_definition(data_source))
             if definitions:
                 notion_client.update_data_source_properties(
-                    settings.notion_applications_data_source_id, definitions
+                    data_source_id, definitions
                 )
-            updated = notion_client.retrieve_data_source(settings.notion_applications_data_source_id)
+            updated = notion_client.retrieve_data_source(data_source_id)
             problems = validate_submission_data_source(updated)
+            problems.extend(
+                f"Missing workflow Status option: {status}"
+                for status in missing_workflow_statuses(updated)
+            )
             if problems:
                 raise ValueError("; ".join(problems))
     except Exception as exc:
@@ -340,7 +734,7 @@ def notion_add_submission_fields() -> None:
         console.print(str(exc))
         raise typer.Exit(1) from exc
     if definitions:
-        console.print(f"[green]Added {len(definitions)} Notion submission field(s).[/green]")
+        console.print(f"[green]Added {len(definitions)} Notion workflow schema update(s).[/green]")
     else:
         console.print("[green]Notion submission fields already exist.[/green]")
 
@@ -381,6 +775,7 @@ def telegram_send_digest(
         typer.Option("--status", help="Only send jobs currently in this status."),
     ] = ApplicationStatus.FOUND,
     limit: Annotated[int, typer.Option("--limit", min=1, max=25, help="Maximum jobs to send.")] = 10,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Send scored job summaries from Notion to Telegram and advance found jobs to digest_sent."""
     settings = Settings()
@@ -391,9 +786,11 @@ def telegram_send_digest(
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
-    if not settings.notion_applications_data_source_id:
-        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
-        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     try:
         with NotionClient(
@@ -402,7 +799,7 @@ def telegram_send_digest(
         ) as notion_client, TelegramClient(settings.telegram_bot_token) as telegram_client:
             jobs = list_jobs_by_status(
                 notion_client,
-                settings.notion_applications_data_source_id,
+                data_source_id,
                 status,
                 page_size=limit,
             )
@@ -415,6 +812,7 @@ def telegram_send_digest(
                 notion_client,
                 chat_id,
                 jobs,
+                tracker,
             )
     except Exception as exc:
         console.print("[red]Telegram digest send failed[/red]")
@@ -480,6 +878,7 @@ def telegram_poll_once(
         int,
         typer.Option("--timeout-seconds", min=0, max=60, help="Long-poll timeout in seconds."),
     ] = 0,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Poll Telegram once, process approval callbacks, and store the last update offset."""
     settings = Settings()
@@ -490,9 +889,11 @@ def telegram_poll_once(
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
-    if not settings.notion_applications_data_source_id:
-        console.print("[red]Missing NOTION_APPLICATIONS_DATA_SOURCE_ID in .env[/red]")
-        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     if not settings.telegram_allowed_user_id_set:
         console.print("[red]Missing TELEGRAM_ALLOWED_USER_IDS in .env[/red]")
         raise typer.Exit(1)
@@ -517,7 +918,7 @@ def telegram_poll_once(
                 manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
                 verify_manifest(manifest, review.draft_id)
                 schema_problems = validate_submission_data_source(
-                    notion_client.retrieve_data_source(settings.notion_applications_data_source_id)
+                    notion_client.retrieve_data_source(data_source_id)
                 )
                 if schema_problems:
                     raise ValueError("Notion submission fields are missing: " + "; ".join(schema_problems))
@@ -545,7 +946,7 @@ def telegram_poll_once(
                 manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
                 verify_manifest(manifest, handoff.draft_id)
                 schema_problems = validate_submission_data_source(
-                    notion_client.retrieve_data_source(settings.notion_applications_data_source_id)
+                    notion_client.retrieve_data_source(data_source_id)
                 )
                 if schema_problems:
                     raise ValueError("Notion submission fields are missing: " + "; ".join(schema_problems))
@@ -555,6 +956,25 @@ def telegram_poll_once(
                     handoff.contact_source,
                     f"User confirmed WhatsApp delivery to {handoff.recipient}; "
                     f"CV draft {handoff.draft_id}; handoff {handoff.handoff_id}",
+                )
+
+            def authorize_portal_submission(page_id: str, authorization_id: str) -> None:
+                page = notion_client.retrieve_page(page_id)
+                application = application_digest_item_from_page(page)
+                if application.status != ApplicationStatus.SUBMISSION_PREPARED:
+                    raise ValueError("Portal submission requires browser preparation first")
+                job = job_from_application_page(page)
+                application_url = job.application_url or job.source_url
+                if not application_url:
+                    raise ValueError("Portal submission requires an application URL")
+                manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
+                verify_manifest(manifest, manifest.draft_id)
+                authorize_portal_submit(
+                    page_id,
+                    authorization_id,
+                    tracker,
+                    application_url,
+                    manifest,
                 )
 
             updates = telegram_client.get_updates(offset=offset, timeout=timeout_seconds)
@@ -569,6 +989,9 @@ def telegram_poll_once(
                     settings.cv_archive_root,
                     deliver_reviewed_email,
                     confirm_whatsapp_handoff,
+                    tracker,
+                    data_source_id,
+                    portal_submission_authorization_handler=authorize_portal_submission,
                 ))
             ]
     except Exception as exc:
@@ -582,6 +1005,26 @@ def telegram_poll_once(
     console.print(
         f"[green]Processed {len(processed_actions)} approval action(s) from {len(updates)} update(s).[/green]"
     )
+
+
+@telegram_app.command("listen")
+def telegram_listen(
+    timeout_seconds: Annotated[
+        int,
+        typer.Option("--timeout-seconds", min=1, max=60, help="Long-poll timeout in seconds."),
+    ] = 30,
+    tracker: TrackerOption = TrackerName.PRODUCTION,
+) -> None:
+    """Continuously process authorized Telegram workflow actions on one tracker."""
+    console.print(
+        f"[green]Listening for authorized Telegram actions on the {tracker.value} tracker. "
+        "Press Ctrl-C to stop.[/green]"
+    )
+    try:
+        while True:
+            telegram_poll_once(timeout_seconds=timeout_seconds, tracker=tracker)
+    except KeyboardInterrupt:
+        console.print("[yellow]Telegram listener stopped.[/yellow]")
 
 
 @cv_app.command("draft")
@@ -598,6 +1041,7 @@ def cv_draft(
         typer.Option("--dry-run", help="Preview an evidence-only draft without API calls or writes."),
     ] = False,
     revision_feedback: Annotated[str | None, typer.Option(hidden=True)] = None,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Create a CV draft only for a job approved for tailoring."""
     settings = Settings()
@@ -608,9 +1052,14 @@ def cv_draft(
         _print_load_error("CV source validation failed", exc)
         raise typer.Exit(1) from exc
 
-    if not settings.notion_api_key or not settings.notion_applications_data_source_id:
+    if not settings.notion_api_key:
         console.print("[red]Notion configuration is required for CV drafting.[/red]")
         raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     try:
         with NotionClient(
@@ -618,6 +1067,7 @@ def cv_draft(
             api_version=settings.notion_api_version,
         ) as notion_client:
             page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
             application = application_digest_item_from_page(page)
             job = job_from_application_page(page)
             valid_statuses = {ApplicationStatus.APPROVED_TO_TAILOR}
@@ -627,6 +1077,15 @@ def cv_draft(
                 raise ValueError(
                     "CV drafting requires approved_to_tailor or a revision request, "
                     f"not {application.status.value}"
+                )
+
+            coverage = assess_cv_evidence_coverage(evidence, job)
+            _print_cv_evidence_coverage(job, coverage)
+            if coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
+                raise ValueError(
+                    "CV drafting is paused because factual evidence coverage is below the required "
+                    f"{CV_EVIDENCE_COVERAGE_TARGET}/100 target. Confirm only truthful missing evidence "
+                    "or complete a real project, then update config/career_evidence.yaml and retry."
                 )
 
             if dry_run:
@@ -657,15 +1116,24 @@ def cv_draft(
                 settings.openai_api_key,
                 settings.openai_model_high_quality,
                 revision_feedback,
+                (note.text if (note := load_tailoring_note(page_id, tracker.value)) else None),
             )
             if application.status == ApplicationStatus.REVISION_REQUESTED:
                 notion_client.update_application_status(page_id, ApplicationStatus.APPROVED_TO_TAILOR)
             directory = next_draft_directory(settings.cv_archive_root, job.company, page_id)
             docx_path = directory / "cv_draft.docx"
             pdf_path = directory / "cv_draft.pdf"
-            create_cv_docx(evidence, draft, docx_path, style)
-            convert_docx_to_pdf(docx_path, pdf_path)
-            manifest = write_manifest(directory, page_id, job.company, job.title, docx_path, pdf_path)
+            layout_metrics = render_checked_cv_artifacts(evidence, draft, docx_path, pdf_path, style)
+            manifest = write_manifest(
+                directory,
+                page_id,
+                job.company,
+                job.title,
+                docx_path,
+                pdf_path,
+                tracker.value,
+                note.text if note else None,
+            )
 
             with TelegramClient(settings.telegram_bot_token) as telegram_client:
                 telegram_client.send_document(
@@ -677,7 +1145,7 @@ def cv_draft(
                     chat_id,
                     pdf_path,
                     f"Review this exact CV draft for {job.company} - {job.title}.",
-                    reply_markup=build_cv_draft_reply_markup(page_id, manifest.draft_id),
+                    reply_markup=build_cv_draft_reply_markup(page_id, manifest.draft_id, tracker),
                 )
 
             notion_client.update_application_status(page_id, ApplicationStatus.CV_DRAFTED)
@@ -690,7 +1158,41 @@ def cv_draft(
 
     console.print(f"[green]Created CV draft:[/green] {docx_path}")
     console.print(f"[green]Created PDF review copy:[/green] {pdf_path}")
+    console.print(f"Page fill: {layout_metrics.content_fill_ratio:.0%} on one page")
     console.print(f"Draft ID: {manifest.draft_id}")
+
+
+@cv_app.command("coverage")
+def cv_coverage(
+    page_id: Annotated[str, typer.Argument(help="Notion page ID for the job to assess.")],
+    evidence_path: CareerEvidencePathOption = DEFAULT_CAREER_EVIDENCE_PATH,
+    tracker: TrackerOption = TrackerName.TEST,
+) -> None:
+    """Show factual CV evidence coverage before tailoring a tracked job."""
+    settings = Settings()
+    try:
+        evidence = load_career_evidence(evidence_path)
+    except (ValidationError, YamlFileError) as exc:
+        _print_load_error("Career evidence validation failed", exc)
+        raise typer.Exit(1) from exc
+    if not settings.notion_api_key:
+        console.print("[red]Notion configuration is required for coverage assessment.[/red]")
+        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+        with NotionClient(
+            api_key=settings.notion_api_key,
+            api_version=settings.notion_api_version,
+        ) as notion_client:
+            page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
+            job = job_from_application_page(page)
+    except Exception as exc:
+        console.print("[red]CV evidence coverage failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+
+    _print_cv_evidence_coverage(job, assess_cv_evidence_coverage(evidence, job))
 
 
 @cv_app.command("revise")
@@ -699,6 +1201,7 @@ def cv_revise(
     evidence_path: CareerEvidencePathOption = DEFAULT_CAREER_EVIDENCE_PATH,
     style_path: CvStylePathOption = DEFAULT_CV_STYLE_PATH,
     chat_id: Annotated[int, typer.Option("--chat-id", help="Telegram chat for the new draft.")] = 0,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Create the next immutable CV version from Telegram revision feedback."""
     try:
@@ -708,12 +1211,12 @@ def cv_revise(
         raise typer.Exit(1) from exc
     if chat_id <= 0:
         raise typer.BadParameter("--chat-id must be a positive Telegram chat ID")
-    cv_draft(page_id, evidence_path, style_path, chat_id, False, feedback)
+    cv_draft(page_id, evidence_path, style_path, chat_id, False, feedback, tracker)
 
 
 @gmail_app.command("connect")
 def gmail_connect() -> None:
-    """Authorize Gmail once with the minimum gmail.send permission."""
+    """Authorize Gmail once with send and readonly mailbox permissions."""
     settings = Settings()
     path = settings.gmail_oauth_client_secret_path
     if path is None:
@@ -728,7 +1231,7 @@ def gmail_connect() -> None:
         console.print("[red]Gmail connection failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
-    console.print("[green]Gmail send permission is connected in macOS Keychain.[/green]")
+    console.print("[green]Gmail send/read permissions are connected in macOS Keychain.[/green]")
 
 
 @gmail_app.command("check")
@@ -740,6 +1243,84 @@ def gmail_check() -> None:
         console.print("[yellow]Gmail is not connected.[/yellow]")
 
 
+@gmail_app.command("watch-once")
+def gmail_watch_once(
+    query: Annotated[
+        str,
+        typer.Option("--query", help="Gmail search query for mailbox status scanning."),
+    ] = DEFAULT_MAILBOX_QUERY,
+    max_results: Annotated[
+        int,
+        typer.Option("--max-results", min=1, max=50, help="Maximum Gmail messages to inspect."),
+    ] = 25,
+    write_notion: Annotated[
+        bool,
+        typer.Option("--write-notion", help="Update matched application statuses in Notion."),
+    ] = False,
+    send_digest: Annotated[
+        bool,
+        typer.Option("--send-digest", help="Send relevant mailbox updates to Telegram."),
+    ] = False,
+    chat_id: Annotated[
+        int | None,
+        typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat."),
+    ] = None,
+    tracker: TrackerOption = TrackerName.PRODUCTION,
+) -> None:
+    """Inspect Gmail for employer replies and optionally update the tracker."""
+    try:
+        messages = list_recent_messages(query, max_results)
+    except Exception as exc:
+        console.print("[red]Gmail mailbox scan failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    updates = [(message, classify_gmail_message(message), None) for message in messages]
+    updates = [item for item in updates if item[1].status is not None or item[1].confidence == "ambiguous"]
+    matched_updates = updates
+
+    settings = Settings()
+    if write_notion or send_digest:
+        if not settings.notion_api_key:
+            console.print("[red]Missing NOTION_API_KEY in .env[/red]")
+            raise typer.Exit(1)
+        try:
+            data_source_id = _require_tracker_data_source_id(settings, tracker)
+            with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
+                pages = notion_client.query_data_source(data_source_id, {"page_size": 100}).get("results", [])
+                applications = [
+                    application_digest_item_from_page(page)
+                    for page in pages
+                    if isinstance(page, dict)
+                ]
+                matched_updates = [
+                    (message, classification, match_message_to_application(message, applications))
+                    for message, classification, _application in updates
+                ]
+                if write_notion:
+                    for _message, classification, application in matched_updates:
+                        if application is None or classification.status is None:
+                            continue
+                        if can_transition_application_status(application.status, classification.status):
+                            notion_client.update_application_status(
+                                application.notion_page_id,
+                                classification.status,
+                            )
+        except Exception as exc:
+            console.print("[red]Mailbox tracker update failed[/red]")
+            console.print(str(exc))
+            raise typer.Exit(1) from exc
+
+    _print_mailbox_updates(matched_updates)
+    if send_digest and matched_updates:
+        if not settings.telegram_bot_token:
+            console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+            raise typer.Exit(1)
+        resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+        with TelegramClient(settings.telegram_bot_token) as telegram_client:
+            telegram_client.send_message(resolved_chat_id, format_mailbox_digest(matched_updates))
+        console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
+
+
 @contacts_app.command("discover")
 def contacts_discover(
     page_id: Annotated[str, typer.Argument(help="Notion page ID for an approved job.")],
@@ -747,15 +1328,19 @@ def contacts_discover(
         str | None,
         typer.Option("--official-url", help="Official company careers/contact URL to inspect explicitly."),
     ] = None,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Record contacts found in the job post and an explicitly supplied official URL."""
     settings = Settings()
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
     try:
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
-            job = job_from_application_page(notion_client.retrieve_page(page_id))
+            page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
+            job = job_from_application_page(page)
         contacts = discover_job_post_contacts(job)
         if official_url:
             import httpx
@@ -781,17 +1366,20 @@ def contacts_review_email(
     page_id: Annotated[str, typer.Argument(help="Notion page ID in approved_to_submit state.")],
     recipient: Annotated[str, typer.Option("--recipient", help="Verified recipient email address.")],
     chat_id: Annotated[int, typer.Option("--chat-id", help="Telegram chat ID for the final email review.")],
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Send a Telegram card showing the exact email and approved CV before delivery."""
     settings = Settings()
     if not all((settings.notion_api_key, settings.telegram_bot_token)):
         console.print("[red]Notion and Telegram configuration are required.[/red]")
         raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
     try:
         contact = require_verified_contact(page_id, "email", recipient)
         evidence = load_career_evidence()
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
             application = application_digest_item_from_page(page)
             if application.status != ApplicationStatus.APPROVED_TO_SUBMIT:
                 raise ValueError("Email review requires approved_to_submit status")
@@ -816,7 +1404,7 @@ def contacts_review_email(
             telegram_client.send_message(
                 chat_id,
                 "The attached CV and the exact email above are ready. Send only if both look right.",
-                reply_markup=build_email_review_reply_markup(page_id, review.review_id),
+                reply_markup=build_email_review_reply_markup(page_id, review.review_id, tracker),
             )
     except Exception as exc:
         console.print("[red]Email review failed[/red]")
@@ -830,17 +1418,20 @@ def contacts_whatsapp_handoff(
     page_id: Annotated[str, typer.Argument(help="Notion page ID in approved_to_submit state.")],
     phone: Annotated[str, typer.Option("--phone", help="Verified public WhatsApp number.")],
     chat_id: Annotated[int, typer.Option("--chat-id", help="Telegram chat ID for confirmation.")],
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Open a prepared WhatsApp Web chat; only the user can attach and send the CV."""
     settings = Settings()
     if not all((settings.notion_api_key, settings.telegram_bot_token)):
         console.print("[red]Notion and Telegram configuration are required.[/red]")
         raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
     try:
         contact = require_verified_contact(page_id, "whatsapp", phone)
         evidence = load_career_evidence()
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
             application = application_digest_item_from_page(page)
             if application.status != ApplicationStatus.APPROVED_TO_SUBMIT:
                 raise ValueError("WhatsApp handoff requires approved_to_submit status")
@@ -862,7 +1453,7 @@ def contacts_whatsapp_handoff(
                 chat_id,
                 f"WhatsApp handoff prepared for {handoff.recipient} from {handoff.contact_source}. "
                 "The agent did not send anything. Confirm only after you attach the PDF and send it.",
-                reply_markup=build_whatsapp_handoff_reply_markup(page_id, handoff.handoff_id),
+                reply_markup=build_whatsapp_handoff_reply_markup(page_id, handoff.handoff_id, tracker),
             )
     except Exception as exc:
         console.print("[red]WhatsApp handoff failed[/red]")
@@ -878,16 +1469,19 @@ def apply_prepare(
         int,
         typer.Option("--wait-for-human-seconds", min=0, max=1800, help="Keep the visible browser open for remote CAPTCHA completion."),
     ] = 600,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
     """Fill a visible portal form with safe fields and the exact approved CV; do not submit."""
     settings = Settings()
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
     try:
         evidence = load_career_evidence()
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
             application = application_digest_item_from_page(page)
             if application.status not in {
                 ApplicationStatus.APPROVED_TO_SUBMIT,
@@ -895,6 +1489,16 @@ def apply_prepare(
             }:
                 raise ValueError("Browser preparation requires approved_to_submit or submission_prepared status")
             job = job_from_application_page(page)
+            workflow_statuses = missing_workflow_statuses(
+                notion_client.retrieve_data_source(data_source_id)
+            )
+            if workflow_statuses:
+                raise ValueError(
+                    "Notion Status is missing workflow options: "
+                    + ", ".join(workflow_statuses)
+                    + ". Run: backend-scout notion add-submission-fields --tracker "
+                    + tracker.value
+                )
             if application.status == ApplicationStatus.APPROVED_TO_SUBMIT:
                 notion_client.update_application_status(page_id, ApplicationStatus.SUBMISSION_PREPARED)
             manifest = build_email_review(
@@ -902,7 +1506,7 @@ def apply_prepare(
                 evidence.identity.email, "approved_cv_manifest"
             )
             result = prepare_visible_submission(
-                job.source_url,
+                job.application_url or job.source_url,
                 settings.browser_profile_root,
                 evidence,
                 Path(manifest.attachment_path),
@@ -910,7 +1514,11 @@ def apply_prepare(
                     notion_client, settings, page_id, job.company, job.title
                 ),
                 wait_for_human_seconds,
+                load_application_form_answers(page_id, tracker),
             )
+            if result.resolved_application_url and result.resolved_application_url != job.application_url:
+                job = job.model_copy(update={"application_url": result.resolved_application_url})
+                notion_client.update_job_page(page_id, job)
             notion_client.update_application_status(page_id, ApplicationStatus(result.state))
     except Exception as exc:
         console.print("[red]Browser preparation failed[/red]")
@@ -918,57 +1526,181 @@ def apply_prepare(
         raise typer.Exit(1) from exc
     console.print(f"[green]{result.message}[/green]")
     console.print(f"Fields: {', '.join(result.filled_fields) or 'none'}")
+    if result.unresolved_required_fields:
+        console.print(
+            "[yellow]Required fields still unresolved: "
+            + ", ".join(result.unresolved_required_fields)
+            + "[/yellow]"
+        )
+
+
+@apply_app.command("request-submit")
+def apply_request_submit(
+    page_id: Annotated[str, typer.Argument(help="Notion page ID in submission_prepared state.")],
+    chat_id: Annotated[
+        int | None,
+        typer.Option("--chat-id", help="Telegram chat ID; defaults to the configured daily chat."),
+    ] = None,
+    tracker: TrackerOption = TrackerName.TEST,
+) -> None:
+    """Send a short-lived Telegram approval for one exact portal submit click."""
+    settings = Settings()
+    if not settings.notion_api_key or not settings.telegram_bot_token:
+        console.print("[red]Notion and Telegram configuration are required.[/red]")
+        raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
+    try:
+        with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
+            page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
+            application = application_digest_item_from_page(page)
+            if application.status != ApplicationStatus.SUBMISSION_PREPARED:
+                raise ValueError("Final portal approval requires submission_prepared status")
+            job = job_from_application_page(page)
+            application_url = job.application_url or job.source_url
+            if not application_url:
+                raise ValueError("Final portal approval requires an application URL")
+            manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
+            verify_manifest(manifest, manifest.draft_id)
+            authorization = create_portal_submit_authorization(
+                page_id, tracker, application_url, manifest
+            )
+            resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+            portal_host = urlparse(application_url).netloc or application_url
+            message = (
+                f"Final portal submission review\n\n"
+                f"{job.company} - {job.title}\n"
+                f"Portal: {portal_host}\n"
+                f"Exact CV draft: {manifest.draft_id}\n"
+                "Press Submit now to authorize one browser submit click. "
+                "This approval expires in 15 minutes."
+            )
+            with TelegramClient(settings.telegram_bot_token) as telegram_client:
+                telegram_client.send_message(
+                    resolved_chat_id,
+                    message,
+                    reply_markup=build_portal_submit_reply_markup(
+                        page_id, authorization.authorization_id, tracker
+                    ),
+                )
+    except Exception as exc:
+        console.print("[red]Final portal approval request failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    console.print("[green]Sent final portal submission approval to Telegram.[/green]")
 
 
 @apply_app.command("resume")
 def apply_resume(
-    page_id: Annotated[str, typer.Argument(help="Notion page ID after manual human verification.")],
+    page_id: Annotated[str, typer.Argument(help="Notion page ID after manual verification or final Telegram approval.")],
+    wait_for_human_seconds: Annotated[
+        int,
+        typer.Option(
+            "--wait-for-human-seconds",
+            min=0,
+            max=1800,
+            help="Keep the visible browser open for remote human verification after a submit attempt.",
+        ),
+    ] = 600,
+    tracker: TrackerOption = TrackerName.TEST,
 ) -> None:
-    """Submit an approved prepared portal only when its confirmation page is visible."""
+    """Resume a human-check pause or submit once with a Telegram authorization."""
     settings = Settings()
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
+    data_source_id = _require_tracker_data_source_id(settings, tracker)
     try:
         evidence = load_career_evidence()
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             page = notion_client.retrieve_page(page_id)
+            _require_page_in_tracker(page, data_source_id)
             application = application_digest_item_from_page(page)
-            if application.status not in {
-                ApplicationStatus.AWAITING_HUMAN_VERIFICATION,
-                ApplicationStatus.SUBMISSION_PREPARED,
-            }:
+            if application.status not in {ApplicationStatus.AWAITING_HUMAN_VERIFICATION, ApplicationStatus.SUBMISSION_PREPARED}:
                 raise ValueError("Resume is only available after browser preparation or human verification")
-            if application.status == ApplicationStatus.AWAITING_HUMAN_VERIFICATION:
-                notion_client.update_application_status(page_id, ApplicationStatus.SUBMISSION_PREPARED)
             job = job_from_application_page(page)
-            manifest = build_email_review(
+            review = build_email_review(
                 settings.cv_archive_root, job.company, page_id, job, evidence,
                 evidence.identity.email, "approved_cv_manifest"
             )
+            manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
+            verify_manifest(manifest, manifest.draft_id)
+            application_url = job.application_url or job.source_url
+            if not application_url:
+                raise ValueError("Portal submission requires an application URL")
+            if application.status == ApplicationStatus.AWAITING_HUMAN_VERIFICATION:
+                result = prepare_visible_submission(
+                    application_url,
+                    settings.browser_profile_root,
+                    evidence,
+                    Path(review.attachment_path),
+                    lambda: _notify_human_verification(
+                        notion_client, settings, page_id, job.company, job.title
+                    ),
+                    form_answers=load_application_form_answers(page_id, tracker),
+                )
+                notion_client.update_application_status(page_id, ApplicationStatus(result.state))
+                console.print(f"[green]{result.message}[/green]")
+                console.print(f"Fields: {', '.join(result.filled_fields) or 'none'}")
+                if result.unresolved_required_fields:
+                    console.print(
+                        "[yellow]Required fields still unresolved: "
+                        + ", ".join(result.unresolved_required_fields)
+                        + "[/yellow]"
+                )
+                return
+            authorization = find_pending_portal_submit_authorization(
+                page_id, tracker, application_url, manifest
+            )
             schema_problems = validate_submission_data_source(
-                notion_client.retrieve_data_source(settings.notion_applications_data_source_id)
+                notion_client.retrieve_data_source(data_source_id)
             )
             if schema_problems:
                 raise ValueError("Notion submission fields are missing: " + "; ".join(schema_problems))
+            proof_path = (
+                draft_directory(settings.submission_proof_root, job.company, page_id)
+                / f"{manifest.draft_id}-success.png"
+            )
             result = submit_visible_submission(
-                job.source_url,
+                application_url,
                 settings.browser_profile_root,
                 evidence,
-                Path(manifest.attachment_path),
+                Path(review.attachment_path),
                 lambda: _notify_human_verification(
                     notion_client, settings, page_id, job.company, job.title
                 ),
+                lambda: consume_portal_submit_authorization(
+                    page_id, authorization.authorization_id, tracker, application_url, manifest
+                ),
+                load_application_form_answers(page_id, tracker),
+                wait_for_human_seconds,
+                proof_path,
             )
             if result.state == "submitted":
+                submission_record = f"Portal confirmation detected; CV draft {manifest.draft_id}; URL {application_url}"
+                if result.screenshot_path and result.screenshot_sha256:
+                    submission_record += (
+                        f"; proof screenshot {result.screenshot_path}; "
+                        f"proof sha256 {result.screenshot_sha256}"
+                    )
                 notion_client.record_submission(
                     page_id,
                     "portal",
                     "job_post",
-                    f"Portal confirmation detected; CV draft {manifest.draft_id}; URL {job.source_url}",
+                    submission_record,
                 )
+                if settings.telegram_bot_token and settings.telegram_allowed_user_id_set and result.screenshot_path:
+                    with TelegramClient(settings.telegram_bot_token) as telegram_client:
+                        for proof_chat_id in sorted(settings.telegram_allowed_user_id_set):
+                            telegram_client.send_photo(
+                                proof_chat_id,
+                                Path(result.screenshot_path),
+                                f"Submission proof for {job.company} - {job.title}.",
+                            )
             elif result.state == "awaiting_human_verification":
-                pass
+                notion_client.update_application_status(
+                    page_id, ApplicationStatus.AWAITING_HUMAN_VERIFICATION
+                )
             else:
                 notion_client.update_application_status(page_id, ApplicationStatus.SUBMISSION_PREPARED)
     except Exception as exc:
@@ -1020,6 +1752,17 @@ def _notify_human_verification(
     with TelegramClient(settings.telegram_bot_token) as telegram_client:
         for chat_id in settings.telegram_allowed_user_id_set:
             telegram_client.send_message(chat_id, text)
+
+
+def _resolve_daily_chat_id(settings: Settings, explicit_chat_id: int | None) -> int:
+    if explicit_chat_id is not None:
+        return explicit_chat_id
+    if settings.telegram_default_chat_id is not None:
+        return settings.telegram_default_chat_id
+    allowed = settings.telegram_allowed_user_id_set
+    if len(allowed) == 1:
+        return next(iter(allowed))
+    raise ValueError("Set TELEGRAM_DEFAULT_CHAT_ID or pass --chat-id for the daily digest")
 
 
 def _print_jobs_table(jobs: list[Job], title: str) -> None:
@@ -1092,6 +1835,31 @@ def _print_scored_job_details(scored_job: ScoredJob) -> None:
         )
 
 
+def _print_cv_evidence_coverage(job: Job, coverage: CvEvidenceCoverage) -> None:
+    """Render the factual requirements check used to decide whether CV drafting can start."""
+    console.print("")
+    console.print(f"[bold]CV evidence coverage: {job.company} - {job.title}[/bold]")
+    console.print(
+        f"Score: {coverage.coverage_score}/{coverage.target_score} target | {coverage.summary}"
+    )
+    _print_bullets("Covered requirements", coverage.covered_requirements)
+    _print_bullets("Evidence gaps", coverage.missing_requirements)
+    _print_bullets("Questions to resolve truthfully", coverage.clarification_questions)
+
+
+def _print_mailbox_updates(updates: list[tuple[object, object, ApplicationDigestItem | None]]) -> None:
+    table = Table(title="Mailbox Application Updates")
+    table.add_column("Application")
+    table.add_column("Signal")
+    table.add_column("Subject")
+    table.add_column("Reason")
+    for message, classification, application in updates:
+        target = f"{application.company} - {application.title}" if application else "unmatched"
+        status = classification.status.value if classification.status else "review"
+        table.add_row(target, status, message.subject or "-", classification.reason)
+    console.print(table)
+
+
 def _print_bullets(title: str, items: list[str]) -> None:
     if not items:
         return
@@ -1134,6 +1902,9 @@ app.add_typer(cv_app, name="cv")
 app.add_typer(gmail_app, name="gmail")
 app.add_typer(contacts_app, name="contacts")
 app.add_typer(apply_app, name="apply")
+app.add_typer(collect_app, name="collect")
+app.add_typer(repos_app, name="repos")
+app.add_typer(tasks_app, name="tasks")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,15 @@
 """Visible, conservative browser preparation for approved application forms."""
 
+import hashlib
+import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import sleep
+from urllib.parse import urljoin, urlparse
 
+from backend_scout.application_answers import ApplicationFormAnswers
 from backend_scout.models import CareerEvidence
 
 
@@ -13,6 +18,10 @@ class BrowserPreparationResult:
     state: str
     filled_fields: tuple[str, ...]
     message: str
+    unresolved_required_fields: tuple[str, ...] = ()
+    resolved_application_url: str | None = None
+    screenshot_path: str | None = None
+    screenshot_sha256: str | None = None
 
 
 HUMAN_VERIFICATION_MARKERS = ("captcha", "recaptcha", "hcaptcha", "turnstile", "verify you are human")
@@ -22,6 +31,11 @@ SUBMISSION_CONFIRMATION_MARKERS = (
     "thank you for applying",
     "thanks for applying",
 )
+
+
+def is_explicit_apply_now_label(text: str) -> bool:
+    """Accept only the exact, applicant-facing final action label."""
+    return bool(re.fullmatch(r"\s*apply now\s*", text, flags=re.IGNORECASE))
 
 
 def contains_human_verification(page_text: str, frame_urls: list[str] | None = None) -> bool:
@@ -40,6 +54,7 @@ def prepare_visible_submission(
     approved_attachment: Path,
     on_human_verification: Callable[[], None] | None = None,
     wait_for_human_seconds: int = 0,
+    form_answers: ApplicationFormAnswers | None = None,
 ) -> BrowserPreparationResult:
     """Open a persistent, visible browser and fill only evidence-backed basics.
 
@@ -55,6 +70,7 @@ def prepare_visible_submission(
         )
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(application_url, wait_until="domcontentloaded")
+        _follow_verified_apply_link(page)
         if contains_human_verification(page.locator("body").inner_text(), [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
@@ -69,39 +85,218 @@ def prepare_visible_submission(
             if not contains_human_verification(
                 page.locator("body").inner_text(), [frame.url for frame in page.frames]
             ):
-                return _fill_safe_fields(page, evidence, approved_attachment)
+                return _fill_safe_fields(page, evidence, approved_attachment, form_answers)
             context.close()
             return BrowserPreparationResult(
                 "awaiting_human_verification", (), "Human verification detected; complete it through Chrome Remote Desktop."
             )
 
-        result = _fill_safe_fields(page, evidence, approved_attachment)
+        result = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
         context.close()
     return result
 
 
-def _fill_safe_fields(page, evidence: CareerEvidence, approved_attachment: Path) -> BrowserPreparationResult:
-    candidates = {
-        "name": evidence.identity.full_name,
-        "email": evidence.identity.email,
-        "phone": evidence.identity.phone,
-        "location": evidence.identity.location,
-    }
+def _fill_safe_fields(
+    page,
+    evidence: CareerEvidence,
+    approved_attachment: Path,
+    form_answers: ApplicationFormAnswers | None = None,
+) -> BrowserPreparationResult:
+    name_parts = evidence.identity.full_name.split(maxsplit=1)
+    linkedin_url = next(
+        (link for link in evidence.identity.links if "linkedin.com" in link.casefold()), ""
+    )
+    candidates = (
+        ("first_name", 'input[name="first_name" i], input[id="first_name" i]', name_parts[0], "First Name"),
+        (
+            "last_name",
+            'input[name="last_name" i], input[id="last_name" i]',
+            name_parts[1] if len(name_parts) > 1 else "",
+            "Last Name",
+        ),
+        ("name", 'input[name="name" i], input[id="name" i]', evidence.identity.full_name, "Full Name"),
+        ("email", 'input[type="email"], input[name="email" i], input[id="email" i]', evidence.identity.email, "Email"),
+        ("phone", 'input[type="tel"], input[name="phone" i], input[id="phone" i]', evidence.identity.phone, "Phone"),
+        ("location", 'input[name="location" i], input[id="location" i]', evidence.identity.location, "Location"),
+        ("linkedin", 'input[name="linkedin" i], input[id="linkedin" i]', linkedin_url, "LinkedIn Profile"),
+    )
     filled: list[str] = []
-    for field, value in candidates.items():
+    for field, selector, value, label in candidates:
         if not value:
             continue
-        selector = f'input[name*="{field}" i], input[id*="{field}" i]'
         locator = page.locator(selector).first
+        if not locator.count() or not locator.is_visible():
+            locator = page.get_by_label(label, exact=True).first
         if locator.count() and locator.is_visible() and locator.input_value() == "":
             locator.fill(value)
             filled.append(field)
 
-    upload = page.locator('input[type="file"]').first
-    if upload.count() and upload.is_visible():
+    upload = page.locator(
+        'input[type="file"][id*="resume" i], input[type="file"][name*="resume" i], '
+        'input[type="file"]'
+    ).first
+    if upload.count():
         upload.set_input_files(str(approved_attachment))
-        filled.append("cv_attachment")
-    return BrowserPreparationResult("submission_prepared", tuple(filled), "Prepared visible form without submitting it.")
+        if upload.input_value():
+            filled.append("cv_attachment")
+    if form_answers:
+        filled.extend(_fill_candidate_confirmed_answers(page, form_answers))
+    unresolved = _unresolved_required_fields(page)
+    if "cv_attachment" not in filled:
+        unresolved = (*unresolved, "cv_attachment")
+    message = "Prepared visible form without submitting it."
+    if unresolved:
+        message = "Prepared visible form, but some required fields still need candidate attention."
+    return BrowserPreparationResult(
+        "submission_prepared",
+        tuple(filled),
+        message,
+        unresolved,
+        page.url,
+    )
+
+
+def _fill_candidate_confirmed_answers(page, answers: ApplicationFormAnswers) -> list[str]:
+    filled: list[str] = []
+    for field_key, value in answers.field_values.items():
+        locator = _candidate_answer_locator(page, field_key)
+        if not locator.count() or not locator.is_visible():
+            continue
+        if locator.evaluate("element => element.tagName") == "SELECT":
+            if locator.input_value():
+                continue
+            locator.select_option(label=value)
+            filled.append(field_key)
+            continue
+        if locator.get_attribute("role") == "combobox":
+            if _control_has_value(locator):
+                continue
+            if not _select_confirmed_combobox_option(page, locator, value):
+                continue
+        else:
+            if locator.input_value():
+                continue
+            locator.fill(value)
+        filled.append(field_key)
+    for field_name, label in answers.checkbox_values.items():
+        inputs = page.locator(f'input[type="checkbox"][name="{field_name}"]')
+        for index in range(inputs.count()):
+            checkbox = inputs.nth(index)
+            nearby_text = checkbox.evaluate(
+                "element => element.closest('label')?.innerText || element.parentElement?.innerText || element.parentElement?.parentElement?.innerText || ''"
+            )
+            if label.casefold() in nearby_text.casefold() and not checkbox.is_checked():
+                checkbox.check()
+                filled.append(field_name)
+                break
+    return filled
+
+
+def _candidate_answer_locator(page, field_key: str):
+    """Find a candidate-approved control by its stable name or id attribute."""
+    escaped_key = json.dumps(field_key)
+    return page.locator(
+        f"input[name={escaped_key}], input[id={escaped_key}], "
+        f"textarea[name={escaped_key}], textarea[id={escaped_key}], "
+        f"select[name={escaped_key}], select[id={escaped_key}], "
+        f"input[aria-label={escaped_key}], textarea[aria-label={escaped_key}], "
+        f"select[aria-label={escaped_key}], input[placeholder={escaped_key}], "
+        f"textarea[placeholder={escaped_key}]"
+    ).first
+
+
+def _select_confirmed_combobox_option(page, locator, value: str) -> bool:
+    """Select only a visible option that matches the candidate-confirmed value."""
+    locator.click()
+    locator.fill(value)
+    page.wait_for_timeout(750)
+    options = page.locator('[role="option"]:visible')
+    for index in range(options.count()):
+        option = options.nth(index)
+        if _matches_confirmed_option(option.inner_text(), value):
+            option.click()
+            return True
+    return False
+
+
+def _matches_confirmed_option(option_text: str, value: str) -> bool:
+    normalized_option = option_text.strip().casefold()
+    normalized_value = value.strip().casefold()
+    return normalized_option == normalized_value or normalized_option.startswith(f"{normalized_value} +")
+
+
+def _unresolved_required_fields(page) -> tuple[str, ...]:
+    """Return visible required controls still blank after conservative preparation."""
+    unresolved: list[str] = []
+    required_controls = page.locator(
+        'input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"], '
+        'input[required]:not([type="checkbox"]), textarea[required], select[required]'
+    )
+    for index in range(required_controls.count()):
+        control = required_controls.nth(index)
+        label = _control_label(control)
+        if not control.is_visible() or not label:
+            continue
+        if not _control_has_value(control):
+            unresolved.append(label)
+
+    required_checkboxes = page.locator('input[type="checkbox"][required]')
+    checked_groups: set[str] = set()
+    checkbox_groups: dict[str, list[object]] = {}
+    for index in range(required_checkboxes.count()):
+        checkbox = required_checkboxes.nth(index)
+        if not checkbox.is_visible():
+            continue
+        key = checkbox.get_attribute("name") or checkbox.get_attribute("id") or f"checkbox-{index}"
+        checkbox_groups.setdefault(key, []).append(checkbox)
+        if checkbox.is_checked():
+            checked_groups.add(key)
+    for key, checkboxes in checkbox_groups.items():
+        if key not in checked_groups:
+            unresolved.append(_control_label(checkboxes[0]) or key)
+    return tuple(dict.fromkeys(unresolved))
+
+
+def _control_label(control) -> str | None:
+    return control.get_attribute("aria-label") or control.get_attribute("id") or control.get_attribute("name")
+
+
+def _control_has_value(control) -> bool:
+    if control.input_value():
+        return True
+    if control.get_attribute("role") != "combobox":
+        return False
+    return bool(
+        control.evaluate(
+            "element => Boolean("
+            "element.closest('[class*=\"value-container\"]')?.querySelector('[class*=\"single-value\"]')"
+            ")"
+        )
+    )
+
+
+def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:
+    """Return a safe public application destination from an official CTA href."""
+    if not href:
+        return None
+    destination = urljoin(current_url, href)
+    parsed = urlparse(destination)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return destination
+
+
+def _follow_verified_apply_link(page) -> None:
+    """Follow only an explicit Apply Now link; never click a submit control here."""
+    links = page.locator("a")
+    for index in range(links.count()):
+        link = links.nth(index)
+        if not link.is_visible() or link.inner_text().strip().casefold() != "apply now":
+            continue
+        destination = resolve_apply_now_url(page.url, link.get_attribute("href"))
+        if destination and destination != page.url:
+            page.goto(destination, wait_until="domcontentloaded")
+        return
 
 
 def submit_visible_submission(
@@ -110,6 +305,10 @@ def submit_visible_submission(
     evidence: CareerEvidence,
     approved_attachment: Path,
     on_human_verification: Callable[[], None] | None = None,
+    before_submit: Callable[[], None] | None = None,
+    form_answers: ApplicationFormAnswers | None = None,
+    wait_for_human_seconds: int = 0,
+    proof_path: Path | None = None,
 ) -> BrowserPreparationResult:
     """Submit an already-approved portal application only when confirmation is visible."""
     from playwright.sync_api import sync_playwright
@@ -121,6 +320,7 @@ def submit_visible_submission(
         )
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(application_url, wait_until="domcontentloaded")
+        _follow_verified_apply_link(page)
         if contains_human_verification(page.locator("body").inner_text(), [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
@@ -128,8 +328,23 @@ def submit_visible_submission(
             return BrowserPreparationResult(
                 "awaiting_human_verification", (), "Human verification is still required."
             )
-        prepared = _fill_safe_fields(page, evidence, approved_attachment)
+        prepared = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
+        if prepared.unresolved_required_fields:
+            context.close()
+            return BrowserPreparationResult(
+                "submission_prepared",
+                prepared.filled_fields,
+                "Required fields are unresolved; the portal was not submitted.",
+                prepared.unresolved_required_fields,
+                page.url,
+            )
         submit = page.locator('button[type="submit"], input[type="submit"]').first
+        if not submit.count() or not submit.is_visible():
+            apply_now_buttons = page.get_by_role(
+                "button", name=re.compile(r"^apply now$", re.IGNORECASE)
+            )
+            if apply_now_buttons.count() == 1 and apply_now_buttons.first.is_visible():
+                submit = apply_now_buttons.first
         if not submit.count() or not submit.is_visible():
             context.close()
             return BrowserPreparationResult(
@@ -137,20 +352,52 @@ def submit_visible_submission(
                 prepared.filled_fields,
                 "No unambiguous submit control was found; the application remains prepared.",
             )
+        if before_submit:
+            before_submit()
         submit.click()
         page.wait_for_timeout(1_000)
         body = page.locator("body").inner_text()
         if contains_human_verification(body, [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
+            deadline = wait_for_human_seconds
+            while deadline > 0 and contains_human_verification(
+                page.locator("body").inner_text(), [frame.url for frame in page.frames]
+            ):
+                sleep(2)
+                deadline -= 2
+            body = page.locator("body").inner_text()
+            if not contains_human_verification(body, [frame.url for frame in page.frames]):
+                if is_submission_confirmation(body):
+                    screenshot_path, screenshot_sha256 = _capture_submission_screenshot(page, proof_path)
+                    context.close()
+                    return BrowserPreparationResult(
+                        "submitted",
+                        prepared.filled_fields,
+                        "Portal confirmed that the application was submitted after human verification.",
+                        screenshot_path=screenshot_path,
+                        screenshot_sha256=screenshot_sha256,
+                    )
+                context.close()
+                return BrowserPreparationResult(
+                    "submission_prepared",
+                    prepared.filled_fields,
+                    "Human verification completed, but no portal confirmation appeared. "
+                    "Request a fresh final approval before another submit click.",
+                )
             context.close()
             return BrowserPreparationResult(
                 "awaiting_human_verification", prepared.filled_fields, "Human verification appeared after submit."
             )
         if is_submission_confirmation(body):
+            screenshot_path, screenshot_sha256 = _capture_submission_screenshot(page, proof_path)
             context.close()
             return BrowserPreparationResult(
-                "submitted", prepared.filled_fields, "Portal confirmed that the application was submitted."
+                "submitted",
+                prepared.filled_fields,
+                "Portal confirmed that the application was submitted.",
+                screenshot_path=screenshot_path,
+                screenshot_sha256=screenshot_sha256,
             )
         context.close()
     return BrowserPreparationResult(
@@ -158,3 +405,12 @@ def submit_visible_submission(
         prepared.filled_fields,
         "Submit was clicked but no confirmation page was detected; submission was not recorded.",
     )
+
+
+def _capture_submission_screenshot(page, proof_path: Path | None) -> tuple[str | None, str | None]:
+    if proof_path is None:
+        return None, None
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(proof_path), full_page=True)
+    digest = hashlib.sha256(proof_path.read_bytes()).hexdigest()
+    return str(proof_path.resolve()), digest

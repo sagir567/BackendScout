@@ -160,3 +160,117 @@ def test_score_job_skips_non_backend_role_without_backend_signals() -> None:
 
     assert result.recommended_action == MatchRecommendation.SKIP
     assert any(item.component == "role_relevance" and item.points_awarded == 0 for item in result.score_breakdown)
+
+
+def test_score_job_treats_tel_aviv_as_a_match_for_an_israel_target() -> None:
+    result = score_job(
+        make_profile(),
+        Job(
+            source="manual",
+            source_url="https://example.com/jobs/tel-aviv",
+            company="Example",
+            title="Backend Engineer",
+            location="Tel Aviv",
+            description="Build backend APIs with Python.",
+            required_skills=["Python"],
+            years_experience="2 years",
+        ),
+    )
+
+    assert result.location_assessment == LocationAssessment.FIT
+
+
+def test_score_job_recognizes_verified_dotnet_oop_and_relational_database_aliases() -> None:
+    profile = make_profile().model_copy(
+        update={
+            "core_skills": ["C#", ".NET 8", "Object-Oriented Programming", "PostgreSQL", "CI/CD"],
+            "nice_to_have_skills": ["Cloud"],
+        }
+    )
+    result = score_job(
+        profile,
+        Job(
+            source="manual",
+            source_url="https://example.com/jobs/dotnet",
+            company="Example",
+            title="Junior Backend Engineer",
+            location="Kfar Saba, Israel",
+            remote_policy="Hybrid",
+            description="Backend development role.",
+            required_skills=[".NET", "OOP", "Relational Databases", "CI/CD", "Cloud"],
+            years_experience="1 year",
+        ),
+    )
+
+    assert result.missing_skills == []
+    assert result.matched_skills == [".NET", "OOP", "Relational Databases", "CI/CD", "Cloud"]
+
+
+def test_score_job_recognizes_cpp_platform_and_degree_aliases() -> None:
+    profile = make_profile().model_copy(
+        update={
+            "core_skills": [
+                "C++",
+                "Linux",
+                "Git",
+                "B.Sc. Computer Science",
+                "Problem solving",
+                "Large codebase comprehension",
+                "Performance optimization",
+            ],
+            "nice_to_have_skills": ["Distributed systems"],
+            "proof_points": [
+                "Built C++ coursework and personal projects.",
+                "Used Git, Linux-based tooling, and performance optimization in engineering projects.",
+                "Completed a B.Sc. in Computer Science and Mathematics.",
+                "Practiced problem solving and large codebase comprehension.",
+            ],
+        }
+    )
+    result = score_job(
+        profile,
+        Job(
+            source="manual",
+            source_url="https://example.com/jobs/cpp",
+            company="Example",
+            title="Junior Software Developer",
+            location="Herzliya, Israel",
+            remote_policy="Hybrid",
+            description="Develop server-side C++ over Linux and performance-oriented clustered systems.",
+            required_skills=[
+                "C++",
+                "Linux",
+                "Git",
+                "B.Sc. Computer Science or equivalent",
+                "Problem solving",
+                "Large codebase",
+                "Performance-oriented development",
+                "Clustered systems",
+            ],
+            years_experience="2 years",
+        ),
+    )
+
+    assert result.missing_skills == []
+    assert result.recommended_action == MatchRecommendation.APPLY
+
+
+def test_score_job_treats_software_developer_as_target_role_with_backend_signals() -> None:
+    result = score_job(
+        make_profile(),
+        Job(
+            source="manual",
+            source_url="https://example.com/jobs/platform",
+            company="Example",
+            title="Junior Software Developer",
+            location="Herzliya, Israel",
+            remote_policy="Hybrid",
+            salary_text="18,000 NIS",
+            description="Develop Python server-side APIs over Linux.",
+            required_skills=["Python"],
+            years_experience="2 years",
+        ),
+    )
+
+    role = next(item for item in result.score_breakdown if item.component == "role_relevance")
+    assert role.points_awarded == 25

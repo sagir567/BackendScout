@@ -10,6 +10,7 @@ APPLICATIONS_PROPERTY_NAMES = {
     "status": "Status",
     "source": "Source",
     "source_url": "Source URL",
+    "application_url": "Application URL",
     "location": "Location",
     "remote_policy": "Remote Policy",
     "employment_type": "Employment Type",
@@ -31,6 +32,7 @@ APPLICATIONS_PROPERTY_TYPES = {
     "status": "status",
     "source": "rich_text",
     "source_url": "url",
+    "application_url": "url",
     "location": "rich_text",
     "remote_policy": "rich_text",
     "employment_type": "rich_text",
@@ -44,6 +46,42 @@ APPLICATIONS_PROPERTY_TYPES = {
     "submission_channel": "select",
     "contact_source": "rich_text",
     "submission_record": "rich_text",
+}
+
+REQUIRED_WORKFLOW_STATUSES = (
+    ApplicationStatus.FOUND,
+    ApplicationStatus.DIGEST_SENT,
+    ApplicationStatus.APPROVED_TO_TAILOR,
+    ApplicationStatus.CV_DRAFTED,
+    ApplicationStatus.REVISION_REQUESTED,
+    ApplicationStatus.APPROVED_TO_SUBMIT,
+    ApplicationStatus.SUBMISSION_PREPARED,
+    ApplicationStatus.AWAITING_HUMAN_VERIFICATION,
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.RECRUITER_REPLY,
+    ApplicationStatus.ASSESSMENT,
+    ApplicationStatus.INTERVIEW,
+    ApplicationStatus.REJECTED,
+    ApplicationStatus.OFFER,
+    ApplicationStatus.CLOSED,
+)
+
+WORKFLOW_STATUS_COLORS = {
+    ApplicationStatus.FOUND: "gray",
+    ApplicationStatus.DIGEST_SENT: "blue",
+    ApplicationStatus.APPROVED_TO_TAILOR: "blue",
+    ApplicationStatus.CV_DRAFTED: "blue",
+    ApplicationStatus.REVISION_REQUESTED: "yellow",
+    ApplicationStatus.APPROVED_TO_SUBMIT: "purple",
+    ApplicationStatus.SUBMISSION_PREPARED: "purple",
+    ApplicationStatus.AWAITING_HUMAN_VERIFICATION: "orange",
+    ApplicationStatus.SUBMITTED: "green",
+    ApplicationStatus.RECRUITER_REPLY: "blue",
+    ApplicationStatus.ASSESSMENT: "purple",
+    ApplicationStatus.INTERVIEW: "purple",
+    ApplicationStatus.REJECTED: "red",
+    ApplicationStatus.OFFER: "green",
+    ApplicationStatus.CLOSED: "gray",
 }
 
 
@@ -202,6 +240,7 @@ def build_job_page_properties(
         }
 
     optional_values = {
+        "application_url": job.application_url,
         "location": job.location,
         "remote_policy": job.remote_policy,
         "employment_type": job.employment_type,
@@ -211,6 +250,9 @@ def build_job_page_properties(
     }
     for key, value in optional_values.items():
         if value:
+            if key == "application_url":
+                properties[APPLICATIONS_PROPERTY_NAMES[key]] = {"url": value}
+                continue
             properties[APPLICATIONS_PROPERTY_NAMES[key]] = _rich_text(value)
 
     if job.match_score is not None:
@@ -272,6 +314,7 @@ def application_digest_item_from_page(page: dict[str, Any]) -> ApplicationDigest
         status=ApplicationStatus(_extract_status_value(properties, "status") or ApplicationStatus.FOUND.value),
         source=_extract_rich_text_value(properties, "source") or "unknown",
         source_url=_extract_url_value(properties, "source_url") or "",
+        application_url=_extract_url_value(properties, "application_url"),
         location=_extract_rich_text_value(properties, "location"),
         remote_policy=_extract_rich_text_value(properties, "remote_policy"),
         employment_type=_extract_rich_text_value(properties, "employment_type"),
@@ -287,6 +330,7 @@ def job_from_application_page(page: dict[str, Any]) -> Job:
     return Job(
         source=_extract_rich_text_value(properties, "source") or "unknown",
         source_url=_extract_url_value(properties, "source_url") or "",
+        application_url=_extract_url_value(properties, "application_url"),
         company=_extract_rich_text_value(properties, "company") or "Unknown Company",
         title=_extract_title_value(properties, "role") or "Untitled Role",
         description=_extract_rich_text_value(properties, "description") or "",
@@ -327,7 +371,7 @@ def validate_applications_data_source(data_source: dict[str, Any]) -> list[str]:
 def validate_submission_data_source(data_source: dict[str, Any]) -> list[str]:
     properties = data_source.get("properties", {})
     problems = []
-    for key in ("submission_channel", "contact_source", "submission_record"):
+    for key in ("application_url", "submission_channel", "contact_source", "submission_record"):
         name = APPLICATIONS_PROPERTY_NAMES[key]
         actual_type = properties.get(name, {}).get("type")
         if actual_type != APPLICATIONS_PROPERTY_TYPES[key]:
@@ -340,6 +384,7 @@ def missing_submission_property_definitions(data_source: dict[str, Any]) -> dict
     properties = data_source.get("properties") or {}
     definitions: dict[str, Any] = {}
     for key, definition in {
+        "application_url": {"url": {}},
         "submission_channel": {
             "select": {
                 "options": [
@@ -362,6 +407,53 @@ def missing_submission_property_definitions(data_source: dict[str, Any]) -> dict
                 f"expected {APPLICATIONS_PROPERTY_TYPES[key]}"
             )
     return definitions
+
+
+def missing_workflow_status_property_definition(data_source: dict[str, Any]) -> dict[str, Any]:
+    """Return an additive Status update that preserves every existing option."""
+    properties = data_source.get("properties") or {}
+    status_property = properties.get(APPLICATIONS_PROPERTY_NAMES["status"])
+    if status_property is None:
+        raise ValueError("Missing property: Status (status)")
+    if status_property.get("type") != "status":
+        raise ValueError("Status must be a status property")
+    options = status_property.get("status", {}).get("options", [])
+    if not isinstance(options, list):
+        raise TypeError("Status options are invalid")
+    existing_names = {
+        option.get("name")
+        for option in options
+        if isinstance(option, dict) and isinstance(option.get("name"), str)
+    }
+    missing = [status for status in REQUIRED_WORKFLOW_STATUSES if status.value not in existing_names]
+    if not missing:
+        return {}
+    preserved_options = [
+        {"id": option["id"]}
+        for option in options
+        if isinstance(option, dict) and isinstance(option.get("id"), str)
+    ]
+    additions = [
+        {"name": status.value, "color": WORKFLOW_STATUS_COLORS[status]}
+        for status in missing
+    ]
+    return {
+        APPLICATIONS_PROPERTY_NAMES["status"]: {
+            "status": {"options": [*preserved_options, *additions]}
+        }
+    }
+
+
+def missing_workflow_statuses(data_source: dict[str, Any]) -> list[str]:
+    properties = data_source.get("properties") or {}
+    status_property = properties.get(APPLICATIONS_PROPERTY_NAMES["status"], {})
+    options = status_property.get("status", {}).get("options", [])
+    existing_names = {
+        option.get("name")
+        for option in options
+        if isinstance(option, dict) and isinstance(option.get("name"), str)
+    }
+    return [status.value for status in REQUIRED_WORKFLOW_STATUSES if status.value not in existing_names]
 
 
 def _title(content: str) -> dict[str, Any]:

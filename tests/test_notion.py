@@ -6,6 +6,8 @@ from backend_scout.notion import (
     APPLICATIONS_PROPERTY_TYPES,
     build_job_page_properties,
     missing_submission_property_definitions,
+    missing_workflow_status_property_definition,
+    missing_workflow_statuses,
     upsert_job_page,
     validate_applications_data_source,
 )
@@ -15,6 +17,7 @@ def test_build_job_page_properties_uses_data_source_schema_names() -> None:
     job = Job(
         source="manual",
         source_url="https://example.com/jobs/backend",
+        application_url="https://company.example/apply/backend",
         company="Example",
         title="Backend Engineer",
         description="Build APIs and workers.",
@@ -27,6 +30,7 @@ def test_build_job_page_properties_uses_data_source_schema_names() -> None:
     assert properties[APPLICATIONS_PROPERTY_NAMES["role"]]["title"][0]["text"]["content"] == job.title
     assert properties[APPLICATIONS_PROPERTY_NAMES["status"]]["status"]["name"] == "digest_sent"
     assert properties[APPLICATIONS_PROPERTY_NAMES["source_url"]]["url"] == job.source_url
+    assert properties[APPLICATIONS_PROPERTY_NAMES["application_url"]]["url"] == job.application_url
     assert properties[APPLICATIONS_PROPERTY_NAMES["match_score"]]["number"] == 88
     assert properties[APPLICATIONS_PROPERTY_NAMES["required_skills"]]["multi_select"] == [
         {"name": "Python"},
@@ -64,11 +68,38 @@ def test_submission_field_definitions_are_additive_and_refuse_wrong_existing_typ
 
     assert definitions["Submission Channel"]["select"]["options"][0]["name"] == "email"
     assert definitions["Contact Source"] == {"rich_text": {}}
+    assert definitions["Application URL"] == {"url": {}}
 
     with pytest.raises(ValueError, match="Submission Channel"):
         missing_submission_property_definitions(
             {"properties": {"Submission Channel": {"type": "rich_text"}}}
         )
+
+
+def test_workflow_status_update_preserves_existing_options_and_adds_missing_ones() -> None:
+    data_source = {
+        "properties": {
+            "Status": {
+                "type": "status",
+                "status": {
+                    "options": [
+                        {"id": "found-id", "name": "found", "color": "gray"},
+                        {"id": "submitted-id", "name": "submitted", "color": "green"},
+                    ]
+                },
+            }
+        }
+    }
+
+    definition = missing_workflow_status_property_definition(data_source)
+    options = definition["Status"]["status"]["options"]
+
+    assert {"id": "found-id"} in options
+    assert {"id": "submitted-id"} in options
+    assert {"name": "submission_prepared", "color": "purple"} in options
+    assert missing_workflow_statuses(data_source) == [
+        status.value for status in ApplicationStatus if status.value not in {"found", "submitted"}
+    ]
 
 
 def test_build_job_page_properties_can_preserve_existing_status_on_update() -> None:

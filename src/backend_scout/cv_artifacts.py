@@ -16,6 +16,9 @@ class CvDraftManifest(BaseModel):
     docx_path: str
     pdf_path: str
     docx_sha256: str
+    pdf_sha256: str | None = None
+    tracker: str = "test"
+    tailoring_note_sha256: str | None = None
     created_at: datetime
 
 
@@ -41,8 +44,11 @@ def write_manifest(
     role: str,
     docx_path: Path,
     pdf_path: Path,
+    tracker: str = "test",
+    tailoring_note: str | None = None,
 ) -> CvDraftManifest:
     digest = sha256_file(docx_path)
+    pdf_digest = sha256_file(pdf_path)
     manifest = CvDraftManifest(
         draft_id=digest[:8],
         notion_page_id=notion_page_id,
@@ -51,6 +57,9 @@ def write_manifest(
         docx_path=str(docx_path.resolve()),
         pdf_path=str(pdf_path.resolve()),
         docx_sha256=digest,
+        pdf_sha256=pdf_digest,
+        tracker=tracker,
+        tailoring_note_sha256=sha256_text(tailoring_note) if tailoring_note else None,
         created_at=datetime.now(UTC),
     )
     (directory / "manifest.json").write_text(
@@ -78,6 +87,8 @@ def verify_manifest(manifest: CvDraftManifest, expected_draft_id: str) -> None:
         raise ValueError("CV draft artifact is missing")
     if sha256_file(docx_path) != manifest.docx_sha256:
         raise ValueError("CV draft changed after it was sent for approval")
+    if manifest.pdf_sha256 is not None and sha256_file(pdf_path) != manifest.pdf_sha256:
+        raise ValueError("CV PDF changed after it was sent for approval")
 
 
 def sha256_file(path: Path) -> str:
@@ -86,6 +97,10 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _safe_path_component(value: str) -> str:

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.backendscout.telegram</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>TODO_ABSOLUTE_PROJECT_PATH/.venv/bin/backend-scout</string>
+    <string>telegram</string>
+    <string>listen</string>
+    <string>--tracker</string>
+    <string>production</string>
+    <string>--timeout-seconds</string>
+    <string>30</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/telegram-listener.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/telegram-listener.err.log</string>
+</dict>
+</plist>

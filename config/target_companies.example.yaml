@@ -1,0 +1,8 @@
+# Copy to the ignored config/target_companies.yaml, then edit the TODO items.
+# Only public Greenhouse, Lever, and Ashby boards are collected in this stage.
+companies:
+  - name: TODO Israeli company name
+    provider: greenhouse # greenhouse | lever | ashby
+    board_token: TODO board token from the public careers URL
+    enabled: false
+    notes: TODO Why this company is relevant to your Israel/backend search.

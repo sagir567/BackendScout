@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.backendscout.mailbox</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>TODO_ABSOLUTE_PROJECT_PATH/scripts/run_mailbox_watcher.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>900</integer>
+  <key>StandardOutPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/mailbox-launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/mailbox-launchd.err.log</string>
+</dict>
+</plist>

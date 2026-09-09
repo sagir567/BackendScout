@@ -1,0 +1,19 @@
+local_repositories:
+  - name: BackendScout
+    path: /Users/YOUR_USER/Documents/CV/BackendScout
+    enabled: true
+  - name: Fitness Codex Agent
+    path: /Users/YOUR_USER/Agents/fitness-codex-agent
+    enabled: true
+github_repositories:
+  - owner: sagir567
+    kind: user
+    enabled: true
+  - owner: FireBomb-game-development
+    kind: org
+    enabled: true
+  - owner: Astro-informatics-cipher-project
+    kind: org
+    enabled: true
+max_files_per_local_repo: 2500
+max_public_repos_per_owner: 60
