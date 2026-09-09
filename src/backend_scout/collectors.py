@@ -1,5 +1,6 @@
 """Policy-safe collectors for public company ATS job-board APIs."""
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -24,6 +25,41 @@ ISRAEL_LOCATION_TERMS = (
     "beer sheva",
 )
 REMOTE_TERMS = ("remote", "work from home", "distributed")
+SKILL_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Python", ("python",)),
+    ("FastAPI", ("fastapi",)),
+    ("Django", ("django",)),
+    ("Flask", ("flask",)),
+    ("C++", ("c++", "cpp", "c plus plus")),
+    ("C#", ("c#", "c sharp")),
+    (".NET", ("net", "dotnet", "asp net", "asp net core")),
+    ("Java", ("java",)),
+    ("SQL", ("sql",)),
+    ("PostgreSQL", ("postgresql", "postgres", "psql")),
+    ("MongoDB", ("mongodb", "mongo db", "mongo")),
+    ("Redis", ("redis",)),
+    ("Docker", ("docker", "container", "containers", "containerization")),
+    ("Kubernetes", ("kubernetes", "k8s")),
+    ("Azure", ("azure", "azure cloud")),
+    ("AWS", ("aws", "amazon web services")),
+    ("GCP", ("gcp", "google cloud", "google cloud platform")),
+    ("GCS", ("gcs", "google cloud storage")),
+    ("Linux", ("linux", "unix")),
+    ("APIs", ("api", "apis", "rest api", "restful api")),
+    ("GraphQL", ("graphql",)),
+    ("Microservices", ("microservices", "microservice")),
+    ("OOP", ("oop", "object oriented", "object-oriented")),
+    ("CI/CD", ("ci/cd", "cicd", "continuous integration", "continuous delivery")),
+    ("Git", ("git", "github")),
+    (
+        "Multithreading",
+        ("multithreading", "multithreaded", "multi threading", "multi-threaded", "concurrency", "threading"),
+    ),
+    ("Data Pipelines", ("data pipeline", "data pipelines", "etl")),
+    ("Distributed Systems", ("distributed systems", "distributed system")),
+    ("Performance", ("performance optimization", "performance-oriented", "performance oriented")),
+    ("Large Codebase", ("large codebase", "large code base", "complex codebase", "complex code base")),
+)
 
 
 def collect_public_jobs(target: TargetCompany, fetch_json: JsonFetcher | None = None) -> list[Job]:
@@ -117,6 +153,7 @@ def _job(
     remote_policy: str | None = None,
     salary_text: str | None = None,
 ) -> Job:
+    skills = _extract_required_skills(title, description)
     return Job(
         source=f"{target.provider.value}:{target.name}",
         source_url=url,
@@ -127,6 +164,8 @@ def _job(
         remote_policy=remote_policy,
         salary_text=salary_text,
         description=description or "Published public ATS job posting.",
+        required_skills=skills,
+        years_experience=_extract_years_experience(description),
         discovered_at=datetime.now(UTC),
     )
 
@@ -165,4 +204,39 @@ def _salary_text(value: Any) -> str | None:
     minimum, maximum, currency = value.get("minValue"), value.get("maxValue"), value.get("currencyCode")
     if isinstance(minimum, (int, float)) and isinstance(maximum, (int, float)):
         return f"{minimum:g}-{maximum:g} {currency or ''}".strip()
+    return None
+
+
+def _extract_required_skills(title: str, description: str) -> list[str]:
+    searchable_text = " ".join(filter(None, [title, description]))
+    normalized_text = f" {_normalize_for_skill_search(searchable_text)} "
+    found: list[str] = []
+    for label, aliases in SKILL_KEYWORDS:
+        if any(_contains_normalized_phrase(normalized_text, alias) for alias in aliases):
+            found.append(label)
+    return found
+
+
+def _contains_normalized_phrase(normalized_text: str, phrase: str) -> bool:
+    normalized_phrase = _normalize_for_skill_search(phrase)
+    if not normalized_phrase:
+        return False
+    return f" {normalized_phrase} " in normalized_text
+
+
+def _normalize_for_skill_search(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9+#]+", value.casefold().replace(".net", "dotnet")))
+
+
+def _extract_years_experience(description: str) -> str | None:
+    patterns = (
+        r"(\d+)\s*\+\s*(?:years?|yrs?)",
+        r"(\d+)\s*(?:-\s*\d+\s*)?(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience",
+        r"at least\s+(\d+)\s+(?:years?|yrs?)",
+        r"minimum\s+of\s+(\d+)\s+(?:years?|yrs?)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, description.casefold())
+        if match:
+            return f"{match.group(1)}+ years"
     return None

@@ -475,11 +475,7 @@ def collect_run(
             failures.append(f"{target.name}: {exc}")
     israel_relevant = [job for job in collected if is_israel_or_remote(job)]
     scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))
-    shortlist = [
-        scored_job
-        for scored_job in scored_jobs
-        if scored_job.result.recommended_action.value in {"apply", "maybe"}
-    ]
+    shortlist = [scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job)]
     _print_scored_jobs_table(shortlist, title="Public ATS Collection Shortlist")
     console.print(
         f"Collected {len(collected)} public job(s); Israel/remote filter kept {len(israel_relevant)}; "
@@ -530,6 +526,20 @@ def collect_run(
     console.print(f"[green]Synced {len(shortlist)} shortlisted job(s); created {len(created_pages)} new Notion row(s).[/green]")
     if send_digest:
         console.print(f"[green]Sent {len(created_pages)} new-job digest message(s).[/green]")
+
+
+def _is_public_collection_shortlist(scored_job: ScoredJob) -> bool:
+    if scored_job.result.recommended_action.value not in {"apply", "maybe"}:
+        return False
+    role_points = next(
+        (
+            item.points_awarded
+            for item in scored_job.result.score_breakdown
+            if item.component == "role_relevance"
+        ),
+        0,
+    )
+    return role_points >= 15
 
 
 @repos_app.command("validate")

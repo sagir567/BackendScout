@@ -222,6 +222,11 @@ Public ATS collector progress:
   boards and Israel-relevant starter companies.
 - [x] Filter collection results to Israel locations or remote roles before
   transparent scoring and Notion sync.
+- [x] Extract deterministic skill and years-of-experience signals from public
+  posting descriptions so ATS feeds without structured requirements still score
+  usefully.
+- [x] Keep the automatic shortlist high-precision by requiring meaningful
+  target-role relevance before a collected job enters the digest.
 - [x] Add a `launchd` template that invokes the same tested CLI command used
   for a manual daily collection.
 - [ ] Add a reviewed source for Israeli job aggregators only after confirming a

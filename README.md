@@ -62,6 +62,9 @@ draft have both been approved.
   and recorded in Notion's submission audit.
 - Gmail mailbox scanning with `gmail.readonly` to classify confirmations,
   rejections, assessments, interviews, and offers.
+- Public ATS scouting extracts recognizable skill and years-of-experience
+  signals from the full job description, then keeps only jobs with meaningful
+  target-role relevance in the automatic shortlist.
 
 ## Privacy And Safety
 
@@ -134,6 +137,11 @@ Copy `config/target_companies.example.yaml` to the ignored
 `config/target_companies.yaml`. It lists only public Greenhouse, Lever, and
 Ashby company boards. Start with Israeli locations and companies; the collector
 also keeps remote roles when your candidate profile allows remote work.
+It reads each public posting description to infer explicit requirements such as
+Python, C++, Linux, Docker, SQL, CI/CD, APIs, cloud tools, and simple `2+ years`
+style experience hints. The morning shortlist still filters for meaningful
+backend/software role relevance so generic product, admin, or consulting roles
+do not crowd the Telegram digest just because they mention a technical keyword.
 
 Preview a collection without writing external state:
 
