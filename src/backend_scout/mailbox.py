@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -123,6 +124,26 @@ def format_mailbox_digest(
         lines.append(f"Subject: {message.subject or '(no subject)'}")
         lines.append(f"Reason: {classification.reason}")
     return "\n".join(lines)
+
+
+def format_mailbox_audit_record(
+    message: GmailMessageSummary,
+    classification: MailClassification,
+    *,
+    updated_at: datetime | None = None,
+) -> str:
+    timestamp = (updated_at or datetime.now(UTC)).isoformat()
+    status = classification.status.value if classification.status else "needs_review"
+    subject = message.subject or "(no subject)"
+    sender = message.from_header or "(unknown sender)"
+    return (
+        f"Mailbox update at {timestamp}\n"
+        f"Status signal: {status}\n"
+        f"Gmail message ID: {message.message_id}\n"
+        f"From: {sender}\n"
+        f"Subject: {subject}\n"
+        f"Reason: {classification.reason}"
+    )
 
 
 def _contains_any(value: str, terms: tuple[str, ...]) -> bool:

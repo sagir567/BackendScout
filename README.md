@@ -61,7 +61,8 @@ draft have both been approved.
 - Portal-submission proof screenshots saved locally, hashed, sent to Telegram,
   and recorded in Notion's submission audit.
 - Gmail mailbox scanning with `gmail.readonly` to classify confirmations,
-  rejections, assessments, interviews, and offers.
+  rejections, assessments, interviews, and offers, then append an audit note to
+  Notion when a status is updated.
 - Public ATS scouting extracts recognizable skill and years-of-experience
   signals from the full job description, then keeps only jobs with meaningful
   target-role relevance in the automatic shortlist.

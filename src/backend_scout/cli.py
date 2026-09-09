@@ -51,6 +51,7 @@ from backend_scout.launchd import (
 from backend_scout.mailbox import (
     DEFAULT_MAILBOX_QUERY,
     classify_gmail_message,
+    format_mailbox_audit_record,
     format_mailbox_digest,
     match_message_to_application,
 )
@@ -1401,13 +1402,17 @@ def gmail_watch_once(
                     for message, classification, _application in updates
                 ]
                 if write_notion:
-                    for _message, classification, application in matched_updates:
+                    for message, classification, application in matched_updates:
                         if application is None or classification.status is None:
                             continue
                         if can_transition_application_status(application.status, classification.status):
                             notion_client.update_application_status(
                                 application.notion_page_id,
                                 classification.status,
+                            )
+                            notion_client.append_submission_record(
+                                application.notion_page_id,
+                                format_mailbox_audit_record(message, classification),
                             )
         except Exception as exc:
             console.print("[red]Mailbox tracker update failed[/red]")

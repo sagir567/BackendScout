@@ -553,6 +553,8 @@ TODO:
 - [x] Add fast Telegram callback acknowledgements, `/status`, `/scout`, and a local task queue.
 - [x] Add portal proof screenshot capture and Notion audit fields.
 - [x] Add Gmail readonly mailbox classification and a 15-minute launchd watcher template.
+- [x] Append mailbox status-change audit records to Notion so each update keeps
+  the Gmail message ID, subject, sender, reason, and timestamp.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.
 ```

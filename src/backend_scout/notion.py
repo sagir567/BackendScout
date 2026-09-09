@@ -201,6 +201,26 @@ class NotionClient:
         response.raise_for_status()
         return response.json()
 
+    def append_submission_record(
+        self,
+        page_id: str,
+        record: str,
+    ) -> dict[str, Any]:
+        page = self.retrieve_page(page_id)
+        properties = page.get("properties", {}) if isinstance(page, dict) else {}
+        previous_record = _extract_rich_text_value(properties, "submission_record")
+        updated_record = f"{previous_record}\n\n{record}" if previous_record else record
+        response = self._client.patch(
+            f"/pages/{page_id}",
+            json={
+                "properties": {
+                    APPLICATIONS_PROPERTY_NAMES["submission_record"]: _rich_text(updated_record),
+                }
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
     def find_job_page(
         self,
         data_source_id: str,

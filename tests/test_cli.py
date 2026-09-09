@@ -629,3 +629,68 @@ def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result.exit_code == 0
     assert "Mailbox Application Updates" in result.output
     assert "assessment" in result.output
+
+
+def test_gmail_watch_once_writeback_updates_status_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    updated_statuses = []
+    appended_records = []
+    monkeypatch.setenv("NOTION_API_KEY", "secret_notion")
+    monkeypatch.setenv("NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID", "data-source-123")
+    monkeypatch.setattr(
+        "backend_scout.cli.list_recent_messages",
+        lambda query, max_results: [
+            GmailMessageSummary(
+                message_id="msg-1",
+                thread_id="thread-1",
+                from_header="jobs@infinidat.com",
+                subject="Coding challenge for Infinidat",
+                date_header="Wed, 9 Sep 2026 08:00:00 +0300",
+                snippet="Please complete this assessment.",
+            )
+        ],
+    )
+
+    class FakeNotionClient:
+        def __init__(self, api_key: str, api_version: str) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def query_data_source(self, data_source_id: str, payload: dict[str, object]) -> dict[str, object]:
+            return {"results": [_application_page("page-1", ApplicationStatus.SUBMITTED)]}
+
+        def update_application_status(self, page_id: str, status: ApplicationStatus) -> dict[str, object]:
+            updated_statuses.append((page_id, status))
+            return {"id": page_id}
+
+        def append_submission_record(self, page_id: str, record: str) -> dict[str, object]:
+            appended_records.append((page_id, record))
+            return {"id": page_id}
+
+    monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
+
+    result = runner.invoke(app, ["gmail", "watch-once", "--write-notion"])
+
+    assert result.exit_code == 0
+    assert updated_statuses == [("page-1", ApplicationStatus.ASSESSMENT)]
+    assert appended_records[0][0] == "page-1"
+    assert "Gmail message ID: msg-1" in appended_records[0][1]
+
+
+def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:
+    job = Job(
+        source="test",
+        source_url="https://example.com/job",
+        company="Infinidat",
+        title="Junior Software Developer",
+        description="Build backend services.",
+    )
+    return {
+        "id": page_id,
+        "parent": {"data_source_id": "data-source-123"},
+        "properties": build_job_page_properties(job, status),
+    }

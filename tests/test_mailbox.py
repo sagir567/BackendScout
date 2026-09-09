@@ -1,6 +1,7 @@
 from backend_scout.gmail import GmailMessageSummary
 from backend_scout.mailbox import (
     classify_gmail_message,
+    format_mailbox_audit_record,
     format_mailbox_digest,
     match_message_to_application,
 )
@@ -70,3 +71,14 @@ def test_format_mailbox_digest_summarizes_updates() -> None:
     assert "Mailbox scan: 1 relevant message" in digest
     assert "Infinidat - Junior Software Developer" in digest
     assert "assessment" in digest
+
+
+def test_format_mailbox_audit_record_includes_message_source() -> None:
+    message = _message("Application received", "Thanks for applying.", "careers@example.com")
+    classification = classify_gmail_message(message)
+
+    record = format_mailbox_audit_record(message, classification)
+
+    assert "Status signal: recruiter_reply" in record
+    assert "Gmail message ID: msg-1" in record
+    assert "careers@example.com" in record
