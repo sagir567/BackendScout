@@ -312,13 +312,15 @@ Current implementation as of 2026-08-31:
   workflow. `scripts/run_telegram_listener.sh` and its `launchd` template keep
   it alive across terminal sessions and write only local ignored logs.
 - The listener processes only authorized callback buttons and the explicit
-  `/tailor_<page-id>`, `/revise_<page-id>`, `/status`, and `/scout` commands.
-  Free-form messages do not authorize a draft, delivery, or external submission.
+  `/tailor_<page-id>`, `/revise_<page-id>`, `/draft_<page-id>`,
+  `/prepare_<page-id>`, `/status`, and `/scout` commands. Free-form messages
+  do not authorize delivery or external submission.
 - Telegram callback queries are acknowledged immediately before slower Notion,
   Gmail, or browser work starts, so buttons should stop blinking quickly.
-- `/scout` creates a local queued `scout_today` task. `tasks worker-once` can
-  run that task through the same production collector and digest path used by
-  the morning scheduler.
+- `Approve tailoring` can create a local queued CV draft task, and `/scout`,
+  `/draft_<page-id>`, and `/prepare_<page-id>` enqueue the corresponding long
+  work. `tasks worker-once` processes one task at a time; the launchd worker
+  runs the same command every minute with a local lock.
 - Only configured Telegram user IDs may trigger approval actions.
 - `Approve tailoring` transitions `digest_sent -> approved_to_tailor`.
 - `Close` transitions the current job to `closed` when that transition is valid.

@@ -349,10 +349,19 @@ def process_telegram_update(
     tracker: TrackerName = TrackerName.TEST,
     data_source_id: str | None = None,
     portal_submission_authorization_handler: Callable[[str, str], None] | None = None,
+    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str] | None = None,
 ) -> str | None:
     callback_query = update.get("callback_query")
     if not isinstance(callback_query, dict):
-        return _process_message(telegram_client, notion_client, update, allowed_user_ids, tracker, data_source_id)
+        return _process_message(
+            telegram_client,
+            notion_client,
+            update,
+            allowed_user_ids,
+            tracker,
+            data_source_id,
+            task_enqueue_handler,
+        )
 
     from_user = callback_query.get("from", {})
     user_id = from_user.get("id")
@@ -409,13 +418,31 @@ def process_telegram_update(
     chat = message.get("chat", {})
     message_id = message.get("message_id")
     chat_id = chat.get("id")
+    queued_task_id: str | None = None
+    if (
+        action == TelegramApprovalAction.APPROVE_TO_TAILOR
+        and task_enqueue_handler is not None
+        and isinstance(chat_id, int)
+    ):
+        queued_task_id = task_enqueue_handler(
+            QueuedTaskKind.CV_DRAFT,
+            tracker,
+            {"page_id": page_id, "chat_id": chat_id},
+        )
     if isinstance(chat_id, int) and isinstance(message_id, int):
         try:
             telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
             message_text = f"Updated {application.company} - {application.title} to {next_status.value}."
+            if queued_task_id:
+                message_text += f" Queued CV draft task {queued_task_id}."
             if action == TelegramApprovalAction.REQUEST_REVISION:
                 message_text = (
                     f"Send revision feedback as /revise_{page_id} followed by the changes you want."
+                )
+            elif action == TelegramApprovalAction.APPROVE_TO_SUBMIT:
+                message_text = (
+                    f"CV approved for {application.company}. "
+                    f"Send /prepare_{page_id} when you want BackendScout to prepare the portal."
                 )
             elif action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
                 message_text = (
@@ -456,6 +483,7 @@ def _process_message(
     allowed_user_ids: set[int],
     tracker: TrackerName,
     data_source_id: str | None,
+    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str] | None = None,
 ) -> str | None:
     message = update.get("message")
     if not isinstance(message, dict):
@@ -481,9 +509,33 @@ def _process_message(
         payload: dict[str, Any] = {}
         if isinstance(chat_id, int):
             payload["chat_id"] = chat_id
-        task = enqueue_task(QueuedTaskKind.SCOUT_TODAY, tracker, payload)
-        confirmation = f"Queued today's {tracker.value} scout. Task: {task.task_id}."
+        task_id = _enqueue_task(task_enqueue_handler, QueuedTaskKind.SCOUT_TODAY, tracker, payload)
+        confirmation = f"Queued today's {tracker.value} scout. Task: {task_id}."
         result = "scout_queued"
+    elif command.startswith("/draft_"):
+        page_id = command.removeprefix("/draft_")
+        if not isinstance(chat_id, int):
+            return None
+        task_id = _enqueue_task(
+            task_enqueue_handler,
+            QueuedTaskKind.CV_DRAFT,
+            tracker,
+            {"page_id": page_id, "chat_id": chat_id},
+        )
+        confirmation = f"Queued CV draft task {task_id}."
+        result = "cv_draft_queued"
+    elif command.startswith("/prepare_"):
+        page_id = command.removeprefix("/prepare_")
+        if not isinstance(chat_id, int):
+            return None
+        task_id = _enqueue_task(
+            task_enqueue_handler,
+            QueuedTaskKind.PORTAL_PREPARE,
+            tracker,
+            {"page_id": page_id, "chat_id": chat_id},
+        )
+        confirmation = f"Queued portal preparation task {task_id}."
+        result = "portal_prepare_queued"
     elif command.startswith("/revise_"):
         if not feedback:
             raise ValueError("Revision feedback cannot be empty")
@@ -516,6 +568,17 @@ def _process_message(
             confirmation,
         )
     return result
+
+
+def _enqueue_task(
+    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str] | None,
+    kind: QueuedTaskKind,
+    tracker: TrackerName,
+    payload: dict[str, Any],
+) -> str:
+    if task_enqueue_handler is not None:
+        return task_enqueue_handler(kind, tracker, payload)
+    return enqueue_task(kind, tracker, payload).task_id
 
 
 def _assert_page_tracker(page: dict[str, Any], data_source_id: str | None) -> None:

@@ -16,6 +16,7 @@ def test_settings_resolve_test_and_production_trackers_separately() -> None:
     settings = Settings.model_validate(
         {
             "notion_applications_data_source_id": "legacy-test",
+            "notion_test_applications_data_source_id": "",
             "notion_production_applications_data_source_id": "production-id",
         }
     )

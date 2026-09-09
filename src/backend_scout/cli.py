@@ -88,6 +88,7 @@ from backend_scout.task_queue import (
     DEFAULT_TASK_QUEUE_PATH,
     QueuedTaskKind,
     QueuedTaskStatus,
+    enqueue_task,
     list_tasks,
     mark_task_status,
 )
@@ -642,6 +643,17 @@ def tasks_worker_once(
                 chat_id=task.payload.get("chat_id"),
                 tracker=task.tracker,
             )
+        elif task.kind == QueuedTaskKind.CV_DRAFT:
+            cv_draft(
+                _payload_string(task.payload, "page_id"),
+                chat_id=_payload_int(task.payload, "chat_id"),
+                tracker=task.tracker,
+            )
+        elif task.kind == QueuedTaskKind.PORTAL_PREPARE:
+            apply_prepare(
+                _payload_string(task.payload, "page_id"),
+                tracker=task.tracker,
+            )
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
@@ -977,6 +989,13 @@ def telegram_poll_once(
                     manifest,
                 )
 
+            def enqueue_long_task(
+                kind: QueuedTaskKind,
+                task_tracker: TrackerName,
+                payload: dict[str, object],
+            ) -> str:
+                return enqueue_task(kind, task_tracker, payload).task_id
+
             updates = telegram_client.get_updates(offset=offset, timeout=timeout_seconds)
             processed_actions = [
                 action
@@ -992,6 +1011,7 @@ def telegram_poll_once(
                     tracker,
                     data_source_id,
                     portal_submission_authorization_handler=authorize_portal_submission,
+                    task_enqueue_handler=enqueue_long_task,
                 ))
             ]
     except Exception as exc:
@@ -1763,6 +1783,20 @@ def _resolve_daily_chat_id(settings: Settings, explicit_chat_id: int | None) -> 
     if len(allowed) == 1:
         return next(iter(allowed))
     raise ValueError("Set TELEGRAM_DEFAULT_CHAT_ID or pass --chat-id for the daily digest")
+
+
+def _payload_string(payload: dict[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Queued task is missing string payload key: {key}")
+    return value
+
+
+def _payload_int(payload: dict[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"Queued task is missing integer payload key: {key}")
+    return value
 
 
 def _print_jobs_table(jobs: list[Job], title: str) -> None:

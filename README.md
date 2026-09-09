@@ -199,17 +199,23 @@ processes authorized button actions plus supported commands:
 ```text
 /status
 /scout
+/draft_NOTION_PAGE_ID
+/prepare_NOTION_PAGE_ID
 /tailor_NOTION_PAGE_ID Emphasize this truthful angle.
 /revise_NOTION_PAGE_ID Make the summary tighter.
 ```
 
-Ordinary text cannot authorize a CV draft, delivery, or submission. Buttons are
-acknowledged quickly, and longer work is queued for a worker command:
+Ordinary text cannot authorize delivery or submission. Buttons are acknowledged
+quickly, and longer work is queued for a worker command:
 
 ```bash
 uv run --no-editable backend-scout tasks list
 uv run --no-editable backend-scout tasks worker-once
 ```
+
+With the launchd worker enabled, pressing `Approve tailoring` queues the CV
+draft automatically. After approving the exact CV, send `/prepare_NOTION_PAGE_ID`
+when I want the agent to prepare the browser portal.
 
 ## CV Draft Workflow
 

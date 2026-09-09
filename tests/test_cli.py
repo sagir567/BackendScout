@@ -541,6 +541,47 @@ def test_tasks_worker_once_runs_queued_scout(monkeypatch: pytest.MonkeyPatch, tm
     assert task.task_id in result.output
 
 
+def test_tasks_worker_once_runs_queued_cv_draft(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    queue_path = tmp_path / "tasks.json"
+    enqueue_task(
+        QueuedTaskKind.CV_DRAFT,
+        TrackerName.PRODUCTION,
+        {"page_id": "page-123", "chat_id": 12345},
+        queue_path,
+    )
+    calls = []
+    monkeypatch.setattr("backend_scout.cli.cv_draft", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            ("page-123",),
+            {"chat_id": 12345, "tracker": TrackerName.PRODUCTION},
+        )
+    ]
+    assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
+
+
+def test_tasks_worker_once_runs_queued_portal_prepare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    queue_path = tmp_path / "tasks.json"
+    enqueue_task(
+        QueuedTaskKind.PORTAL_PREPARE,
+        TrackerName.PRODUCTION,
+        {"page_id": "page-123", "chat_id": 12345},
+        queue_path,
+    )
+    calls = []
+    monkeypatch.setattr("backend_scout.cli.apply_prepare", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
+
+    assert result.exit_code == 0
+    assert calls == [(("page-123",), {"tracker": TrackerName.PRODUCTION})]
+    assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
+
+
 def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "backend_scout.cli.list_recent_messages",

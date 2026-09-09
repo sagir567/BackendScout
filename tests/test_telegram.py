@@ -3,6 +3,7 @@ import pytest
 
 from backend_scout.config import TrackerName
 from backend_scout.models import ApplicationDigestItem, ApplicationStatus
+from backend_scout.task_queue import QueuedTaskKind
 from backend_scout.telegram import (
     TelegramApprovalAction,
     TelegramClient,
@@ -380,6 +381,48 @@ def test_process_telegram_update_acknowledges_callback_before_notion_work() -> N
     assert events[:2] == ["ack:Received. Processing...", "retrieve_page"]
 
 
+def test_approve_tailoring_queues_cv_draft_when_handler_is_configured() -> None:
+    queued = []
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def answer_callback_query(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def edit_message_reply_markup(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def retrieve_page(self, page_id: str) -> dict[str, object]:
+            return _application_page(page_id, ApplicationStatus.DIGEST_SENT)
+
+        def update_application_status(self, page_id: str, status: ApplicationStatus) -> dict[str, object]:
+            return {"id": page_id}
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {
+            "callback_query": {
+                "id": "callback-1",
+                "from": {"id": 12345},
+                "data": "approve_to_tailor:page-123",
+                "message": {"message_id": 99, "chat": {"id": 12345}},
+            }
+        },
+        {12345},
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append((kind, tracker, payload)) or "task-123",
+    )
+
+    assert result == "approved_to_tailor"
+    assert queued == [(QueuedTaskKind.CV_DRAFT, TrackerName.TEST, {"page_id": "page-123", "chat_id": 12345})]
+    assert "task-123" in sent_messages[0][1]
+
+
 def test_process_telegram_update_ignores_unapproved_user() -> None:
     class FakeTelegramClient:
         def answer_callback_query(self, callback_query_id: str, text: str) -> dict[str, object]:
@@ -527,6 +570,51 @@ def test_process_telegram_message_queues_today_scout(monkeypatch: pytest.MonkeyP
     assert queued[0][1] == TrackerName.PRODUCTION
     assert queued[0][2] == {"chat_id": 12345}
     assert "task-123" in sent_messages[0][1]
+
+
+def test_process_telegram_message_queues_cv_draft_with_handler() -> None:
+    queued = []
+
+    class FakeTelegramClient:
+        def send_message(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+    class FakeNotionClient:
+        pass
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/draft_page-123"}},
+        {12345},
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append((kind, tracker, payload)) or "task-123",
+    )
+
+    assert result == "cv_draft_queued"
+    assert queued == [(QueuedTaskKind.CV_DRAFT, TrackerName.TEST, {"page_id": "page-123", "chat_id": 12345})]
+
+
+def test_process_telegram_message_queues_portal_prepare_with_handler() -> None:
+    queued = []
+
+    class FakeTelegramClient:
+        def send_message(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+    class FakeNotionClient:
+        pass
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/prepare_page-123"}},
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append((kind, tracker, payload)) or "task-123",
+    )
+
+    assert result == "portal_prepare_queued"
+    assert queued == [(QueuedTaskKind.PORTAL_PREPARE, TrackerName.PRODUCTION, {"page_id": "page-123", "chat_id": 12345})]
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.backendscout.worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>TODO_ABSOLUTE_PROJECT_PATH/scripts/run_task_worker.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/worker-launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/worker-launchd.err.log</string>
+</dict>
+</plist>

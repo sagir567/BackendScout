@@ -197,10 +197,11 @@ or records a WhatsApp submission until the user confirms it.
 ## Continuous Telegram Listener
 
 The production listener uses Telegram long polling and macOS `launchd`. It
-processes authorized buttons plus `/status`, `/scout`, `/tailor_...`, and
-`/revise_...` commands as they arrive, so routine workflow transitions do not
-require a terminal command. It does not interpret ordinary text as
-authorization and cannot submit an application by itself.
+processes authorized buttons plus `/status`, `/scout`, `/draft_...`,
+`/prepare_...`, `/tailor_...`, and `/revise_...` commands as they arrive, so
+routine workflow transitions do not require a terminal command. It does not
+interpret ordinary text as delivery authorization and cannot submit an
+application by itself.
 
 1. Edit `launchd/com.backendscout.telegram.plist.template` and replace every
    `TODO_ABSOLUTE_PROJECT_PATH` with `/Users/sagi/Documents/CV/BackendScout`.
@@ -224,6 +225,34 @@ It writes ignored logs under `data/logs/`. To stop it later:
 ```bash
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.backendscout.telegram.plist
 ```
+
+## Queued Task Worker
+
+The listener answers Telegram quickly and queues long work. The worker processes
+one queued item per run:
+
+```bash
+uv --cache-dir .uv-cache run --no-editable backend-scout tasks worker-once
+```
+
+To run it automatically every minute:
+
+1. Edit `launchd/com.backendscout.worker.plist.template` and replace
+   `TODO_ABSOLUTE_PROJECT_PATH` with `/Users/sagi/Documents/CV/BackendScout`.
+2. Copy it to `~/Library/LaunchAgents/com.backendscout.worker.plist`.
+3. Make the runner executable:
+
+```bash
+chmod +x scripts/run_task_worker.sh
+```
+
+4. Load the worker:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.backendscout.worker.plist
+```
+
+The runner uses `data/tasks/worker.lock` so a long CV draft is not started twice.
 
 ## Daily Local Scheduler
 
