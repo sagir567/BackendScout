@@ -41,6 +41,13 @@ from backend_scout.job_imports import (
     score_manual_job_import,
     unique_scored_jobs,
 )
+from backend_scout.launchd import (
+    LaunchdService,
+    install_launchd_service,
+    launchd_service_installed,
+    selected_services,
+    uninstall_launchd_service,
+)
 from backend_scout.mailbox import (
     DEFAULT_MAILBOX_QUERY,
     classify_gmail_message,
@@ -127,8 +134,11 @@ apply_app = typer.Typer(help="Prepare conservative browser-assisted submissions.
 collect_app = typer.Typer(help="Collect public ATS jobs for Israel and approved remote work.")
 repos_app = typer.Typer(help="Scan Git repositories and propose evidence updates.")
 tasks_app = typer.Typer(help="Run queued Telegram-first work items.")
+system_app = typer.Typer(help="Manage local BackendScout runtime helpers.")
+launchd_app = typer.Typer(help="Install or inspect macOS launchd agents.")
 console = Console()
 TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
+DEFAULT_LAUNCHD_AGENT_DIR = Path.home() / "Library" / "LaunchAgents"
 
 ProfilePathOption = Annotated[
     Path,
@@ -162,6 +172,10 @@ RepoSourcesPathOption = Annotated[
 TrackerOption = Annotated[
     TrackerName,
     typer.Option("--tracker", help="Notion tracker to use. Defaults to the isolated test tracker."),
+]
+LaunchdAgentDirOption = Annotated[
+    Path,
+    typer.Option("--agent-dir", help="LaunchAgents directory to write plist files into."),
 ]
 
 
@@ -625,6 +639,44 @@ def repos_scan(
                 summary + "\n\nThese are proposals only. Approve evidence before adding it to the CV ledger.",
             )
         console.print(f"[green]Sent repository scan summary to chat {resolved_chat_id}.[/green]")
+
+
+@launchd_app.command("install")
+def launchd_install(
+    service: Annotated[LaunchdService, typer.Argument(help="Service to install: daily, telegram, mailbox, worker, all.")],
+    agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR,
+    load: Annotated[bool, typer.Option("--load", help="Load the agent with launchctl after writing it.")] = False,
+    replace: Annotated[
+        bool,
+        typer.Option("--replace", help="Unload an existing agent before loading the rendered plist."),
+    ] = False,
+) -> None:
+    """Render BackendScout launchd templates into the user's LaunchAgents directory."""
+    for selected in selected_services(service):
+        path = install_launchd_service(Path.cwd(), agent_dir, selected, load=load, replace=replace)
+        console.print(f"[green]Installed {selected.value}:[/green] {path}")
+    if not load:
+        console.print("[yellow]Plists were written but not loaded. Re-run with --load to start them.[/yellow]")
+
+
+@launchd_app.command("uninstall")
+def launchd_uninstall(
+    service: Annotated[LaunchdService, typer.Argument(help="Service to uninstall: daily, telegram, mailbox, worker, all.")],
+    agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR,
+    unload: Annotated[bool, typer.Option("--unload", help="Unload the agent with launchctl before deleting it.")] = False,
+) -> None:
+    """Remove generated BackendScout launchd plist files."""
+    for selected in selected_services(service):
+        path = uninstall_launchd_service(agent_dir, selected, unload=unload)
+        console.print(f"[green]Removed {selected.value}:[/green] {path}")
+
+
+@launchd_app.command("status")
+def launchd_status(agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR) -> None:
+    """Show whether BackendScout launchd plist files are installed."""
+    for selected in selected_services(LaunchdService.ALL):
+        state = "installed" if launchd_service_installed(agent_dir, selected) else "missing"
+        console.print(f"{selected.value}: {state}")
 
 
 @tasks_app.command("list")
@@ -1971,6 +2023,8 @@ app.add_typer(apply_app, name="apply")
 app.add_typer(collect_app, name="collect")
 app.add_typer(repos_app, name="repos")
 app.add_typer(tasks_app, name="tasks")
+system_app.add_typer(launchd_app, name="launchd")
+app.add_typer(system_app, name="system")
 
 
 if __name__ == "__main__":

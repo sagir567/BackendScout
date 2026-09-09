@@ -173,6 +173,15 @@ For a daily 08:00 production run on macOS, follow the `launchd` setup in
 [REQUIREMENTS.md](REQUIREMENTS.md). The scheduled command is the same command
 you run manually, and logs remain local under ignored `data/logs/`.
 
+The runtime helpers can be installed from the CLI:
+
+```bash
+uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all
+uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
+```
+
+Add `--load --replace` to refresh and start already-installed agents.
+
 ## Repository Evidence Scanner
 
 The scanner reads only the repositories configured in the ignored

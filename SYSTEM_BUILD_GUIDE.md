@@ -231,6 +231,9 @@ Public ATS collector progress:
   maybe, and excluded title keywords plus minimum score/relevance thresholds.
 - [x] Add a `launchd` template that invokes the same tested CLI command used
   for a manual daily collection.
+- [x] Add `system launchd install/status/uninstall` commands so the local
+  Telegram listener, worker, mailbox watcher, and daily scout can be installed
+  from the same verified CLI.
 - [ ] Add a reviewed source for Israeli job aggregators only after confirming a
   stable public feed and its permitted use.
 

@@ -129,6 +129,22 @@ def test_collect_preferences_check_accepts_example_file() -> None:
     assert "Minimum match score: 55" in result.output
 
 
+def test_system_launchd_install_and_status_use_agent_dir(tmp_path: Path) -> None:
+    install_result = runner.invoke(
+        app,
+        ["system", "launchd", "install", "daily", "--agent-dir", str(tmp_path)],
+    )
+
+    assert install_result.exit_code == 0
+    assert "Installed daily" in install_result.output
+    assert (tmp_path / "com.backendscout.daily.plist").is_file()
+
+    status_result = runner.invoke(app, ["system", "launchd", "status", "--agent-dir", str(tmp_path)])
+
+    assert status_result.exit_code == 0
+    assert "daily: installed" in status_result.output
+
+
 def test_jobs_import_write_notion_uses_fresh_scoring(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     profile_path = tmp_path / "candidate_profile.yaml"
     write_profile(profile_path)
