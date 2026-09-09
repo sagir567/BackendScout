@@ -28,8 +28,9 @@ def test_submission_requires_an_explicit_confirmation_page_before_recording_succ
 def test_submit_button_requires_the_exact_apply_now_label() -> None:
     assert is_explicit_apply_now_label("Apply Now")
     assert is_explicit_apply_now_label(" apply now ")
+    assert is_explicit_apply_now_label("SUBMIT APPLICATION")
     assert not is_explicit_apply_now_label("Apply")
-    assert not is_explicit_apply_now_label("Submit application")
+    assert not is_explicit_apply_now_label("Submit")
 
 
 def test_apply_now_url_resolution_allows_only_public_http_destinations() -> None:

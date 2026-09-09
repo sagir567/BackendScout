@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,11 +33,14 @@ SUBMISSION_CONFIRMATION_MARKERS = (
     "thank you for applying",
     "thanks for applying",
 )
+FINAL_SUBMIT_LABELS = ("apply now", "submit application")
+LOGGER = logging.getLogger(__name__)
 
 
 def is_explicit_apply_now_label(text: str) -> bool:
     """Accept only the exact, applicant-facing final action label."""
-    return bool(re.fullmatch(r"\s*apply now\s*", text, flags=re.IGNORECASE))
+    normalized = " ".join(text.strip().casefold().split())
+    return normalized in FINAL_SUBMIT_LABELS
 
 
 def contains_human_verification(page_text: str, frame_urls: list[str] | None = None) -> bool:
@@ -75,20 +79,16 @@ def prepare_visible_submission(
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(application_url, wait_until="domcontentloaded")
         _follow_verified_apply_link(page)
-        if contains_human_verification(page.locator("body").inner_text(), [frame.url for frame in page.frames]):
+        if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
             # Keep the visible persistent browser alive while the candidate uses
             # Chrome Remote Desktop. No challenge is inspected, answered, or bypassed.
             deadline = wait_for_human_seconds
-            while deadline > 0 and contains_human_verification(
-                page.locator("body").inner_text(), [frame.url for frame in page.frames]
-            ):
+            while deadline > 0 and contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
                 sleep(2)
                 deadline -= 2
-            if not contains_human_verification(
-                page.locator("body").inner_text(), [frame.url for frame in page.frames]
-            ):
+            if not contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
                 return _fill_safe_fields(page, evidence, approved_attachment, form_answers)
             context.close()
             return BrowserPreparationResult(
@@ -368,7 +368,7 @@ def submit_visible_submission(
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(application_url, wait_until="domcontentloaded")
         _follow_verified_apply_link(page)
-        if contains_human_verification(page.locator("body").inner_text(), [frame.url for frame in page.frames]):
+        if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
             context.close()
@@ -385,13 +385,7 @@ def submit_visible_submission(
                 prepared.unresolved_required_fields,
                 page.url,
             )
-        submit = page.locator('button[type="submit"], input[type="submit"]').first
-        if not submit.count() or not submit.is_visible():
-            apply_now_buttons = page.get_by_role(
-                "button", name=re.compile(r"^apply now$", re.IGNORECASE)
-            )
-            if apply_now_buttons.count() == 1 and apply_now_buttons.first.is_visible():
-                submit = apply_now_buttons.first
+        submit = _find_unambiguous_submit_control(page)
         if not submit.count() or not submit.is_visible():
             context.close()
             return BrowserPreparationResult(
@@ -402,18 +396,16 @@ def submit_visible_submission(
         if before_submit:
             before_submit()
         submit.click()
-        page.wait_for_timeout(1_000)
-        body = page.locator("body").inner_text()
+        page.wait_for_timeout(5_000)
+        body = _page_and_frame_text(page)
         if contains_human_verification(body, [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
             deadline = wait_for_human_seconds
-            while deadline > 0 and contains_human_verification(
-                page.locator("body").inner_text(), [frame.url for frame in page.frames]
-            ):
+            while deadline > 0 and contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
                 sleep(2)
                 deadline -= 2
-            body = page.locator("body").inner_text()
+            body = _page_and_frame_text(page)
             if not contains_human_verification(body, [frame.url for frame in page.frames]):
                 if is_submission_confirmation(body):
                     screenshot_path, screenshot_sha256 = _capture_submission_screenshot(page, proof_path)
@@ -454,6 +446,22 @@ def submit_visible_submission(
     )
 
 
+def _find_unambiguous_submit_control(page):
+    for scope in _form_scopes(page):
+        submit = scope.locator('button[type="submit"], input[type="submit"]').first
+        if submit.count() and submit.is_visible():
+            return submit
+        buttons = scope.locator("button")
+        matches = []
+        for index in range(buttons.count()):
+            button = buttons.nth(index)
+            if button.is_visible() and is_explicit_apply_now_label(button.inner_text()):
+                matches.append(button)
+        if len(matches) == 1:
+            return matches[0]
+    return page.locator("button").filter(has_text="__backend_scout_no_submit_match__").first
+
+
 def _capture_submission_screenshot(page, proof_path: Path | None) -> tuple[str | None, str | None]:
     if proof_path is None:
         return None, None
@@ -461,3 +469,14 @@ def _capture_submission_screenshot(page, proof_path: Path | None) -> tuple[str |
     page.screenshot(path=str(proof_path), full_page=True)
     digest = hashlib.sha256(proof_path.read_bytes()).hexdigest()
     return str(proof_path.resolve()), digest
+
+
+def _page_and_frame_text(page) -> str:
+    texts: list[str] = []
+    for scope in _form_scopes(page):
+        try:
+            texts.append(scope.locator("body").inner_text(timeout=2_000))
+        except Exception:
+            LOGGER.debug("Could not read text from a page/frame while checking submission state.", exc_info=True)
+            continue
+    return "\n".join(texts)
