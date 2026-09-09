@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>BackendScout verification handoff fixture</title>
+  </head>
+  <body>
+    <div id="verification">Verify you are human</div>
+    <form>
+      <label>First Name <input name="first_name" required></label>
+      <label>Last Name <input name="last_name" required></label>
+      <label>Email <input name="email" type="email" required></label>
+      <label>Resume <input name="resume" type="file" required></label>
+    </form>
+    <script>
+      window.setTimeout(() => {
+        document.querySelector("#verification").remove();
+      }, 1500);
+    </script>
+  </body>
+</html>

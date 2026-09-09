@@ -488,12 +488,23 @@ Current implementation:
   the page, tracker, portal URL, DOCX checksum, and PDF checksum; it expires
   after 15 minutes and can be consumed once.
 - `apply resume` may click an unambiguous submit control only after that final
-  Telegram approval. If a CAPTCHA appears after that click, it keeps the
-  visible browser open for the configured remote-verification wait window (600
-  seconds by default), without solving or inspecting the challenge. It records
-  a portal submission only when the page visibly confirms it; a click without
+  Telegram approval. If a CAPTCHA appears before or after that click, it keeps
+  the exact visible browser session open for the configured remote-verification
+  wait window (600 seconds by default), without solving or inspecting the
+  challenge. Resuming from `awaiting_human_verification` passes the same wait
+  window instead of closing the browser immediately. It records a portal
+  submission only when the page visibly confirms it; a click without
   confirmation stays `submission_prepared` and consumes the approval
   conservatively.
+- CAPTCHA-solving services, challenge-token replay, browser-fingerprint
+  evasion, and undocumented ATS submission endpoints are outside the system's
+  design. Official ATS write APIs are used only when the employer or an
+  approved integration supplies credentials for that exact purpose. Public job
+  board APIs remain suitable for discovery and form-schema inspection.
+- `scripts/blackbox_verification_handoff.py` exercises the real headed browser
+  against a local fixture whose simulated verification clears after 1.5
+  seconds. It proves that the same browser context remains alive and continues
+  filling the form without contacting an employer portal.
 - On confirmed portal success, BackendScout captures a full-page screenshot,
   stores it under the private proof root, hashes it, sends it to Telegram, and
   appends the proof path/checksum to Notion's submission record.

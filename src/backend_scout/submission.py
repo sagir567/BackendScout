@@ -51,6 +51,25 @@ def contains_human_verification(page_text: str, frame_urls: list[str] | None = N
     return any(marker in frame_haystack for marker in FRAME_HUMAN_VERIFICATION_MARKERS)
 
 
+def wait_for_human_verification_clear(
+    is_required: Callable[[], bool],
+    wait_seconds: int,
+    *,
+    poll_seconds: int = 2,
+    sleeper: Callable[[float], None] = sleep,
+) -> bool:
+    """Keep a browser-backed check alive until verification clears or time expires."""
+    remaining = max(0, wait_seconds)
+    interval = max(1, poll_seconds)
+    while remaining > 0:
+        if not is_required():
+            return True
+        delay = min(interval, remaining)
+        sleeper(delay)
+        remaining -= delay
+    return not is_required()
+
+
 def is_submission_confirmation(page_text: str) -> bool:
     return any(marker in page_text.casefold() for marker in SUBMISSION_CONFIRMATION_MARKERS)
 
@@ -84,11 +103,10 @@ def prepare_visible_submission(
                 on_human_verification()
             # Keep the visible persistent browser alive while the candidate uses
             # Chrome Remote Desktop. No challenge is inspected, answered, or bypassed.
-            deadline = wait_for_human_seconds
-            while deadline > 0 and contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
-                sleep(2)
-                deadline -= 2
-            if not contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
+            is_required = lambda: contains_human_verification(
+                _page_and_frame_text(page), [frame.url for frame in page.frames]
+            )
+            if wait_for_human_verification_clear(is_required, wait_for_human_seconds):
                 return _fill_safe_fields(page, evidence, approved_attachment, form_answers)
             context.close()
             return BrowserPreparationResult(
@@ -371,10 +389,16 @@ def submit_visible_submission(
         if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
-            context.close()
-            return BrowserPreparationResult(
-                "awaiting_human_verification", (), "Human verification is still required."
+            is_required = lambda: contains_human_verification(
+                _page_and_frame_text(page), [frame.url for frame in page.frames]
             )
+            if not wait_for_human_verification_clear(is_required, wait_for_human_seconds):
+                context.close()
+                return BrowserPreparationResult(
+                    "awaiting_human_verification",
+                    (),
+                    "Human verification is still required.",
+                )
         prepared = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
         if prepared.unresolved_required_fields:
             context.close()
@@ -401,10 +425,10 @@ def submit_visible_submission(
         if contains_human_verification(body, [frame.url for frame in page.frames]):
             if on_human_verification:
                 on_human_verification()
-            deadline = wait_for_human_seconds
-            while deadline > 0 and contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
-                sleep(2)
-                deadline -= 2
+            is_required = lambda: contains_human_verification(
+                _page_and_frame_text(page), [frame.url for frame in page.frames]
+            )
+            wait_for_human_verification_clear(is_required, wait_for_human_seconds)
             body = _page_and_frame_text(page)
             if not contains_human_verification(body, [frame.url for frame in page.frames]):
                 if is_submission_confirmation(body):

@@ -373,11 +373,14 @@ uv run --no-editable backend-scout apply request-submit NOTION_PAGE_ID --tracker
 uv run --no-editable backend-scout telegram poll-once --tracker production
 ```
 
-CAPTCHAs are never bypassed. If one appears after the authorized click, the
-agent keeps the visible browser open for remote human verification (10 minutes
-by default). Complete only that check with Chrome Remote Desktop. The agent
-records `submitted` only after detecting a confirmation page; otherwise a new
-final approval is required before another click:
+CAPTCHAs are never bypassed. If one appears before or after the authorized
+click, the agent keeps the exact visible browser session open for remote human
+verification (10 minutes by default). The session now remains open when
+resuming from `awaiting_human_verification`, so cookies, form state, and the
+challenge are not discarded immediately. Complete only that check with a
+remote-control tool you trust. The agent records `submitted` only after
+detecting a confirmation page; otherwise a new final approval is required
+before another click:
 
 ```bash
 uv run --no-editable backend-scout apply resume NOTION_PAGE_ID \

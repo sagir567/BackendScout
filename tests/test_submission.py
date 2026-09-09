@@ -10,6 +10,7 @@ from backend_scout.submission import (
     is_explicit_apply_now_label,
     is_submission_confirmation,
     resolve_apply_now_url,
+    wait_for_human_verification_clear,
 )
 
 
@@ -18,6 +19,31 @@ def test_submission_detects_captcha_without_attempting_to_solve_it() -> None:
     assert not contains_human_verification("", ["https://www.google.com/recaptcha/api2/anchor"])
     assert contains_human_verification("", ["https://captcha.example/challenge"])
     assert not contains_human_verification("Application form")
+
+
+def test_human_verification_wait_keeps_polling_until_challenge_clears() -> None:
+    checks = iter([True, True, False])
+    delays: list[float] = []
+
+    assert wait_for_human_verification_clear(
+        lambda: next(checks),
+        10,
+        poll_seconds=2,
+        sleeper=delays.append,
+    )
+    assert delays == [2, 2]
+
+
+def test_human_verification_wait_stops_at_timeout() -> None:
+    delays: list[float] = []
+
+    assert not wait_for_human_verification_clear(
+        lambda: True,
+        5,
+        poll_seconds=2,
+        sleeper=delays.append,
+    )
+    assert delays == [2, 2, 1]
 
 
 def test_submission_requires_an_explicit_confirmation_page_before_recording_success() -> None:

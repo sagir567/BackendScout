@@ -1746,6 +1746,7 @@ def apply_resume(
                     lambda: _notify_human_verification(
                         notion_client, settings, page_id, job.company, job.title
                     ),
+                    wait_for_human_seconds,
                     form_answers=load_application_form_answers(page_id, tracker),
                 )
                 notion_client.update_application_status(page_id, ApplicationStatus(result.state))
