@@ -273,7 +273,9 @@ def _unresolved_required_fields(page) -> tuple[str, ...]:
 
 
 def _form_scopes(page) -> list[object]:
-    return [page, *(frame for frame in page.frames if frame != page.main_frame)]
+    frames = getattr(page, "frames", [])
+    main_frame = getattr(page, "main_frame", None)
+    return [page, *(frame for frame in frames if frame != main_frame)]
 
 
 def _control_label(control) -> str | None:
@@ -319,6 +321,7 @@ def _follow_verified_apply_link(page) -> None:
         destination = resolve_apply_now_url(page.url, link.get_attribute("href"))
         if destination and destination != page.url:
             page.goto(destination, wait_until="domcontentloaded")
+            _wait_for_application_form(page)
         return
     buttons = page.locator("button")
     for index in range(buttons.count()):
@@ -329,8 +332,18 @@ def _follow_verified_apply_link(page) -> None:
         if button.evaluate("element => Boolean(element.closest('form'))"):
             continue
         button.click()
-        page.wait_for_timeout(2_000)
+        _wait_for_application_form(page)
         return
+
+
+def _wait_for_application_form(page, timeout_ms: int = 8_000) -> None:
+    elapsed = 0
+    while elapsed <= timeout_ms:
+        for scope in _form_scopes(page):
+            if scope.locator("input, textarea, select").count() > 0:
+                return
+        page.wait_for_timeout(250)
+        elapsed += 250
 
 
 def submit_visible_submission(
