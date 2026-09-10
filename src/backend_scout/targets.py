@@ -14,6 +14,7 @@ class AtsProvider(str, Enum):
     GREENHOUSE = "greenhouse"
     LEVER = "lever"
     ASHBY = "ashby"
+    LIN_SRAEL = "lin_srael"
 
 
 class TargetCompany(BaseModel):
@@ -24,6 +25,8 @@ class TargetCompany(BaseModel):
     board_token: str
     enabled: bool = True
     notes: str | None = None
+    search_terms: list[str] = Field(default_factory=list)
+    result_limit: int = Field(default=50, ge=1, le=100)
 
     @field_validator("name", "board_token", mode="before")
     @classmethod
@@ -31,6 +34,21 @@ class TargetCompany(BaseModel):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("must not be blank")
         return value.strip()
+
+    @field_validator("search_terms", mode="before")
+    @classmethod
+    def normalize_search_terms(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+        return list(
+            dict.fromkeys(
+                term.strip()
+                for term in value
+                if isinstance(term, str) and term.strip()
+            )
+        )
 
 
 class TargetCompanies(BaseModel):

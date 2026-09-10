@@ -11,6 +11,7 @@ from backend_scout.models import Job
 from backend_scout.targets import AtsProvider, TargetCompany
 
 JsonFetcher = Callable[[str], Any]
+JsonPoster = Callable[[str, dict[str, Any]], Any]
 ISRAEL_LOCATION_TERMS = (
     "israel",
     "tel aviv",
@@ -62,7 +63,11 @@ SKILL_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def collect_public_jobs(target: TargetCompany, fetch_json: JsonFetcher | None = None) -> list[Job]:
+def collect_public_jobs(
+    target: TargetCompany,
+    fetch_json: JsonFetcher | None = None,
+    post_json: JsonPoster | None = None,
+) -> list[Job]:
     """Fetch published jobs from one configured company board; no apply API is used."""
     fetch = fetch_json or _fetch_json
     if target.provider == AtsProvider.GREENHOUSE:
@@ -71,6 +76,18 @@ def collect_public_jobs(target: TargetCompany, fetch_json: JsonFetcher | None = 
         return parse_lever_jobs(target, fetch(_lever_url(target.board_token)))
     if target.provider == AtsProvider.ASHBY:
         return parse_ashby_jobs(target, fetch(_ashby_url(target.board_token)))
+    if target.provider == AtsProvider.LIN_SRAEL:
+        post = post_json or _post_json
+        terms = target.search_terms or [""]
+        jobs: dict[str, Job] = {}
+        for term in terms:
+            payload = post(
+                _lin_srael_url(target.board_token),
+                {"title": term, "page": 1, "limit": target.result_limit},
+            )
+            for job in parse_lin_srael_jobs(target, payload):
+                jobs.setdefault(job.source_url, job)
+        return list(jobs.values())
     raise ValueError(f"Unsupported ATS provider: {target.provider.value}")
 
 
@@ -143,6 +160,43 @@ def parse_ashby_jobs(target: TargetCompany, payload: Any) -> list[Job]:
     return jobs
 
 
+def parse_lin_srael_jobs(target: TargetCompany, payload: Any) -> list[Job]:
+    """Normalize Lin-Srael's public search results without treating it as the employer."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+        raise TypeError("Lin-Srael response does not contain a jobs list")
+    jobs: list[Job] = []
+    for item in payload["jobs"]:
+        if not isinstance(item, dict):
+            continue
+        title = _text(item.get("title"))
+        company = _text(item.get("company_name"))
+        source_url = _text(item.get("job_url"))
+        if not title or not company or not source_url:
+            continue
+        description = _text(item.get("description")) or "Published Lin-Srael job listing."
+        application_url = _public_url(item.get("apply_url"))
+        if application_url == source_url:
+            application_url = None
+        location = _text(item.get("location"))
+        published_at = _published_at(item.get("published_at"))
+        jobs.append(
+            Job(
+                source=f"{target.provider.value}:{target.name}",
+                source_url=source_url,
+                application_url=application_url,
+                company=company,
+                title=title,
+                location=location,
+                remote_policy=_workplace_from_location(location),
+                description=description,
+                required_skills=_extract_required_skills(title, description),
+                years_experience=_extract_years_experience(description),
+                discovered_at=published_at or datetime.now(UTC),
+            )
+        )
+    return jobs
+
+
 def _job(
     target: TargetCompany,
     title: str,
@@ -182,6 +236,10 @@ def _ashby_url(token: str) -> str:
     return f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
 
 
+def _lin_srael_url(app_id: str) -> str:
+    return f"https://lin-srael.com/api/apps/{app_id}/functions/searchJobs"
+
+
 def _fetch_json(url: str) -> Any:
     import httpx
 
@@ -190,8 +248,49 @@ def _fetch_json(url: str) -> Any:
     return response.json()
 
 
+def _post_json(url: str, payload: dict[str, Any]) -> Any:
+    import httpx
+
+    headers = {"User-Agent": "BackendScout/0.1"}
+    app_id_match = re.search(r"/api/apps/([^/]+)/functions/", url)
+    if app_id_match:
+        headers["X-App-Id"] = app_id_match.group(1)
+    response = httpx.post(
+        url,
+        json=payload,
+        timeout=30.0,
+        headers=headers,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def _text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _public_url(value: Any) -> str | None:
+    text = _text(value)
+    return text if text and text.startswith(("https://", "http://")) else None
+
+
+def _published_at(value: Any) -> datetime | None:
+    text = _text(value)
+    if not text:
+        return None
+    try:
+        published_at = datetime.fromisoformat(text)
+        return published_at if published_at.tzinfo else published_at.replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _workplace_from_location(location: str | None) -> str | None:
+    normalized = (location or "").casefold()
+    for label in ("Remote", "Hybrid", "On-site"):
+        if label.casefold() in normalized:
+            return label
+    return None
 
 
 def _html_to_text(value: str) -> str:

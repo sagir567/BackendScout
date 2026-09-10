@@ -1,8 +1,15 @@
 # Copy to the ignored config/target_companies.yaml, then edit the TODO items.
-# Only public Greenhouse, Lever, and Ashby boards are collected in this stage.
+# Public Greenhouse, Lever, Ashby, and Lin-Srael listings are supported.
 companies:
   - name: TODO Israeli company name
-    provider: greenhouse # greenhouse | lever | ashby
+    provider: greenhouse # greenhouse | lever | ashby | lin_srael
     board_token: TODO board token from the public careers URL
     enabled: false
     notes: TODO Why this company is relevant to your Israel/backend search.
+  - name: Lin-Srael
+    provider: lin_srael
+    board_token: 6a06c46d3864156006253ad5
+    enabled: true
+    search_terms: [Backend, Python, Software Engineer, C++, .NET, Unity, AI Engineer]
+    result_limit: 50
+    notes: Israel-focused public job aggregator; external employer application URLs are preferred.

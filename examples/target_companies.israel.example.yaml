@@ -4,6 +4,13 @@
 # Keep broad aggregator-style feeds disabled by default until the morning digest
 # has enough ranking and per-source limits to avoid noise.
 companies:
+  - name: Lin-Srael
+    provider: lin_srael
+    board_token: 6a06c46d3864156006253ad5
+    enabled: true
+    search_terms: [Backend, Python, Software Engineer, C++, .NET, Unity, AI Engineer]
+    result_limit: 50
+    notes: Israel-focused public job aggregator; external employer application URLs are preferred.
   - name: Pagaya Israel
     provider: greenhouse
     board_token: pagayais

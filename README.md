@@ -136,9 +136,12 @@ uv run --no-editable backend-scout jobs import data/raw/company-role.yaml --writ
 ## Daily Israel-Relevant Collection
 
 Copy `config/target_companies.example.yaml` to the ignored
-`config/target_companies.yaml`. It lists only public Greenhouse, Lever, and
-Ashby company boards. Start with Israeli locations and companies; the collector
-also keeps remote roles when your candidate profile allows remote work.
+`config/target_companies.yaml`. It supports public Greenhouse, Lever, and Ashby
+company boards plus the Israel-focused Lin-Srael listing feed. Lin-Srael uses
+configured search terms and preserves the discovery URL while preferring a
+published external employer URL for later application. Start with Israeli
+locations and companies; the collector also keeps remote roles when your
+candidate profile allows remote work.
 It reads each public posting description to infer explicit requirements such as
 Python, C++, Linux, Docker, SQL, CI/CD, APIs, cloud tools, and simple `2+ years`
 style experience hints. The morning shortlist still filters for meaningful

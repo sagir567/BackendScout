@@ -185,7 +185,7 @@ Collector order:
 
 1. Manual import from pasted URL/text.
 2. Public company career pages.
-3. Greenhouse/Lever/Ashby-style public job pages.
+3. Greenhouse/Lever/Ashby-style public job pages and reviewed Israeli aggregators.
 4. Browser-assisted sources only when needed.
 
 Rules:
@@ -201,7 +201,7 @@ TODO:
 - [x] Add manual import command.
 - [x] Add normalized Job model fields for parser output.
 - [x] Add dedupe key strategy.
-- [ ] Add first public collector.
+- [x] Add first public collector.
 ```
 
 Manual import commands:
@@ -218,6 +218,9 @@ Public ATS collector progress:
 
 - [x] Add Greenhouse, Lever, and Ashby collectors that use published job-board
   JSON only; none calls an ATS application endpoint.
+- [x] Add Lin-Srael as a low-volume, keyword-configured Israeli discovery
+  source. Preserve its listing URL and use only a published external employer
+  URL as the application target.
 - [x] Add a private `target_companies.yaml` worksheet with enabled/disabled
   boards and Israel-relevant starter companies.
 - [x] Filter collection results to Israel locations or remote roles before
@@ -234,8 +237,8 @@ Public ATS collector progress:
 - [x] Add `system launchd install/status/uninstall` commands so the local
   Telegram listener, worker, mailbox watcher, and daily scout can be installed
   from the same verified CLI.
-- [ ] Add a reviewed source for Israeli job aggregators only after confirming a
-  stable public feed and its permitted use.
+- [x] Add a reviewed Israeli aggregator source with a public feed, source limits,
+  and cross-query deduplication.
 
 Current import behavior:
 
@@ -569,6 +572,7 @@ TODO:
 - [x] Add conservative portal preparation, a human-verification workflow state,
   and a one-time final Telegram submit authorization tied to the exact CV files.
 - [x] Add public Greenhouse, Lever, and Ashby collectors for Israel-relevant roles.
+- [x] Add Lin-Srael keyword scouting with employer-link preservation and deduplication.
 - [x] Add a digest command that chooses the target Telegram chat automatically from config.
 - [x] Add test/production Notion tracker separation and explicit promotion.
 - [x] Add private global and Telegram per-job CV tailoring guidance.

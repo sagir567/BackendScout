@@ -4,6 +4,7 @@ from backend_scout.collectors import (
     parse_ashby_jobs,
     parse_greenhouse_jobs,
     parse_lever_jobs,
+    parse_lin_srael_jobs,
 )
 from backend_scout.models import Job
 from backend_scout.targets import AtsProvider, TargetCompany
@@ -125,6 +126,73 @@ def test_collector_uses_only_the_configured_public_endpoint() -> None:
 
     assert jobs == []
     assert requested == ["https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true"]
+
+
+def test_lin_srael_parser_preserves_employer_and_external_application_url() -> None:
+    jobs = parse_lin_srael_jobs(
+        _target(AtsProvider.LIN_SRAEL),
+        {
+            "jobs": [
+                {
+                    "linkedin_job_id": "123",
+                    "published_at": "2026-09-09T08:30:00Z",
+                    "title": "Backend Python Engineer",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                    "company_name": "Example Labs",
+                    "location": "Tel Aviv, Israel (Hybrid)",
+                    "apply_url": "https://careers.example.com/jobs/123",
+                    "description": "Build Python APIs with Docker and PostgreSQL.",
+                }
+            ]
+        },
+    )
+
+    assert jobs[0].company == "Example Labs"
+    assert jobs[0].source == "lin_srael:Israel Example"
+    assert jobs[0].source_url == "https://www.linkedin.com/jobs/view/123"
+    assert jobs[0].application_url == "https://careers.example.com/jobs/123"
+    assert jobs[0].remote_policy == "Hybrid"
+    assert jobs[0].required_skills == ["Python", "PostgreSQL", "Docker", "APIs"]
+    assert jobs[0].discovered_at.isoformat() == "2026-09-09T08:30:00+00:00"
+
+
+def test_lin_srael_collection_searches_terms_and_deduplicates_jobs() -> None:
+    requested: list[tuple[str, dict[str, object]]] = []
+    target = TargetCompany(
+        name="Lin-Srael",
+        provider=AtsProvider.LIN_SRAEL,
+        board_token="app-id",
+        search_terms=["Backend", "Python"],
+        result_limit=25,
+    )
+
+    def post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+        requested.append((url, payload))
+        return {
+            "jobs": [
+                {
+                    "title": "Backend Engineer",
+                    "company_name": "Example",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                    "location": "Israel",
+                    "description": "Build backend services.",
+                }
+            ]
+        }
+
+    jobs = collect_public_jobs(target, post_json=post_json)
+
+    assert len(jobs) == 1
+    assert requested == [
+        (
+            "https://lin-srael.com/api/apps/app-id/functions/searchJobs",
+            {"title": "Backend", "page": 1, "limit": 25},
+        ),
+        (
+            "https://lin-srael.com/api/apps/app-id/functions/searchJobs",
+            {"title": "Python", "page": 1, "limit": 25},
+        ),
+    ]
 
 
 def test_israel_filter_rejects_unrelated_onsite_locations() -> None:
