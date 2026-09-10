@@ -33,3 +33,10 @@ def test_settings_exposes_private_submission_proof_root() -> None:
     )
 
     assert str(settings.submission_proof_root) == "/tmp/backendscout-proofs"
+
+
+def test_settings_enable_private_verification_handoff_by_default() -> None:
+    settings = Settings.model_validate({})
+
+    assert settings.verification_handoff_enabled
+    assert settings.verification_handoff_port == 0

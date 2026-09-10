@@ -391,6 +391,22 @@ On a visible portal confirmation, BackendScout saves a full-page proof
 screenshot under the private `SUBMISSION_PROOF_ROOT`, sends it to Telegram, and
 records the screenshot path, checksum, portal URL, and exact CV draft in Notion.
 
+When Tailscale is installed and connected on the Mac, human verification uses
+a narrower mobile handoff instead of full remote desktop. BackendScout binds a
+temporary controller only to the Mac's private Tailscale address, protects it
+with a random URL token, and sends the link through Telegram. The page exposes
+only the active application-browser viewport and closes with the verification
+wait. Install Tailscale on the phone under the same account, then verify the Mac:
+
+```bash
+uv run --no-editable backend-scout system tailscale check
+```
+
+The controller supports touch clicks, scrolling, navigation keys, and typing
+into the currently focused browser control. All Playwright interaction remains
+on the browser's owning thread. BackendScout never exposes the controller on
+`0.0.0.0`, a public address, or the local LAN.
+
 For a verified public WhatsApp number, the agent opens a prefilled WhatsApp Web
 chat and sends the approved PDF to Telegram for you to attach. It never sends
 the WhatsApp message itself; a Telegram confirmation records it only after you

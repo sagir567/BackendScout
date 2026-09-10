@@ -505,6 +505,19 @@ Current implementation:
   against a local fixture whose simulated verification clears after 1.5
   seconds. It proves that the same browser context remains alive and continues
   filling the form without contacting an employer portal.
+- When Tailscale is active, the verification wait starts a temporary HTTP
+  controller bound only to the Mac's `100.64.0.0/10` Tailscale address. A
+  256-bit random path token is sent through Telegram. The controller serves a
+  cached screenshot of the active Playwright viewport and queues human touch,
+  scroll, key, and typing actions; only the Playwright-owning thread applies
+  those actions. It stops when verification clears or the wait expires.
+- The handoff refuses wildcard, public, and LAN bindings. The phone must be
+  signed into the same tailnet. `system tailscale check` validates the Mac side
+  before a live application.
+- `scripts/blackbox_tailscale_handoff.py` performs an isolated HTTP black-box
+  test over loopback, including the secret URL, cached frame, rejected token,
+  and queued touch action. Loopback is available only through the test-only
+  constructor switch; production integration still requires a Tailscale IP.
 - On confirmed portal success, BackendScout captures a full-page screenshot,
   stores it under the private proof root, hashes it, sends it to Telegram, and
   appends the proof path/checksum to Notion's submission record.

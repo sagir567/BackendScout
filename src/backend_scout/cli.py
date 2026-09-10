@@ -115,6 +115,7 @@ from backend_scout.telegram import (
     process_telegram_update,
     send_digest_messages,
 )
+from backend_scout.verification_handoff import discover_tailscale_ipv4, find_tailscale_executable
 from backend_scout.whatsapp import (
     build_whatsapp_handoff,
     handoff_url,
@@ -137,6 +138,7 @@ repos_app = typer.Typer(help="Scan Git repositories and propose evidence updates
 tasks_app = typer.Typer(help="Run queued Telegram-first work items.")
 system_app = typer.Typer(help="Manage local BackendScout runtime helpers.")
 launchd_app = typer.Typer(help="Install or inspect macOS launchd agents.")
+tailscale_app = typer.Typer(help="Inspect the private Tailscale verification handoff.")
 console = Console()
 TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
 DEFAULT_LAUNCHD_AGENT_DIR = Path.home() / "Library" / "LaunchAgents"
@@ -678,6 +680,21 @@ def launchd_status(agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR)
     for selected in selected_services(LaunchdService.ALL):
         state = "installed" if launchd_service_installed(agent_dir, selected) else "missing"
         console.print(f"{selected.value}: {state}")
+
+
+@tailscale_app.command("check")
+def tailscale_check() -> None:
+    """Verify that this Mac has an active private Tailscale address."""
+    executable = find_tailscale_executable()
+    if executable is None:
+        console.print("[red]Tailscale is not installed.[/red]")
+        raise typer.Exit(1)
+    address = discover_tailscale_ipv4(executable)
+    if address is None:
+        console.print("[red]Tailscale is installed but not connected.[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Tailscale verification handoff is ready.[/green]")
+    console.print(f"Private address: {address}")
 
 
 @tasks_app.command("list")
@@ -1619,11 +1636,13 @@ def apply_prepare(
                 settings.browser_profile_root,
                 evidence,
                 Path(manifest.attachment_path),
-                lambda: _notify_human_verification(
-                    notion_client, settings, page_id, job.company, job.title
+                lambda handoff_url: _notify_human_verification(
+                    notion_client, settings, page_id, job.company, job.title, handoff_url
                 ),
                 wait_for_human_seconds,
                 load_application_form_answers(page_id, tracker),
+                verification_handoff_host=_verification_handoff_host(settings),
+                verification_handoff_port=settings.verification_handoff_port,
             )
             if result.resolved_application_url and result.resolved_application_url != job.application_url:
                 job = job.model_copy(update={"application_url": result.resolved_application_url})
@@ -1743,11 +1762,13 @@ def apply_resume(
                     settings.browser_profile_root,
                     evidence,
                     Path(review.attachment_path),
-                    lambda: _notify_human_verification(
-                        notion_client, settings, page_id, job.company, job.title
+                    lambda handoff_url: _notify_human_verification(
+                        notion_client, settings, page_id, job.company, job.title, handoff_url
                     ),
                     wait_for_human_seconds,
                     form_answers=load_application_form_answers(page_id, tracker),
+                    verification_handoff_host=_verification_handoff_host(settings),
+                    verification_handoff_port=settings.verification_handoff_port,
                 )
                 notion_client.update_application_status(page_id, ApplicationStatus(result.state))
                 console.print(f"[green]{result.message}[/green]")
@@ -1776,8 +1797,8 @@ def apply_resume(
                 settings.browser_profile_root,
                 evidence,
                 Path(review.attachment_path),
-                lambda: _notify_human_verification(
-                    notion_client, settings, page_id, job.company, job.title
+                lambda handoff_url: _notify_human_verification(
+                    notion_client, settings, page_id, job.company, job.title, handoff_url
                 ),
                 lambda: consume_portal_submit_authorization(
                     page_id, authorization.authorization_id, tracker, application_url, manifest
@@ -1785,6 +1806,8 @@ def apply_resume(
                 load_application_form_answers(page_id, tracker),
                 wait_for_human_seconds,
                 proof_path,
+                verification_handoff_host=_verification_handoff_host(settings),
+                verification_handoff_port=settings.verification_handoff_port,
             )
             if result.state == "submitted":
                 submission_record = f"Portal confirmation detected; CV draft {manifest.draft_id}; URL {application_url}"
@@ -1849,19 +1872,32 @@ def _notify_human_verification(
     page_id: str,
     company: str,
     title: str,
+    handoff_url: str | None = None,
 ) -> None:
     """Persist the pause before sending an optional remote-control alert."""
     notion_client.update_application_status(page_id, ApplicationStatus.AWAITING_HUMAN_VERIFICATION)
     if not settings.telegram_bot_token or not settings.telegram_allowed_user_id_set:
         return
-    text = (
-        f"Human verification is waiting for {company} - {title}. "
-        f"{settings.remote_desktop_instructions} Then rerun: "
-        f"backend-scout apply resume {page_id}"
-    )
+    if handoff_url:
+        text = (
+            f"Human verification is waiting for {company} - {title}. "
+            f"Open this temporary private Tailscale link on your phone: {handoff_url}"
+        )
+    else:
+        text = (
+            f"Human verification is waiting for {company} - {title}. "
+            f"{settings.remote_desktop_instructions} Then rerun: "
+            f"backend-scout apply resume {page_id}"
+        )
     with TelegramClient(settings.telegram_bot_token) as telegram_client:
         for chat_id in settings.telegram_allowed_user_id_set:
             telegram_client.send_message(chat_id, text)
+
+
+def _verification_handoff_host(settings: Settings) -> str | None:
+    if not settings.verification_handoff_enabled:
+        return None
+    return discover_tailscale_ipv4()
 
 
 def _resolve_daily_chat_id(settings: Settings, explicit_chat_id: int | None) -> int:
@@ -2030,6 +2066,7 @@ app.add_typer(collect_app, name="collect")
 app.add_typer(repos_app, name="repos")
 app.add_typer(tasks_app, name="tasks")
 system_app.add_typer(launchd_app, name="launchd")
+system_app.add_typer(tailscale_app, name="tailscale")
 app.add_typer(system_app, name="system")
 
 

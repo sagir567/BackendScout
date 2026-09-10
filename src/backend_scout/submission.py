@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 from backend_scout.application_answers import ApplicationFormAnswers
 from backend_scout.models import CareerEvidence
+from backend_scout.verification_handoff import VerificationHandoffServer, apply_handoff_actions
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,53 @@ def wait_for_human_verification_clear(
     return not is_required()
 
 
+def wait_for_page_verification_clear(
+    page,
+    wait_seconds: int,
+    on_human_verification: Callable[[str | None], None] | None,
+    handoff_host: str | None = None,
+    handoff_port: int = 0,
+) -> bool:
+    """Wait for a human check and optionally expose only this page over Tailscale."""
+
+    def is_required() -> bool:
+        return contains_human_verification(
+            _page_and_frame_text(page), [frame.url for frame in page.frames]
+        )
+
+    handoff = (
+        VerificationHandoffServer(handoff_host, handoff_port)
+        if handoff_host and wait_seconds > 0
+        else None
+    )
+    if handoff is None:
+        if on_human_verification:
+            on_human_verification(None)
+        return wait_for_human_verification_clear(is_required, wait_seconds)
+
+    try:
+        handoff.start()
+    except OSError as exc:
+        LOGGER.warning("Tailscale verification handoff could not start: %s", exc)
+        if on_human_verification:
+            on_human_verification(None)
+        return wait_for_human_verification_clear(is_required, wait_seconds)
+
+    try:
+        handoff.publish_frame(page.screenshot(type="png"))
+        if on_human_verification:
+            on_human_verification(handoff.url)
+
+        def poll_required() -> bool:
+            apply_handoff_actions(page, handoff.drain_actions())
+            handoff.publish_frame(page.screenshot(type="png"))
+            return is_required()
+
+        return wait_for_human_verification_clear(poll_required, wait_seconds)
+    finally:
+        handoff.close()
+
+
 def is_submission_confirmation(page_text: str) -> bool:
     return any(marker in page_text.casefold() for marker in SUBMISSION_CONFIRMATION_MARKERS)
 
@@ -79,9 +127,11 @@ def prepare_visible_submission(
     profile_root: Path,
     evidence: CareerEvidence,
     approved_attachment: Path,
-    on_human_verification: Callable[[], None] | None = None,
+    on_human_verification: Callable[[str | None], None] | None = None,
     wait_for_human_seconds: int = 0,
     form_answers: ApplicationFormAnswers | None = None,
+    verification_handoff_host: str | None = None,
+    verification_handoff_port: int = 0,
 ) -> BrowserPreparationResult:
     """Open a persistent, visible browser and fill only evidence-backed basics.
 
@@ -99,14 +149,15 @@ def prepare_visible_submission(
         page.goto(application_url, wait_until="domcontentloaded")
         _follow_verified_apply_link(page)
         if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
-            if on_human_verification:
-                on_human_verification()
             # Keep the visible persistent browser alive while the candidate uses
-            # Chrome Remote Desktop. No challenge is inspected, answered, or bypassed.
-            is_required = lambda: contains_human_verification(
-                _page_and_frame_text(page), [frame.url for frame in page.frames]
-            )
-            if wait_for_human_verification_clear(is_required, wait_for_human_seconds):
+            # the private handoff. No challenge is inspected, answered, or bypassed.
+            if wait_for_page_verification_clear(
+                page,
+                wait_for_human_seconds,
+                on_human_verification,
+                verification_handoff_host,
+                verification_handoff_port,
+            ):
                 return _fill_safe_fields(page, evidence, approved_attachment, form_answers)
             context.close()
             return BrowserPreparationResult(
@@ -369,11 +420,13 @@ def submit_visible_submission(
     profile_root: Path,
     evidence: CareerEvidence,
     approved_attachment: Path,
-    on_human_verification: Callable[[], None] | None = None,
+    on_human_verification: Callable[[str | None], None] | None = None,
     before_submit: Callable[[], None] | None = None,
     form_answers: ApplicationFormAnswers | None = None,
     wait_for_human_seconds: int = 0,
     proof_path: Path | None = None,
+    verification_handoff_host: str | None = None,
+    verification_handoff_port: int = 0,
 ) -> BrowserPreparationResult:
     """Submit an already-approved portal application only when confirmation is visible."""
     from playwright.sync_api import sync_playwright
@@ -386,19 +439,22 @@ def submit_visible_submission(
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(application_url, wait_until="domcontentloaded")
         _follow_verified_apply_link(page)
-        if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
-            if on_human_verification:
-                on_human_verification()
-            is_required = lambda: contains_human_verification(
-                _page_and_frame_text(page), [frame.url for frame in page.frames]
+        verification_present = contains_human_verification(
+            _page_and_frame_text(page), [frame.url for frame in page.frames]
+        )
+        if verification_present and not wait_for_page_verification_clear(
+            page,
+            wait_for_human_seconds,
+            on_human_verification,
+            verification_handoff_host,
+            verification_handoff_port,
+        ):
+            context.close()
+            return BrowserPreparationResult(
+                "awaiting_human_verification",
+                (),
+                "Human verification is still required.",
             )
-            if not wait_for_human_verification_clear(is_required, wait_for_human_seconds):
-                context.close()
-                return BrowserPreparationResult(
-                    "awaiting_human_verification",
-                    (),
-                    "Human verification is still required.",
-                )
         prepared = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
         if prepared.unresolved_required_fields:
             context.close()
@@ -423,12 +479,13 @@ def submit_visible_submission(
         page.wait_for_timeout(5_000)
         body = _page_and_frame_text(page)
         if contains_human_verification(body, [frame.url for frame in page.frames]):
-            if on_human_verification:
-                on_human_verification()
-            is_required = lambda: contains_human_verification(
-                _page_and_frame_text(page), [frame.url for frame in page.frames]
+            wait_for_page_verification_clear(
+                page,
+                wait_for_human_seconds,
+                on_human_verification,
+                verification_handoff_host,
+                verification_handoff_port,
             )
-            wait_for_human_verification_clear(is_required, wait_for_human_seconds)
             body = _page_and_frame_text(page)
             if not contains_human_verification(body, [frame.url for frame in page.frames]):
                 if is_submission_confirmation(body):
