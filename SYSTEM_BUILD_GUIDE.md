@@ -604,6 +604,8 @@ TODO:
   digest, and send a run summary even when no new jobs are found.
 - [x] Add a mailbox message checkpoint and overlap locks for scheduled jobs.
 - [x] Make every LaunchAgent use the stable project-local uv environment.
+- [x] Add a private Application Support runtime deployment for macOS TCC,
+  keeping API secrets and state permission-restricted and outside Documents.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.
 ```

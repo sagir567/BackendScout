@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -102,6 +104,12 @@ from backend_scout.repo_scanner import (
     scan_repositories,
 )
 from backend_scout.revisions import load_revision_feedback
+from backend_scout.runtime_bundle import (
+    DEFAULT_RUNTIME_ROOT,
+    deploy_runtime_files,
+    runtime_manifest,
+    runtime_private_path,
+)
 from backend_scout.scouting_preferences import (
     DEFAULT_SCOUTING_PREFERENCES_PATH,
     ScoutingPreferences,
@@ -150,6 +158,7 @@ collect_app = typer.Typer(help="Collect public ATS jobs for Israel and approved 
 repos_app = typer.Typer(help="Scan Git repositories and propose evidence updates.")
 tasks_app = typer.Typer(help="Run queued Telegram-first work items.")
 system_app = typer.Typer(help="Manage local BackendScout runtime helpers.")
+runtime_app = typer.Typer(help="Deploy the private macOS background runtime.")
 launchd_app = typer.Typer(help="Install or inspect macOS launchd agents.")
 tailscale_app = typer.Typer(help="Inspect the private Tailscale verification handoff.")
 console = Console()
@@ -782,6 +791,71 @@ def launchd_status(agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR)
         else:
             state = "missing"
         console.print(f"{selected.value}: {state}")
+
+
+@runtime_app.command("deploy")
+def runtime_deploy(
+    runtime_root: Annotated[
+        Path,
+        typer.Option("--runtime-root", help="Private runtime outside protected Documents folders."),
+    ] = DEFAULT_RUNTIME_ROOT,
+    load: Annotated[
+        bool,
+        typer.Option("--load", help="Replace and load all LaunchAgents after deployment."),
+    ] = False,
+) -> None:
+    """Copy code/config privately, build its venv, and optionally activate launchd."""
+    try:
+        manifest_path = deploy_runtime_files(Path.cwd(), runtime_root)
+        uv_path = shutil.which("uv") or "/opt/homebrew/bin/uv"
+        subprocess.run(
+            [
+                uv_path,
+                "--cache-dir",
+                str(runtime_root / ".uv-cache"),
+                "sync",
+                "--no-editable",
+                "--reinstall-package",
+                "backend-scout",
+            ],
+            cwd=runtime_root,
+            check=True,
+        )
+        if load:
+            for service in selected_services(LaunchdService.ALL):
+                install_launchd_service(
+                    runtime_root,
+                    DEFAULT_LAUNCHD_AGENT_DIR,
+                    service,
+                    load=True,
+                    replace=True,
+                )
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        console.print("[red]Runtime deployment failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"[green]Private runtime deployed:[/green] {runtime_root}")
+    console.print(f"Manifest: {manifest_path}")
+    console.print(f"CV archive: {runtime_private_path(runtime_root, 'private/cv_archive')}")
+    if load:
+        console.print("[green]All BackendScout LaunchAgents were replaced and loaded.[/green]")
+
+
+@runtime_app.command("status")
+def runtime_status(
+    runtime_root: Annotated[
+        Path,
+        typer.Option("--runtime-root", help="Private runtime outside protected Documents folders."),
+    ] = DEFAULT_RUNTIME_ROOT,
+) -> None:
+    """Show whether the private background runtime has been deployed."""
+    manifest = runtime_manifest(runtime_root)
+    if manifest is None:
+        console.print(f"[yellow]Private runtime is not deployed:[/yellow] {runtime_root}")
+        raise typer.Exit(1)
+    console.print(f"[green]Private runtime is deployed:[/green] {runtime_root}")
+    console.print(f"Source: {manifest.get('source_root', 'unknown')}")
+    console.print(f"Deployed at: {manifest.get('deployed_at', 'unknown')}")
 
 
 @tailscale_app.command("check")
@@ -2183,6 +2257,7 @@ app.add_typer(repos_app, name="repos")
 app.add_typer(tasks_app, name="tasks")
 system_app.add_typer(launchd_app, name="launchd")
 system_app.add_typer(tailscale_app, name="tailscale")
+system_app.add_typer(runtime_app, name="runtime")
 app.add_typer(system_app, name="system")
 
 

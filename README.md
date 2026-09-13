@@ -187,15 +187,21 @@ you run manually, and logs remain local under ignored `data/logs/`. The bot
 sends a completion summary even when there are no new jobs, so a quiet morning
 is distinguishable from a failed scheduler.
 
-The runtime helpers can be installed from the CLI:
+On macOS, background LaunchAgents cannot read projects inside the protected
+`Documents` folder even when they run as the same user. Deploy the private
+runtime first; it copies code and private configuration to a mode-`0700`
+directory under `~/Library/Application Support`, rewrites runtime-only artifact
+paths, preserves operational state across redeployments, and loads all agents:
 
 ```bash
-uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all --load --replace
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime deploy --load
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime status
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 ```
 
-Add `--load --replace` to refresh and start already-installed agents.
 Every service runs through the same project-local `.venv` and `uv` cache.
+This Git repository remains the development source of truth; rerun the deploy
+command after a tested code or private-config change.
 
 ## Repository Evidence Scanner
 

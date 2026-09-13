@@ -203,17 +203,27 @@ routine workflow transitions do not require a terminal command. It does not
 interpret ordinary text as delivery authorization and cannot submit an
 application by itself.
 
-The recommended installation path renders, replaces, and loads all four
-services in one command:
+Projects inside macOS `Documents` are protected by TCC. A LaunchAgent cannot
+read that folder merely because it runs under the same user, and granting Full
+Disk Access to a general shell would be unnecessarily broad. The recommended
+installation deploys a private runtime under `~/Library/Application Support`
+and loads all four services from there:
 
 ```bash
-uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all --load --replace
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime deploy --load
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime status
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 ```
 
 The status command distinguishes an installed plist from a service that is
 actually loaded. The manual steps below remain useful for troubleshooting one
 service in isolation.
+
+The runtime directory and its `.env` are restricted to the current user. Code
+and private config are refreshed on each deploy; runtime `data/` is preserved
+so Telegram offsets, task state, and mailbox checkpoints are not reset. Runtime
+CVs, browser state, and submission proof screenshots stay under its private
+subdirectory because an unattended process cannot write back into Documents.
 
 1. Edit `launchd/com.backendscout.telegram.plist.template` and replace every
    `TODO_ABSOLUTE_PROJECT_PATH` with `/Users/sagi/Documents/CV/BackendScout`.
