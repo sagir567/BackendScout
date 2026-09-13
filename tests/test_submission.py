@@ -3,6 +3,7 @@ from pathlib import Path
 from playwright.sync_api import Error as PlaywrightError
 
 from backend_scout.submission import (
+    _attach_approved_file,
     _candidate_answer_locator,
     _capture_submission_screenshot,
     _control_has_value,
@@ -15,6 +16,39 @@ from backend_scout.submission import (
     resolve_apply_now_url,
     wait_for_human_verification_clear,
 )
+
+
+def test_cv_attachment_accepts_visible_filename_after_react_removes_input(tmp_path) -> None:
+    attachment = tmp_path / "approved_cv.pdf"
+    attachment.write_bytes(b"approved")
+
+    class Locator:
+        def __init__(self, present: bool = False, text: str = "") -> None:
+            self.present = present
+            self.text = text
+
+        @property
+        def first(self):
+            return self
+
+        def count(self) -> int:
+            return int(self.present)
+
+        def set_input_files(self, path: str, timeout: int) -> None:
+            assert path == str(attachment)
+            assert timeout == 5_000
+
+        def inner_text(self, timeout: int) -> str:
+            assert timeout == 2_000
+            return self.text
+
+    class Scope:
+        def locator(self, selector: str):
+            if selector == "body":
+                return Locator(text=f"Uploaded {attachment.name}")
+            return Locator(present=True)
+
+    assert _attach_approved_file(Scope(), attachment)
 
 
 def test_submission_detects_captcha_without_attempting_to_solve_it() -> None:

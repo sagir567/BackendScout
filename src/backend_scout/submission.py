@@ -212,16 +212,9 @@ def _fill_safe_fields(
             if locator.count() and locator.is_visible() and _fill_control_if_blank(locator, value):
                 filled.append(field)
 
-        upload = scope.locator(
-            'input[type="file"][id*="resume" i], input[type="file"][name*="resume" i], '
-            'input[type="file"][id*="cv" i], input[type="file"][name*="cv" i], '
-            'input[type="file"]'
-        ).first
-        if upload.count():
-            upload.set_input_files(str(approved_attachment))
-            if upload.input_value():
-                filled.append("cv_attachment")
-                break
+        if _attach_approved_file(scope, approved_attachment):
+            filled.append("cv_attachment")
+            break
     if form_answers:
         for scope in scopes:
             filled.extend(_fill_candidate_confirmed_answers(scope, form_answers))
@@ -389,6 +382,29 @@ def _fill_control_if_blank(control, value: str) -> bool:
     except PlaywrightError as exc:
         LOGGER.debug("Control changed while filling it: %s", exc)
         return False
+
+
+def _attach_approved_file(scope, approved_attachment: Path) -> bool:
+    """Reacquire a React-rendered file input and verify the approved file is attached."""
+    selector = (
+        'input[type="file"][id*="resume" i], input[type="file"][name*="resume" i], '
+        'input[type="file"][id*="cv" i], input[type="file"][name*="cv" i], '
+        'input[type="file"]'
+    )
+    for attempt in range(3):
+        upload = scope.locator(selector).first
+        if not upload.count():
+            return False
+        try:
+            upload.set_input_files(str(approved_attachment), timeout=5_000)
+            if approved_attachment.name in scope.locator("body").inner_text(timeout=2_000):
+                return True
+            refreshed = scope.locator(selector).first
+            if refreshed.count() and refreshed.input_value(timeout=2_000):
+                return True
+        except PlaywrightError as exc:
+            LOGGER.debug("CV upload control changed on attempt %s: %s", attempt + 1, exc)
+    return False
 
 
 def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:
