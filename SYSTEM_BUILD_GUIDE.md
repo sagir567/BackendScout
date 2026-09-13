@@ -526,6 +526,50 @@ Current implementation:
   appends the proof path/checksum to Notion's submission record.
 - WhatsApp remains prepared-user-send only. It is never auto-messaged.
 
+### Future OpenAI-Guided Portal Runtime
+
+OpenAI can make unfamiliar application forms more adaptable, but the API does
+not replace the browser runtime. Its computer-use loop returns code or
+structured UI actions; BackendScout must execute those actions, return updated
+screenshots, and verify the result. See the official
+[computer-use guide](https://developers.openai.com/api/docs/guides/tools-computer-use).
+
+Three implementation options were evaluated:
+
+1. **Agents SDK plus constrained BackendScout tools (recommended).** Expose
+   narrow functions for reading the current form, filling one evidence-backed
+   field, attaching the approved CV, taking a screenshot, and reporting an
+   unresolved question. The SDK manages the multi-step loop while existing
+   Python code keeps storage, approvals, and execution policy. This fits the
+   official distinction between the
+   [Agents SDK and Responses API](https://developers.openai.com/api/docs/guides/agents).
+2. **Responses API computer use as the main controller.** Send screenshots to
+   the model and execute its requested mouse/keyboard actions in an isolated
+   Playwright session. This handles unfamiliar layouts well, but costs more
+   tool turns, is less deterministic, and needs stronger bounds and replay
+   protection.
+3. **Model-generated Playwright scripts.** Let the model write a short script
+   for each form and run it in an isolated browser. This is flexible and can
+   combine several actions in one call, but generated selectors and scripts
+   are harder to audit and constrain. Keep this as a fallback experiment, not
+   the default submission path.
+
+The recommended hybrid keeps these rules outside model control:
+
+- Only the approved production job, official application URL, and exact
+  approved CV checksum may enter a submission session.
+- The model may propose a field mapping but cannot invent an answer or weaken
+  the evidence policy.
+- Typing personal information and clicking the final submit control remain
+  consequential actions governed by BackendScout's approval record.
+- CAPTCHA and explicit human-verification challenges pause the run rather than
+  being solved or bypassed.
+- A successful result requires a visible portal confirmation and saved proof,
+  not a model assertion.
+- The browser is isolated, domain-allowlisted, time/step/cost bounded, and page
+  content is treated as untrusted. These controls follow OpenAI's
+  [computer-use safety guidance](https://developers.openai.com/api/docs/guides/tools-computer-use#run-safely).
+
 ## Phase 9: Interview Prep
 
 After approval or submission, generate a prep packet:
@@ -606,6 +650,10 @@ TODO:
 - [x] Make every LaunchAgent use the stable project-local uv environment.
 - [x] Add a private Application Support runtime deployment for macOS TCC,
   keeping API secrets and state permission-restricted and outside Documents.
+- [x] Evaluate OpenAI API submission architectures and document the hybrid
+  Agents SDK plus constrained Playwright-tool design.
+- [ ] Implement and black-box test the OpenAI-guided fallback for unfamiliar
+  application forms without changing the existing approval gates.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.
 ```
