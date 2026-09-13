@@ -24,6 +24,7 @@ dependencies = [
   "google-auth-oauthlib>=1.2",
   "keyring>=25.0",
   "playwright>=1.48",
+  "openai-agents>=0.22.2",
 ]
 
 [project.optional-dependencies]

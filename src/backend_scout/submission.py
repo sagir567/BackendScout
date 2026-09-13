@@ -13,8 +13,25 @@ from urllib.parse import urljoin, urlparse
 from playwright.sync_api import Error as PlaywrightError
 
 from backend_scout.application_answers import ApplicationFormAnswers
+from backend_scout.guided_submission import (
+    GuidedCandidateFact,
+    GuidedControlKind,
+    GuidedFormField,
+    GuidedFormPlan,
+    GuidedFormSnapshot,
+    GuidedPlanUnavailableError,
+    build_guided_candidate_facts,
+    is_human_verification_field,
+    is_sensitive_form_field,
+    is_submission_field,
+    validate_guided_form_plan,
+)
 from backend_scout.models import CareerEvidence
 from backend_scout.verification_handoff import VerificationHandoffServer, apply_handoff_actions
+
+GuidedPlanBuilder = Callable[
+    [GuidedFormSnapshot, dict[str, GuidedCandidateFact]], GuidedFormPlan
+]
 
 
 @dataclass(frozen=True)
@@ -26,6 +43,14 @@ class BrowserPreparationResult:
     resolved_application_url: str | None = None
     screenshot_path: str | None = None
     screenshot_sha256: str | None = None
+    guided_plan_used: bool = False
+    guided_summary: str | None = None
+
+
+@dataclass(frozen=True)
+class CapturedGuidedForm:
+    snapshot: GuidedFormSnapshot
+    controls: dict[str, object]
 
 
 HUMAN_VERIFICATION_MARKERS = ("captcha", "recaptcha", "hcaptcha", "turnstile", "verify you are human")
@@ -134,6 +159,7 @@ def prepare_visible_submission(
     form_answers: ApplicationFormAnswers | None = None,
     verification_handoff_host: str | None = None,
     verification_handoff_port: int = 0,
+    guided_plan_builder: GuidedPlanBuilder | None = None,
 ) -> BrowserPreparationResult:
     """Open a persistent, visible browser and fill only evidence-backed basics.
 
@@ -160,13 +186,25 @@ def prepare_visible_submission(
                 verification_handoff_host,
                 verification_handoff_port,
             ):
-                return _fill_safe_fields(page, evidence, approved_attachment, form_answers)
+                return _fill_safe_fields(
+                    page,
+                    evidence,
+                    approved_attachment,
+                    form_answers,
+                    guided_plan_builder,
+                )
             context.close()
             return BrowserPreparationResult(
                 "awaiting_human_verification", (), "Human verification detected; complete it through Chrome Remote Desktop."
             )
 
-        result = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
+        result = _fill_safe_fields(
+            page,
+            evidence,
+            approved_attachment,
+            form_answers,
+            guided_plan_builder,
+        )
         context.close()
     return result
 
@@ -176,6 +214,7 @@ def _fill_safe_fields(
     evidence: CareerEvidence,
     approved_attachment: Path,
     form_answers: ApplicationFormAnswers | None = None,
+    guided_plan_builder: GuidedPlanBuilder | None = None,
 ) -> BrowserPreparationResult:
     name_parts = evidence.identity.full_name.split(maxsplit=1)
     linkedin_url = next(
@@ -218,18 +257,190 @@ def _fill_safe_fields(
     if form_answers:
         for scope in scopes:
             filled.extend(_fill_candidate_confirmed_answers(scope, form_answers))
-    unresolved = _unresolved_required_fields(page)
+    unresolved = list(_unresolved_required_fields(page))
     if "cv_attachment" not in filled:
-        unresolved = (*unresolved, "cv_attachment")
+        unresolved.append("cv_attachment")
+    guided_plan_used = False
+    guided_summary: str | None = None
+    if guided_plan_builder is not None and unresolved:
+        captured = capture_guided_form(page)
+        facts = build_guided_candidate_facts(evidence, approved_attachment, form_answers)
+        if captured.snapshot.fields:
+            try:
+                guided_plan = guided_plan_builder(captured.snapshot, facts)
+                guided_filled = apply_guided_form_plan(page, captured, guided_plan, facts)
+                filled.extend(guided_filled)
+                if any(item == "cv_attachment" for item in guided_filled):
+                    filled = [item for item in filled if item != "cv_attachment"] + ["cv_attachment"]
+                guided_plan_used = True
+                guided_summary = guided_plan.summary
+            except (GuidedPlanUnavailableError, ValueError) as exc:
+                LOGGER.warning("Guided form mapping was rejected or unavailable: %s", exc)
+                guided_summary = "Guided mapping was unavailable; unresolved fields require review."
+        unresolved = list(_unresolved_required_fields(page))
+        if "cv_attachment" not in filled:
+            unresolved.append("cv_attachment")
     message = "Prepared visible form without submitting it."
     if unresolved:
         message = "Prepared visible form, but some required fields still need candidate attention."
+    elif guided_plan_used:
+        message = "Prepared visible form with validated OpenAI-guided field mappings; not submitted."
     return BrowserPreparationResult(
         "submission_prepared",
         tuple(filled),
         message,
-        unresolved,
+        tuple(dict.fromkeys(unresolved)),
         page.url,
+        guided_plan_used=guided_plan_used,
+        guided_summary=guided_summary,
+    )
+
+
+def capture_guided_form(page) -> CapturedGuidedForm:
+    """Capture a compact form schema without sending field values or page screenshots."""
+    fields: list[GuidedFormField] = []
+    controls: dict[str, object] = {}
+    for scope_index, scope in enumerate(_form_scopes(page)):
+        candidates = scope.locator("input, textarea, select")
+        for control_index in range(candidates.count()):
+            control = candidates.nth(control_index)
+            try:
+                metadata = control.evaluate(
+                    """element => {
+                        const labels = Array.from(element.labels || [])
+                            .map(item => (item.innerText || '').trim())
+                            .filter(Boolean);
+                        return {
+                            tag: element.tagName.toLowerCase(),
+                            type: (element.getAttribute('type') || 'text').toLowerCase(),
+                            role: (element.getAttribute('role') || '').toLowerCase(),
+                            label: labels[0]
+                                || element.getAttribute('aria-label')
+                                || element.getAttribute('placeholder')
+                                || element.getAttribute('name')
+                                || element.getAttribute('id')
+                                || '',
+                            required: Boolean(element.required)
+                                || element.getAttribute('aria-required') === 'true',
+                            disabled: Boolean(element.disabled),
+                            options: element.tagName === 'SELECT'
+                                ? Array.from(element.options)
+                                    .map(item => (item.label || item.textContent || '').trim())
+                                    .filter(Boolean)
+                                    .slice(0, 50)
+                                : [],
+                        };
+                    }"""
+                )
+                kind = _guided_control_kind(metadata)
+                if kind is None or metadata.get("disabled"):
+                    continue
+                if kind != GuidedControlKind.FILE and not control.is_visible():
+                    continue
+                label = " ".join(str(metadata.get("label") or "").split())
+                if not label or is_human_verification_field(label) or is_submission_field(label):
+                    continue
+                field_id = f"scope-{scope_index}-control-{control_index}"
+                current_value_present = _guided_control_has_value(control, kind)
+                fields.append(
+                    GuidedFormField(
+                        field_id=field_id,
+                        label=label,
+                        kind=kind,
+                        required=bool(metadata.get("required")),
+                        options=[str(item) for item in metadata.get("options", [])],
+                        current_value_present=current_value_present,
+                        sensitive=is_sensitive_form_field(label),
+                    )
+                )
+                controls[field_id] = control
+            except (PlaywrightError, TypeError, ValueError) as exc:
+                LOGGER.debug("Could not inspect a form control for guided mapping: %s", exc)
+    return CapturedGuidedForm(
+        GuidedFormSnapshot(page_url=page.url, fields=fields),
+        controls,
+    )
+
+
+def apply_guided_form_plan(
+    page,
+    captured: CapturedGuidedForm,
+    plan: GuidedFormPlan,
+    facts: dict[str, GuidedCandidateFact],
+) -> list[str]:
+    """Execute only a locally validated field-to-fact mapping; never submit or navigate."""
+    validate_guided_form_plan(plan, captured.snapshot, facts)
+    fields = {field.field_id: field for field in captured.snapshot.fields}
+    filled: list[str] = []
+    for mapping in plan.mappings:
+        field = fields[mapping.field_id]
+        control = captured.controls[mapping.field_id]
+        fact = facts[mapping.fact_key]
+        try:
+            if _guided_control_has_value(control, field.kind):
+                continue
+            if field.kind == GuidedControlKind.FILE:
+                control.set_input_files(fact.value, timeout=5_000)
+                if _guided_control_has_value(control, field.kind):
+                    filled.append("cv_attachment")
+                continue
+            if field.kind == GuidedControlKind.SELECT:
+                control.select_option(label=fact.value, timeout=5_000)
+            elif field.kind == GuidedControlKind.COMBOBOX:
+                if not _select_confirmed_combobox_option(page, control, fact.value):
+                    continue
+            elif field.kind in {GuidedControlKind.CHECKBOX, GuidedControlKind.RADIO}:
+                if not _guided_choice_matches(control, fact.value):
+                    continue
+                control.check(timeout=5_000)
+            elif not _fill_control_if_blank(control, fact.value):
+                continue
+            filled.append(f"guided:{field.label}")
+        except PlaywrightError as exc:
+            LOGGER.debug("Guided control changed while applying %s: %s", field.field_id, exc)
+    return filled
+
+
+def _guided_control_kind(metadata: dict[str, object]) -> GuidedControlKind | None:
+    tag = str(metadata.get("tag") or "").casefold()
+    input_type = str(metadata.get("type") or "text").casefold()
+    role = str(metadata.get("role") or "").casefold()
+    if tag == "select":
+        return GuidedControlKind.SELECT
+    if tag == "textarea":
+        return GuidedControlKind.TEXTAREA
+    if role == "combobox":
+        return GuidedControlKind.COMBOBOX
+    if input_type in {"submit", "button", "reset", "hidden", "image", "password"}:
+        return None
+    return {
+        "email": GuidedControlKind.EMAIL,
+        "tel": GuidedControlKind.TEL,
+        "url": GuidedControlKind.URL,
+        "checkbox": GuidedControlKind.CHECKBOX,
+        "radio": GuidedControlKind.RADIO,
+        "file": GuidedControlKind.FILE,
+    }.get(input_type, GuidedControlKind.TEXT)
+
+
+def _guided_control_has_value(control, kind: GuidedControlKind) -> bool:
+    try:
+        if kind in {GuidedControlKind.CHECKBOX, GuidedControlKind.RADIO}:
+            return bool(control.is_checked())
+        return _control_has_value(control)
+    except PlaywrightError:
+        return False
+
+
+def _guided_choice_matches(control, confirmed_value: str) -> bool:
+    nearby_text = control.evaluate(
+        "element => element.closest('label')?.innerText "
+        "|| element.parentElement?.innerText "
+        "|| element.parentElement?.parentElement?.innerText || ''"
+    )
+    control_value = control.get_attribute("value") or ""
+    return _matches_confirmed_option(str(nearby_text), confirmed_value) or _matches_confirmed_option(
+        control_value, confirmed_value
     )
 
 
@@ -465,6 +676,7 @@ def submit_visible_submission(
     proof_path: Path | None = None,
     verification_handoff_host: str | None = None,
     verification_handoff_port: int = 0,
+    guided_plan_builder: GuidedPlanBuilder | None = None,
 ) -> BrowserPreparationResult:
     """Submit an already-approved portal application only when confirmation is visible."""
     from playwright.sync_api import sync_playwright
@@ -493,7 +705,13 @@ def submit_visible_submission(
                 (),
                 "Human verification is still required.",
             )
-        prepared = _fill_safe_fields(page, evidence, approved_attachment, form_answers)
+        prepared = _fill_safe_fields(
+            page,
+            evidence,
+            approved_attachment,
+            form_answers,
+            guided_plan_builder,
+        )
         if prepared.unresolved_required_fields:
             context.close()
             return BrowserPreparationResult(

@@ -14,6 +14,7 @@ from backend_scout.notion import (
     APPLICATIONS_PROPERTY_TYPES,
     build_job_page_properties,
 )
+from backend_scout.submission import BrowserPreparationResult
 from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_task, list_tasks
 
 runner = CliRunner()
@@ -602,7 +603,55 @@ def test_tasks_worker_once_runs_queued_portal_prepare(monkeypatch: pytest.Monkey
         queue_path,
     )
     calls = []
-    monkeypatch.setattr("backend_scout.cli.apply_prepare", lambda *args, **kwargs: calls.append((args, kwargs)))
+    final_reviews = []
+    monkeypatch.setattr(
+        "backend_scout.cli.apply_prepare",
+        lambda *args, **kwargs: calls.append((args, kwargs))
+        or BrowserPreparationResult(
+            state=ApplicationStatus.SUBMISSION_PREPARED.value,
+            filled_fields=("email", "cv_attachment"),
+            message="Prepared.",
+        ),
+    )
+    monkeypatch.setattr(
+        "backend_scout.cli.apply_request_submit",
+        lambda *args, **kwargs: final_reviews.append((args, kwargs)),
+    )
+
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
+
+    assert result.exit_code == 0
+    assert calls == [(("page-123",), {"tracker": TrackerName.PRODUCTION})]
+    assert final_reviews == [
+        (
+            ("page-123",),
+            {"chat_id": 12345, "tracker": TrackerName.PRODUCTION},
+        )
+    ]
+    assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
+
+
+def test_tasks_worker_once_runs_approved_portal_submit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    queue_path = tmp_path / "tasks.json"
+    enqueue_task(
+        QueuedTaskKind.PORTAL_SUBMIT,
+        TrackerName.PRODUCTION,
+        {"page_id": "page-123", "chat_id": 12345},
+        queue_path,
+    )
+    calls = []
+    monkeypatch.setattr(
+        "backend_scout.cli.apply_resume",
+        lambda *args, **kwargs: calls.append((args, kwargs))
+        or BrowserPreparationResult(
+            state=ApplicationStatus.SUBMITTED.value,
+            filled_fields=("email", "cv_attachment"),
+            message="Submitted.",
+        ),
+    )
 
     result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
 

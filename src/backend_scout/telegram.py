@@ -447,6 +447,16 @@ def process_telegram_update(
             tracker,
             {"page_id": page_id, "chat_id": chat_id},
         )
+    elif (
+        action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT
+        and task_enqueue_handler is not None
+        and isinstance(chat_id, int)
+    ):
+        queued_task_id = task_enqueue_handler(
+            QueuedTaskKind.PORTAL_SUBMIT,
+            tracker,
+            {"page_id": page_id, "chat_id": chat_id},
+        )
     if isinstance(chat_id, int) and isinstance(message_id, int):
         try:
             telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
@@ -463,10 +473,13 @@ def process_telegram_update(
                     f"Send /prepare_{page_id} when you want BackendScout to prepare the portal."
                 )
             elif action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
-                message_text = (
-                    f"Final portal submission approved for {application.company}. "
-                    "Run apply resume within 15 minutes."
-                )
+                if queued_task_id:
+                    message_text = (
+                        f"Final portal submission approved for {application.company}. "
+                        f"Queued submission task {queued_task_id}."
+                    )
+                else:
+                    message_text = "Run apply resume within 15 minutes."
             telegram_client.send_message(
                 chat_id,
                 message_text,

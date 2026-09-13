@@ -2,7 +2,17 @@ from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
 
+from backend_scout.guided_submission import (
+    GuidedControlKind,
+    GuidedFieldMapping,
+    GuidedFormField,
+    GuidedFormPlan,
+    GuidedFormSnapshot,
+    build_guided_candidate_facts,
+)
+from backend_scout.models import CareerEvidence
 from backend_scout.submission import (
+    CapturedGuidedForm,
     _attach_approved_file,
     _candidate_answer_locator,
     _capture_submission_screenshot,
@@ -10,12 +20,76 @@ from backend_scout.submission import (
     _follow_verified_apply_link,
     _matches_confirmed_option,
     _unresolved_required_fields,
+    apply_guided_form_plan,
     contains_human_verification,
     is_explicit_apply_now_label,
     is_submission_confirmation,
     resolve_apply_now_url,
     wait_for_human_verification_clear,
 )
+
+
+def _guided_evidence() -> CareerEvidence:
+    return CareerEvidence.model_validate(
+        {
+            "identity": {
+                "full_name": "Test Candidate",
+                "email": "candidate@example.com",
+            },
+            "skills": [{"category": "Backend", "items": ["Python"]}],
+        }
+    )
+
+
+def test_guided_executor_resolves_fact_key_to_local_value(tmp_path) -> None:
+    class Control:
+        value = ""
+
+        def input_value(self, timeout: int) -> str:
+            assert timeout == 2_000
+            return self.value
+
+        def get_attribute(self, name: str, timeout: int | None = None):
+            assert name == "role"
+
+        def fill(self, value: str, timeout: int) -> None:
+            assert timeout == 5_000
+            self.value = value
+
+    field = GuidedFormField(
+        field_id="field-1",
+        label="Contact inbox",
+        kind=GuidedControlKind.EMAIL,
+        required=True,
+    )
+    control = Control()
+    captured = CapturedGuidedForm(
+        snapshot=GuidedFormSnapshot(
+            page_url="https://careers.example.test",
+            fields=[field],
+        ),
+        controls={field.field_id: control},
+    )
+    facts = build_guided_candidate_facts(
+        _guided_evidence(),
+        tmp_path / "approved.pdf",
+        None,
+    )
+    plan = GuidedFormPlan(
+        mappings=[
+            GuidedFieldMapping(
+                field_id=field.field_id,
+                fact_key="identity.email",
+                reason="Exact semantic match",
+            )
+        ],
+        summary="Mapped email.",
+    )
+
+    filled = apply_guided_form_plan(object(), captured, plan, facts)
+
+    assert filled == ["guided:Contact inbox"]
+    assert control.value == "candidate@example.com"
 
 
 def test_cv_attachment_accepts_visible_filename_after_react_removes_input(tmp_path) -> None:

@@ -20,6 +20,7 @@ class QueuedTaskKind(str, Enum):
     CV_DRAFT = "cv_draft"
     CONTACT_DISCOVERY = "contact_discovery"
     PORTAL_PREPARE = "portal_prepare"
+    PORTAL_SUBMIT = "portal_submit"
 
 
 class QueuedTaskStatus(str, Enum):

@@ -526,49 +526,42 @@ Current implementation:
   appends the proof path/checksum to Notion's submission record.
 - WhatsApp remains prepared-user-send only. It is never auto-messaged.
 
-### Future OpenAI-Guided Portal Runtime
+### OpenAI-Guided Portal Runtime
 
-OpenAI can make unfamiliar application forms more adaptable, but the API does
-not replace the browser runtime. Its computer-use loop returns code or
-structured UI actions; BackendScout must execute those actions, return updated
-screenshots, and verify the result. See the official
-[computer-use guide](https://developers.openai.com/api/docs/guides/tools-computer-use).
+The implemented architecture is a deterministic Playwright executor with a
+small OpenAI Agents SDK planner used only as a fallback. It is deliberately not
+a screenshot-driven computer-use loop or a model-generated browser script.
+That keeps routine forms fast, makes each side effect auditable, and limits API
+cost to one structured call only when unfamiliar labels remain.
 
-Three implementation options were evaluated:
+The execution path is:
 
-1. **Agents SDK plus constrained BackendScout tools (recommended).** Expose
-   narrow functions for reading the current form, filling one evidence-backed
-   field, attaching the approved CV, taking a screenshot, and reporting an
-   unresolved question. The SDK manages the multi-step loop while existing
-   Python code keeps storage, approvals, and execution policy. This fits the
-   official distinction between the
-   [Agents SDK and Responses API](https://developers.openai.com/api/docs/guides/agents).
-2. **Responses API computer use as the main controller.** Send screenshots to
-   the model and execute its requested mouse/keyboard actions in an isolated
-   Playwright session. This handles unfamiliar layouts well, but costs more
-   tool turns, is less deterministic, and needs stronger bounds and replay
-   protection.
-3. **Model-generated Playwright scripts.** Let the model write a short script
-   for each form and run it in an isolated browser. This is flexible and can
-   combine several actions in one call, but generated selectors and scripts
-   are harder to audit and constrain. Keep this as a fallback experiment, not
-   the default submission path.
+1. Run existing deterministic selectors and candidate-confirmed answers.
+2. If required controls or the CV attachment remain unresolved, capture a
+   compact schema containing field IDs, labels, control types, required flags,
+   and option labels. Human-verification and submit controls are filtered out.
+3. Send only that schema and value-free approved fact descriptors to the fast
+   model. Candidate values, screenshots, and the page URL stay on the Mac.
+4. Require a structured `GuidedFormPlan` containing field-ID-to-fact-key
+   mappings. The planner has no browser tools and cannot click, navigate,
+   upload, or submit.
+5. Validate the plan locally for known fields, known facts, empty targets,
+   control/fact type compatibility, semantic compatibility, and confirmed
+   answers for sensitive fields.
+6. Resolve approved values locally and execute the accepted mappings. Existing
+   CV checksum, Telegram submit authorization, visible confirmation, proof
+   screenshot, and Notion audit gates remain unchanged.
 
-The recommended hybrid keeps these rules outside model control:
+The Telegram path is end to end: `/prepare_<page-id>` queues preparation,
+successful preparation sends the final review card, and `Submit now` queues the
+authorized resume task. Slow browser and model work stays in the worker, so the
+listener acknowledges buttons immediately.
 
-- Only the approved production job, official application URL, and exact
-  approved CV checksum may enter a submission session.
-- The model may propose a field mapping but cannot invent an answer or weaken
-  the evidence policy.
-- Typing personal information and clicking the final submit control remain
-  consequential actions governed by BackendScout's approval record.
-- CAPTCHA and explicit human-verification challenges pause the run rather than
-  being solved or bypassed.
-- A successful result requires a visible portal confirmation and saved proof,
-  not a model assertion.
-- The browser is isolated, domain-allowlisted, time/step/cost bounded, and page
-  content is treated as untrusted. These controls follow OpenAI's
-  [computer-use safety guidance](https://developers.openai.com/api/docs/guides/tools-computer-use#run-safely).
+This follows official OpenAI guidance to use Structured Outputs and keep
+domain-specific side effects inside constrained application tools. Tracing is
+disabled for this value-sensitive operation, and the planner is limited to one
+model turn. `--deterministic-only` remains available for debugging and zero-API
+operation.
 
 ## Phase 9: Interview Prep
 
@@ -638,6 +631,8 @@ TODO:
 - [x] Add Linux/HPC and multithreading evidence coverage for the Infinidat role.
 - [x] Add read-only repository scanning with proposal reports and Telegram review.
 - [x] Add fast Telegram callback acknowledgements, `/status`, `/scout`, and a local task queue.
+- [x] Complete the Telegram portal loop so preparation sends the final review
+  and `Submit now` queues the approved resume task without a terminal command.
 - [x] Add portal proof screenshot capture and Notion audit fields.
 - [x] Support candidate-confirmed multi-select checkbox answers in portal forms.
 - [x] Add Gmail readonly mailbox classification and a 15-minute launchd watcher template.
@@ -652,7 +647,7 @@ TODO:
   keeping API secrets and state permission-restricted and outside Documents.
 - [x] Evaluate OpenAI API submission architectures and document the hybrid
   Agents SDK plus constrained Playwright-tool design.
-- [ ] Implement and black-box test the OpenAI-guided fallback for unfamiliar
+- [x] Implement and black-box test the OpenAI-guided fallback for unfamiliar
   application forms without changing the existing approval gates.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.

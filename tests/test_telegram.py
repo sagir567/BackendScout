@@ -98,6 +98,7 @@ def test_build_portal_submit_markup_binds_the_final_action_to_one_request() -> N
 
 def test_process_telegram_update_authorizes_portal_submit_without_changing_status() -> None:
     authorized: list[tuple[str, str]] = []
+    queued = []
     updated_statuses: list[tuple[str, ApplicationStatus]] = []
 
     class FakeTelegramClient:
@@ -152,10 +153,21 @@ def test_process_telegram_update_authorizes_portal_submit_without_changing_statu
         portal_submission_authorization_handler=lambda page_id, authorization_id: authorized.append(
             (page_id, authorization_id)
         ),
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append(
+            (kind, tracker, payload)
+        )
+        or "task-submit",
     )
 
     assert result == "submission_prepared"
     assert authorized == [("page-123", "approval-1")]
+    assert queued == [
+        (
+            QueuedTaskKind.PORTAL_SUBMIT,
+            TrackerName.TEST,
+            {"page_id": "page-123", "chat_id": 12345},
+        )
+    ]
     assert updated_statuses == []
 
 

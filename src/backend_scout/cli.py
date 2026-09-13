@@ -39,6 +39,7 @@ from backend_scout.cv_tailoring import (
     validate_tailored_cv_against_evidence,
 )
 from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
+from backend_scout.guided_submission import generate_guided_form_plan
 from backend_scout.indeed_email import (
     INDEED_JOB_EMAIL_QUERY,
     IndeedEmailCollection,
@@ -116,11 +117,16 @@ from backend_scout.scouting_preferences import (
     load_scouting_preferences,
     public_collection_digest_candidate,
 )
-from backend_scout.submission import prepare_visible_submission, submit_visible_submission
+from backend_scout.submission import (
+    BrowserPreparationResult,
+    prepare_visible_submission,
+    submit_visible_submission,
+)
 from backend_scout.tailoring_notes import load_tailoring_note
 from backend_scout.targets import DEFAULT_TARGET_COMPANIES_PATH, load_target_companies
 from backend_scout.task_queue import (
     DEFAULT_TASK_QUEUE_PATH,
+    QueuedTask,
     QueuedTaskKind,
     QueuedTaskStatus,
     enqueue_task,
@@ -913,6 +919,7 @@ def tasks_worker_once(
         return
     task = queued[0]
     mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=queue_path)
+    completion_message: str | None = None
     try:
         if task.kind == QueuedTaskKind.SCOUT_TODAY:
             collect_run(
@@ -928,17 +935,52 @@ def tasks_worker_once(
                 tracker=task.tracker,
             )
         elif task.kind == QueuedTaskKind.PORTAL_PREPARE:
-            apply_prepare(
+            preparation = apply_prepare(
                 _payload_string(task.payload, "page_id"),
                 tracker=task.tracker,
             )
+            if isinstance(preparation, BrowserPreparationResult):
+                if (
+                    preparation.state == ApplicationStatus.SUBMISSION_PREPARED.value
+                    and not preparation.unresolved_required_fields
+                ):
+                    apply_request_submit(
+                        _payload_string(task.payload, "page_id"),
+                        chat_id=_payload_int(task.payload, "chat_id"),
+                        tracker=task.tracker,
+                    )
+                elif preparation.state != ApplicationStatus.AWAITING_HUMAN_VERIFICATION.value:
+                    completion_message = _format_portal_task_result(
+                        "Portal preparation needs attention",
+                        preparation,
+                    )
+        elif task.kind == QueuedTaskKind.PORTAL_SUBMIT:
+            submission = apply_resume(
+                _payload_string(task.payload, "page_id"),
+                tracker=task.tracker,
+            )
+            if (
+                isinstance(submission, BrowserPreparationResult)
+                and submission.state
+                not in {
+                    ApplicationStatus.SUBMITTED.value,
+                    ApplicationStatus.AWAITING_HUMAN_VERIFICATION.value,
+                }
+            ):
+                completion_message = _format_portal_task_result(
+                    "Portal submission needs attention",
+                    submission,
+                )
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
         mark_task_status(task.task_id, QueuedTaskStatus.FAILED, str(exc), queue_path)
+        _send_task_telegram_message(task, f"Task {task.task_id} failed: {exc}")
         console.print(f"[red]Task {task.task_id} failed:[/red] {exc}")
         raise typer.Exit(1) from exc
     mark_task_status(task.task_id, QueuedTaskStatus.DONE, path=queue_path)
+    if completion_message:
+        _send_task_telegram_message(task, completion_message)
     console.print(f"[green]Task {task.task_id} completed.[/green]")
 
 
@@ -1783,10 +1825,22 @@ def apply_prepare(
     page_id: Annotated[str, typer.Argument(help="Notion page ID in approved_to_submit state.")],
     wait_for_human_seconds: Annotated[
         int,
-        typer.Option("--wait-for-human-seconds", min=0, max=1800, help="Keep the visible browser open for remote CAPTCHA completion."),
+        typer.Option(
+            "--wait-for-human-seconds",
+            min=0,
+            max=1800,
+            help="Keep the visible browser open during a human-verification handoff.",
+        ),
     ] = 600,
+    guided: Annotated[
+        bool,
+        typer.Option(
+            "--guided/--deterministic-only",
+            help="Use the fast OpenAI mapper only when deterministic filling leaves gaps.",
+        ),
+    ] = True,
     tracker: TrackerOption = TrackerName.TEST,
-) -> None:
+) -> BrowserPreparationResult:
     """Fill a visible portal form with safe fields and the exact approved CV; do not submit."""
     settings = Settings()
     if not settings.notion_api_key:
@@ -1833,6 +1887,7 @@ def apply_prepare(
                 load_application_form_answers(page_id, tracker),
                 verification_handoff_host=_verification_handoff_host(settings),
                 verification_handoff_port=settings.verification_handoff_port,
+                guided_plan_builder=_build_guided_plan_builder(settings, guided),
             )
             if result.resolved_application_url and result.resolved_application_url != job.application_url:
                 job = job.model_copy(update={"application_url": result.resolved_application_url})
@@ -1850,6 +1905,7 @@ def apply_prepare(
             + ", ".join(result.unresolved_required_fields)
             + "[/yellow]"
         )
+    return result
 
 
 @apply_app.command("request-submit")
@@ -1920,8 +1976,15 @@ def apply_resume(
             help="Keep the visible browser open for remote human verification after a submit attempt.",
         ),
     ] = 600,
+    guided: Annotated[
+        bool,
+        typer.Option(
+            "--guided/--deterministic-only",
+            help="Use the fast OpenAI mapper only when deterministic filling leaves gaps.",
+        ),
+    ] = True,
     tracker: TrackerOption = TrackerName.TEST,
-) -> None:
+) -> BrowserPreparationResult:
     """Resume a human-check pause or submit once with a Telegram authorization."""
     settings = Settings()
     if not settings.notion_api_key:
@@ -1959,6 +2022,7 @@ def apply_resume(
                     form_answers=load_application_form_answers(page_id, tracker),
                     verification_handoff_host=_verification_handoff_host(settings),
                     verification_handoff_port=settings.verification_handoff_port,
+                    guided_plan_builder=_build_guided_plan_builder(settings, guided),
                 )
                 notion_client.update_application_status(page_id, ApplicationStatus(result.state))
                 console.print(f"[green]{result.message}[/green]")
@@ -1969,7 +2033,7 @@ def apply_resume(
                         + ", ".join(result.unresolved_required_fields)
                         + "[/yellow]"
                 )
-                return
+                return result
             authorization = find_pending_portal_submit_authorization(
                 page_id, tracker, application_url, manifest
             )
@@ -1998,6 +2062,7 @@ def apply_resume(
                 proof_path,
                 verification_handoff_host=_verification_handoff_host(settings),
                 verification_handoff_port=settings.verification_handoff_port,
+                guided_plan_builder=_build_guided_plan_builder(settings, guided),
             )
             if result.state == "submitted":
                 submission_record = f"Portal confirmation detected; CV draft {manifest.draft_id}; URL {application_url}"
@@ -2031,6 +2096,7 @@ def apply_resume(
         console.print(str(exc))
         raise typer.Exit(1) from exc
     console.print(f"[green]{result.message}[/green]")
+    return result
 
 
 @cv_app.command("evidence-check")
@@ -2088,6 +2154,45 @@ def _verification_handoff_host(settings: Settings) -> str | None:
     if not settings.verification_handoff_enabled:
         return None
     return discover_tailscale_ipv4()
+
+
+def _build_guided_plan_builder(settings: Settings, enabled: bool):
+    """Return a lazy one-turn planner so ordinary forms use no model tokens."""
+    if not enabled or not settings.openai_api_key:
+        return None
+
+    def build(snapshot, facts):
+        return generate_guided_form_plan(
+            snapshot,
+            facts,
+            settings.openai_api_key,
+            settings.openai_model_fast,
+        )
+
+    return build
+
+
+def _format_portal_task_result(title: str, result: BrowserPreparationResult) -> str:
+    message = f"{title}.\nState: {result.state}.\n{result.message}"
+    if result.unresolved_required_fields:
+        message += "\nNeeds input: " + ", ".join(result.unresolved_required_fields)
+    return message
+
+
+def _send_task_telegram_message(task: QueuedTask, message: str) -> None:
+    chat_id = task.payload.get("chat_id")
+    settings = Settings()
+    if (
+        not isinstance(chat_id, int)
+        or chat_id not in settings.telegram_allowed_user_id_set
+        or not settings.telegram_bot_token
+    ):
+        return
+    try:
+        with TelegramClient(settings.telegram_bot_token) as telegram_client:
+            telegram_client.send_message(chat_id, message)
+    except (httpx.HTTPError, OSError, ValueError):
+        console.print(f"[yellow]Could not send Telegram result for task {task.task_id}.[/yellow]")
 
 
 def _resolve_daily_chat_id(settings: Settings, explicit_chat_id: int | None) -> int:

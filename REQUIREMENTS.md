@@ -13,7 +13,7 @@ we add tools, services, APIs, packages, or system dependencies.
 | Notion account | Required | Used as the human-facing application tracker. |
 | Notion internal integration | Required | Must have access to the `Applications` data source. |
 | PyYAML | Required package | Used for candidate profile and manual job import files. |
-| OpenAI API key | Required for model-backed CV drafting | Used only after a job has been approved for tailoring. |
+| OpenAI API key | Required for CV drafting and guided form mapping | The form mapper runs only when deterministic filling leaves gaps. |
 | Telegram bot token | Required for approval loop | Used for the Telegram digest and approval commands. |
 | Telegram allowed user IDs | Required for approval loop | Comma-separated numeric Telegram user IDs allowed to approve actions. |
 | Google Cloud OAuth desktop client | Optional for email and inbox tracking | Uses `gmail.send` for approved outreach and `gmail.readonly` for mailbox status updates. |
@@ -26,7 +26,7 @@ we add tools, services, APIs, packages, or system dependencies.
 The canonical Python dependency list lives in `pyproject.toml`.
 
 Current runtime packages include Pydantic, Pydantic Settings, Typer, Rich,
-HTTPX, Beautiful Soup, python-dotenv, PyYAML, the OpenAI Python SDK,
+HTTPX, Beautiful Soup, python-dotenv, PyYAML, the OpenAI Python SDK and Agents SDK,
 python-docx, pdfplumber, Google API client libraries, Keyring, and Playwright.
 LibreOffice is also required locally when generating PDF copies of CV drafts.
 
@@ -72,10 +72,11 @@ BROWSER_PROFILE_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_BROWSER_PROFILE
 SUBMISSION_PROOF_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_SUBMISSION_PROOFS
 ```
 
-`OPENAI_API_KEY` is required only for the model-backed CV drafting command. The
-candidate evidence ledger and generated draft files remain local; the command
-sends only the approved job description and structured career evidence to the
-OpenAI Responses API.
+`OPENAI_API_KEY` is used for model-backed CV drafting and the optional guided
+form mapper. The mapper runs only after local deterministic filling leaves a
+gap. It sends one compact structured request containing field metadata and fact
+descriptors; candidate values, browser screenshots, and the page URL remain
+local. `OPENAI_MODEL_FAST` selects this inexpensive mapper model.
 
 `config/cv_style.yaml` is also required for CV drafting. It is a private
 presentation contract; start from `config/cv_style.example.yaml`. The contract
@@ -180,10 +181,13 @@ sessions separate from the normal browser profile.
 
 For remote human verification, install and configure Chrome Remote Desktop under
 your own Google account using the [official Chrome Remote Desktop guide](https://support.google.com/chrome/answer/1649523).
-When an application requires a CAPTCHA, the agent stops; complete it yourself in
-the prepared browser through the remote desktop, then use `apply resume`. That
-command can submit only an already-approved form and records success only after
-the portal displays a submission confirmation.
+The prepared browser can enter `awaiting_human_verification` and later continue
+with `apply resume`. That command can submit only an already-approved form and
+records success only after the portal displays a submission confirmation.
+
+Guided mapping is enabled by default for `apply prepare` and `apply resume`.
+Pass `--deterministic-only` to run without an API call. The planner does not
+receive field values and has no browser, upload, navigation, or submit tool.
 
 For portal delivery, run `apply request-submit` after browser preparation. The
 Telegram `Submit now` action is valid for 15 minutes, tied to the exact CV PDF
@@ -199,9 +203,10 @@ or records a WhatsApp submission until the user confirms it.
 The production listener uses Telegram long polling and macOS `launchd`. It
 processes authorized buttons plus `/status`, `/scout`, `/draft_...`,
 `/prepare_...`, `/tailor_...`, and `/revise_...` commands as they arrive, so
-routine workflow transitions do not require a terminal command. It does not
-interpret ordinary text as delivery authorization and cannot submit an
-application by itself.
+routine workflow transitions do not require a terminal command. Successful
+portal preparation sends the final review card automatically. Pressing its
+`Submit now` button queues the approved resume step; ordinary text is never
+treated as delivery authorization.
 
 Projects inside macOS `Documents` are protected by TCC. A LaunchAgent cannot
 read that folder merely because it runs under the same user, and granting Full
@@ -251,7 +256,9 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.backendscout.telegram.
 ## Queued Task Worker
 
 The listener answers Telegram quickly and queues long work. The worker processes
-one queued item per run:
+one queued item per run. Portal preparation returns either an attention message
+or the final review card to Telegram, and final approval queues the portal
+submission task:
 
 ```bash
 uv --cache-dir .uv-cache run --no-editable backend-scout tasks worker-once

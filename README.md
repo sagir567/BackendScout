@@ -45,8 +45,10 @@ draft have both been approved.
 - Reviewed Gmail delivery: Telegram shows the exact recipient, source, subject,
   body, and approved attachment before a message can be sent.
 - Conservative browser preparation for approved portal applications, followed
-  by one-time Telegram authorization for the final submit click. CAPTCHA and
-  other human checks remain human-controlled.
+  by one-time Telegram authorization for the final submit click.
+- A low-cost OpenAI-guided fallback for unfamiliar form labels. It sends one
+  compact, value-free form schema only after deterministic filling leaves gaps,
+  then validates every proposed mapping locally before using approved facts.
 - Separate Notion test and production trackers. Production applications require
   an explicit `--tracker production` command or a deliberate test-to-production
   promotion.
@@ -91,6 +93,7 @@ bypass platform protections, or submit applications without explicit approval.
 - Telegram Bot API via `httpx` for approval messages
 - Gmail API with macOS Keychain-held OAuth
 - Playwright for visible, conservative portal preparation
+- OpenAI Agents SDK for constrained structured form mapping
 - Pytest and Ruff for quality checks
 
 ## Getting Started
@@ -372,8 +375,13 @@ uv run --no-editable backend-scout telegram poll-once
 ```
 
 For portal applications, the agent opens a visible persistent browser profile,
-fills only clear evidence-backed fields, and attaches the approved CV. It does
-not answer legal, demographic, eligibility, or salary questions.
+fills clear evidence-backed fields, and attaches the approved CV. Deterministic
+selectors run first. If required controls remain unresolved, the default guided
+mode makes one structured call using `OPENAI_MODEL_FAST`. The model sees field
+labels, control types, option labels, and approved fact descriptions, but never
+the candidate values, a screenshot, or the page URL. BackendScout resolves the
+chosen fact keys locally and rejects mismatched, populated, unsupported, or
+sensitive fields without a job-specific confirmed answer.
 When an official careers page has an explicit `Apply Now` link to its ATS, the
 agent follows that public navigation before filling the form.
 Candidate-confirmed form answers are stored privately per job; the agent never
@@ -388,6 +396,14 @@ PDF is attached to the portal's Resume/CV control in that same browser session.
 uv run --no-editable backend-scout apply prepare NOTION_PAGE_ID --tracker production
 ```
 
+Use `--deterministic-only` to disable the optional mapper for a run. Ordinary
+forms that the deterministic adapter completes use no model tokens.
+
+From Telegram, send `/prepare_NOTION_PAGE_ID`. The listener acknowledges it
+immediately and the worker performs preparation. A complete form causes the
+worker to send the final review card automatically; unresolved fields are sent
+back to the same authorized chat.
+
 After preparation, request the final Telegram card. Its `Submit now` button
 authorizes one browser submit click for the exact current CV and portal URL,
 expires in 15 minutes, and cannot be reused for another CV revision or tracker:
@@ -397,14 +413,16 @@ uv run --no-editable backend-scout apply request-submit NOTION_PAGE_ID --tracker
 uv run --no-editable backend-scout telegram poll-once --tracker production
 ```
 
-CAPTCHAs are never bypassed. If one appears before or after the authorized
-click, the agent keeps the exact visible browser session open for remote human
-verification (10 minutes by default). The session now remains open when
-resuming from `awaiting_human_verification`, so cookies, form state, and the
-challenge are not discarded immediately. Complete only that check with a
-remote-control tool you trust. The agent records `submitted` only after
-detecting a confirmation page; otherwise a new final approval is required
-before another click:
+In the continuous Telegram runtime, pressing `Submit now` creates the one-time
+authorization and queues `apply resume` automatically. No terminal command is
+needed for that path. The command remains available for recovery and debugging.
+
+If the browser enters `awaiting_human_verification`, the existing handoff keeps
+the exact visible browser session open for up to 10 minutes by default. The
+session remains open when resuming, so cookies and form state are not discarded.
+The application is recorded as `submitted` only after the portal displays a
+confirmation page; otherwise a new final approval is required before another
+click:
 
 ```bash
 uv run --no-editable backend-scout apply resume NOTION_PAGE_ID \
