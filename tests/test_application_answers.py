@@ -21,3 +21,21 @@ def test_application_answers_are_private_and_bound_to_page_and_tracker(tmp_path:
     assert path == tmp_path / "production" / "page-123.json"
     assert load_application_form_answers("page-123", TrackerName.PRODUCTION, tmp_path) == answers
     assert load_application_form_answers("page-123", TrackerName.TEST, tmp_path) is None
+
+
+def test_application_answers_support_multiple_checkbox_choices(tmp_path: Path) -> None:
+    answers = ApplicationFormAnswers(
+        notion_page_id="page-456",
+        tracker=TrackerName.PRODUCTION,
+        checkbox_values={"priorities[]": ["AI development", "Career growth", "Professional challenges"]},
+    )
+
+    save_application_form_answers(answers, tmp_path)
+
+    loaded = load_application_form_answers("page-456", TrackerName.PRODUCTION, tmp_path)
+    assert loaded is not None
+    assert loaded.checkbox_values["priorities[]"] == [
+        "AI development",
+        "Career growth",
+        "Professional challenges",
+    ]

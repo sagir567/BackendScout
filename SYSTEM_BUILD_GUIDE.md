@@ -580,6 +580,7 @@ TODO:
 - [x] Add read-only repository scanning with proposal reports and Telegram review.
 - [x] Add fast Telegram callback acknowledgements, `/status`, `/scout`, and a local task queue.
 - [x] Add portal proof screenshot capture and Notion audit fields.
+- [x] Support candidate-confirmed multi-select checkbox answers in portal forms.
 - [x] Add Gmail readonly mailbox classification and a 15-minute launchd watcher template.
 - [x] Append mailbox status-change audit records to Notion so each update keeps
   the Gmail message ID, subject, sender, reason, and timestamp.

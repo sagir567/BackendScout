@@ -10,6 +10,8 @@ from pathlib import Path
 from time import sleep
 from urllib.parse import urljoin, urlparse
 
+from playwright.sync_api import Error as PlaywrightError
+
 from backend_scout.application_answers import ApplicationFormAnswers
 from backend_scout.models import CareerEvidence
 from backend_scout.verification_handoff import VerificationHandoffServer, apply_handoff_actions
@@ -207,8 +209,7 @@ def _fill_safe_fields(
             locator = scope.locator(selector).first
             if not locator.count() or not locator.is_visible():
                 locator = scope.get_by_label(label, exact=True).first
-            if locator.count() and locator.is_visible() and locator.input_value() == "":
-                locator.fill(value)
+            if locator.count() and locator.is_visible() and _fill_control_if_blank(locator, value):
                 filled.append(field)
 
         upload = scope.locator(
@@ -245,33 +246,37 @@ def _fill_candidate_confirmed_answers(page, answers: ApplicationFormAnswers) -> 
         locator = _candidate_answer_locator(page, field_key)
         if not locator.count() or not locator.is_visible():
             continue
-        if locator.evaluate("element => element.tagName") == "SELECT":
-            if locator.input_value():
+        try:
+            if locator.evaluate("element => element.tagName", timeout=2_000) == "SELECT":
+                if _control_has_value(locator):
+                    continue
+                locator.select_option(label=value, timeout=5_000)
+                filled.append(field_key)
                 continue
-            locator.select_option(label=value)
-            filled.append(field_key)
+            if locator.get_attribute("role", timeout=2_000) == "combobox":
+                if _control_has_value(locator):
+                    continue
+                if not _select_confirmed_combobox_option(page, locator, value):
+                    continue
+            elif not _fill_control_if_blank(locator, value):
+                continue
+        except PlaywrightError as exc:
+            LOGGER.debug("Candidate-confirmed control changed during form fill: %s", exc)
             continue
-        if locator.get_attribute("role") == "combobox":
-            if _control_has_value(locator):
-                continue
-            if not _select_confirmed_combobox_option(page, locator, value):
-                continue
-        else:
-            if locator.input_value():
-                continue
-            locator.fill(value)
         filled.append(field_key)
-    for field_name, label in answers.checkbox_values.items():
+    for field_name, configured_labels in answers.checkbox_values.items():
+        labels = [configured_labels] if isinstance(configured_labels, str) else configured_labels
         inputs = page.locator(f'input[type="checkbox"][name="{field_name}"], input[type="radio"][name="{field_name}"]')
-        for index in range(inputs.count()):
-            checkbox = inputs.nth(index)
-            nearby_text = checkbox.evaluate(
-                "element => element.closest('label')?.innerText || element.parentElement?.innerText || element.parentElement?.parentElement?.innerText || ''"
-            )
-            if label.casefold() in nearby_text.casefold() and not checkbox.is_checked():
-                checkbox.check()
-                filled.append(field_name)
-                break
+        for label in labels:
+            for index in range(inputs.count()):
+                checkbox = inputs.nth(index)
+                nearby_text = checkbox.evaluate(
+                    "element => element.closest('label')?.innerText || element.parentElement?.innerText || element.parentElement?.parentElement?.innerText || ''"
+                )
+                if label.casefold() in nearby_text.casefold() and not checkbox.is_checked():
+                    checkbox.check()
+                    filled.append(field_name)
+                    break
     return filled
 
 
@@ -356,17 +361,34 @@ def _control_label(control) -> str | None:
 
 
 def _control_has_value(control) -> bool:
-    if control.input_value():
-        return True
-    if control.get_attribute("role") != "combobox":
-        return False
-    return bool(
-        control.evaluate(
-            "element => Boolean("
-            "element.closest('[class*=\"value-container\"]')?.querySelector('[class*=\"single-value\"]')"
-            ")"
+    try:
+        if control.input_value(timeout=2_000):
+            return True
+        if control.get_attribute("role", timeout=2_000) != "combobox":
+            return False
+        return bool(
+            control.evaluate(
+                "element => Boolean("
+                "element.closest('[class*=\"value-container\"]')?.querySelector('[class*=\"single-value\"]')"
+                ")",
+                timeout=2_000,
+            )
         )
-    )
+    except PlaywrightError as exc:
+        LOGGER.debug("Control changed while checking its value: %s", exc)
+        return False
+
+
+def _fill_control_if_blank(control, value: str) -> bool:
+    """Fill a stable blank control without letting a frontend re-render abort the workflow."""
+    try:
+        if _control_has_value(control):
+            return False
+        control.fill(value, timeout=5_000)
+        return True
+    except PlaywrightError as exc:
+        LOGGER.debug("Control changed while filling it: %s", exc)
+        return False
 
 
 def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:

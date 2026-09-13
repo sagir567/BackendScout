@@ -249,6 +249,10 @@ With the launchd worker enabled, pressing `Approve tailoring` queues the CV
 draft automatically. After approving the exact CV, send `/prepare_NOTION_PAGE_ID`
 when I want the agent to prepare the browser portal.
 
+Candidate-confirmed portal answers are stored privately per job and tracker.
+The answer store supports both single controls and exact multi-select choices,
+so forms requiring several checkbox selections can be resumed consistently.
+
 ## CV Draft Workflow
 
 Copy `config/career_evidence.example.yaml` to the ignored

@@ -1,8 +1,11 @@
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
+
 from backend_scout.submission import (
     _candidate_answer_locator,
     _capture_submission_screenshot,
+    _control_has_value,
     _follow_verified_apply_link,
     _matches_confirmed_option,
     _unresolved_required_fields,
@@ -138,6 +141,14 @@ def test_combobox_option_must_match_the_candidate_confirmed_value() -> None:
     assert _matches_confirmed_option("Israel +972", "Israel")
     assert not _matches_confirmed_option("No", "Yes")
     assert not _matches_confirmed_option("Israel", "Isra")
+
+
+def test_transient_control_timeout_is_treated_as_unresolved() -> None:
+    class ReplacedControl:
+        def input_value(self, timeout: int):
+            raise PlaywrightError("control was replaced")
+
+    assert not _control_has_value(ReplacedControl())
 
 
 def test_unresolved_required_fields_groups_required_radio_buttons() -> None:

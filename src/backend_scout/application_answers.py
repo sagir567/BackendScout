@@ -15,7 +15,7 @@ class ApplicationFormAnswers(BaseModel):
     notion_page_id: str
     tracker: TrackerName
     field_values: dict[str, str] = Field(default_factory=dict)
-    checkbox_values: dict[str, str] = Field(default_factory=dict)
+    checkbox_values: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
 def load_application_form_answers(
