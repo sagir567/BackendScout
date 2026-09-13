@@ -184,6 +184,44 @@ def test_send_document_uses_multipart_form_data(tmp_path) -> None:
     assert result["result"]["message_id"] == 1
 
 
+def test_get_updates_allows_more_time_than_the_telegram_long_poll() -> None:
+    request_timeout = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_timeout
+        request_timeout = request.extensions["timeout"]["read"]
+        return httpx.Response(200, json={"ok": True, "result": []})
+
+    client = TelegramClient("test-token")
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://example.test/bottest-token",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        assert client.get_updates(timeout=30) == []
+    finally:
+        client.close()
+
+    assert request_timeout == 40.0
+
+
+def test_get_updates_treats_read_timeout_as_an_empty_poll() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("long poll ended", request=request)
+
+    client = TelegramClient("test-token")
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://example.test/bottest-token",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        assert client.get_updates(timeout=30) == []
+    finally:
+        client.close()
+
+
 def test_send_photo_uses_multipart_form_data(tmp_path) -> None:
     received_content_type = ""
 

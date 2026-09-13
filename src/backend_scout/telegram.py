@@ -50,7 +50,19 @@ class TelegramClient:
         payload: dict[str, Any] = {"timeout": timeout}
         if offset is not None:
             payload["offset"] = offset
-        return self._post("getUpdates", payload).get("result", [])
+        try:
+            response = self._post(
+                "getUpdates",
+                payload,
+                request_timeout=max(30.0, timeout + 10.0),
+            )
+        except Exception as exc:
+            import httpx
+
+            if isinstance(exc, httpx.ReadTimeout):
+                return []
+            raise
+        return response.get("result", [])
 
     def send_message(
         self,
@@ -119,8 +131,14 @@ class TelegramClient:
     def __exit__(self, *args: object) -> None:
         self.close()
 
-    def _post(self, method: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        response = self._client.post(f"/{method}", json=payload or {})
+    def _post(
+        self,
+        method: str,
+        payload: dict[str, Any] | None = None,
+        request_timeout: float | None = None,
+    ) -> dict[str, Any]:
+        request_options = {"timeout": request_timeout} if request_timeout is not None else {}
+        response = self._client.post(f"/{method}", json=payload or {}, **request_options)
         return self._parse_response(response, method)
 
     @staticmethod
