@@ -3,8 +3,14 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
-mkdir -p data/logs
+mkdir -p data/logs data/scouting
+
+LOCK_DIR="data/scouting/daily.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  exit 0
+fi
+trap 'rmdir "$LOCK_DIR"' EXIT
 
 /opt/homebrew/bin/uv --cache-dir .uv-cache run --no-editable backend-scout collect run \
-  --tracker production --write-notion --send-digest \
+  --tracker production --include-indeed-email --write-notion --send-digest \
   >> data/logs/daily-collection.log 2>&1

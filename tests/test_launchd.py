@@ -5,6 +5,7 @@ from backend_scout.launchd import (
     agent_path,
     install_launchd_service,
     launchd_service_installed,
+    launchd_service_loaded,
     render_launchd_template,
     selected_services,
     uninstall_launchd_service,
@@ -51,3 +52,20 @@ def test_install_launchd_service_replace_bootouts_before_bootstrap(tmp_path: Pat
 
     assert calls[0][:2] == ["launchctl", "bootout"]
     assert calls[1][:2] == ["launchctl", "bootstrap"]
+
+
+def test_launchd_service_loaded_checks_user_domain() -> None:
+    calls: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+
+    class FakeRunner:
+        @staticmethod
+        def run(command: list[str], **_kwargs: object) -> Result:
+            calls.append(command)
+            return Result()
+
+    assert launchd_service_loaded(LaunchdService.DAILY, runner=FakeRunner)
+    assert calls[0][0:2] == ["launchctl", "print"]
+    assert calls[0][2].endswith("/com.backendscout.daily")

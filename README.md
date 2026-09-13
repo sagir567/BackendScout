@@ -62,10 +62,14 @@ draft have both been approved.
   and recorded in Notion's submission audit.
 - Gmail mailbox scanning with `gmail.readonly` to classify confirmations,
   rejections, assessments, interviews, and offers, then append an audit note to
-  Notion when a status is updated.
+  Notion when a status is updated. A private checkpoint prevents repeated
+  Telegram alerts for the same message.
 - Public ATS scouting extracts recognizable skill and years-of-experience
   signals from the full job description, then keeps only jobs with meaningful
   target-role relevance in the automatic shortlist.
+- Indeed recommendation emails are read through Gmail, reduced to stable
+  `jk` job URLs, and merged into the same scored morning shortlist. Hebrew
+  Israeli locations and Indeed's opaque tracking redirects are supported.
 
 ## Privacy And Safety
 
@@ -147,6 +151,9 @@ Python, C++, Linux, Docker, SQL, CI/CD, APIs, cloud tools, and simple `2+ years`
 style experience hints. The morning shortlist still filters for meaningful
 backend/software role relevance so generic product, admin, or consulting roles
 do not crowd the Telegram digest just because they mention a technical keyword.
+Recent Indeed recommendation emails are included by default when Gmail is
+connected. Their job cards are deduplicated against the public feeds and
+existing Notion records.
 
 Preview a collection without writing external state:
 
@@ -158,7 +165,8 @@ uv run --no-editable backend-scout collect run
 
 Tune the ignored `config/scouting_preferences.yaml` file when the digest feels
 too broad or too strict. It controls preferred titles, maybe titles, excluded
-titles, minimum score, and minimum role relevance for automatic scouting only.
+titles, minimum score, minimum role relevance, and the maximum number of jobs
+in one digest. The shortlist is ranked by score before that cap is applied.
 
 After reviewing the preview, sync new jobs to the default test tracker:
 
@@ -170,21 +178,24 @@ For the real morning flow, production must be explicit:
 
 ```bash
 uv --cache-dir .uv-cache run --no-editable backend-scout collect run \
-  --tracker production --write-notion --send-digest
+  --tracker production --include-indeed-email --write-notion --send-digest
 ```
 
 For a daily 08:00 production run on macOS, follow the `launchd` setup in
 [REQUIREMENTS.md](REQUIREMENTS.md). The scheduled command is the same command
-you run manually, and logs remain local under ignored `data/logs/`.
+you run manually, and logs remain local under ignored `data/logs/`. The bot
+sends a completion summary even when there are no new jobs, so a quiet morning
+is distinguishable from a failed scheduler.
 
 The runtime helpers can be installed from the CLI:
 
 ```bash
-uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all
+uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all --load --replace
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 ```
 
 Add `--load --replace` to refresh and start already-installed agents.
+Every service runs through the same project-local `.venv` and `uv` cache.
 
 ## Repository Evidence Scanner
 

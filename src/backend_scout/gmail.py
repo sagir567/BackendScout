@@ -20,6 +20,8 @@ class GmailMessageSummary:
     subject: str
     date_header: str
     snippet: str
+    body_text: str = ""
+    body_html: str = ""
 
 
 def connect_gmail(client_secret_path: Path) -> None:
@@ -76,10 +78,11 @@ def list_recent_messages(
         message: dict[str, Any] = service.users().messages().get(
             userId="me",
             id=item["id"],
-            format="metadata",
-            metadataHeaders=["From", "Subject", "Date"],
+            format="full",
         ).execute()
-        headers = _header_map(message.get("payload", {}).get("headers", []))
+        payload = message.get("payload", {})
+        headers = _header_map(payload.get("headers", []))
+        body_text, body_html = _message_bodies(payload)
         summaries.append(
             GmailMessageSummary(
                 message_id=item["id"],
@@ -88,6 +91,8 @@ def list_recent_messages(
                 subject=headers.get("subject", ""),
                 date_header=headers.get("date", ""),
                 snippet=message.get("snippet", "") if isinstance(message.get("snippet"), str) else "",
+                body_text=body_text,
+                body_html=body_html,
             )
         )
     return summaries
@@ -121,3 +126,35 @@ def _header_map(headers: Any) -> dict[str, str]:
         if isinstance(name, str) and isinstance(value, str):
             mapped[name.casefold()] = value
     return mapped
+
+
+def _message_bodies(payload: Any) -> tuple[str, str]:
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+
+    def visit(part: Any) -> None:
+        if not isinstance(part, dict):
+            return
+        mime_type = part.get("mimeType")
+        body = part.get("body")
+        if mime_type in {"text/plain", "text/html"} and isinstance(body, dict):
+            decoded = _decode_body_data(body.get("data"))
+            if decoded:
+                (html_parts if mime_type == "text/html" else plain_parts).append(decoded)
+        parts = part.get("parts")
+        if isinstance(parts, list):
+            for child in parts:
+                visit(child)
+
+    visit(payload)
+    return "\n".join(plain_parts).strip(), "\n".join(html_parts).strip()
+
+
+def _decode_body_data(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    padded = value + "=" * (-len(value) % 4)
+    try:
+        return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
+    except (ValueError, UnicodeError):
+        return ""

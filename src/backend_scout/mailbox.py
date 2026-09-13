@@ -27,7 +27,7 @@ class MailClassification(BaseModel):
 
 
 def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
-    haystack = f"{message.subject} {message.from_header} {message.snippet}".casefold()
+    haystack = _message_search_text(message)
     if _contains_any(haystack, ("offer", "employment agreement", "contract offer")):
         return MailClassification(
             message_id=message.message_id,
@@ -97,7 +97,7 @@ def match_message_to_application(
     message: GmailMessageSummary,
     applications: list[ApplicationDigestItem],
 ) -> ApplicationDigestItem | None:
-    haystack = f"{message.subject} {message.from_header} {message.snippet}".casefold()
+    haystack = _message_search_text(message)
     for application in applications:
         company = application.company.casefold()
         title = application.title.casefold()
@@ -148,3 +148,14 @@ def format_mailbox_audit_record(
 
 def _contains_any(value: str, terms: tuple[str, ...]) -> bool:
     return any(term in value for term in terms)
+
+
+def _message_search_text(message: GmailMessageSummary) -> str:
+    return " ".join(
+        [
+            message.subject,
+            message.from_header,
+            message.snippet,
+            message.body_text[:20_000],
+        ]
+    ).casefold()

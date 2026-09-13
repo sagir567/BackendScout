@@ -32,6 +32,7 @@ data/repo_scans/
 data/submission_proofs/
 data/tasks/
 data/logs/
+data/scouting/
 browser-profile/
 launchd/*.local.plist
 docs/

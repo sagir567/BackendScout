@@ -24,6 +24,17 @@ ISRAEL_LOCATION_TERMS = (
     "petah tikva",
     "rishon",
     "beer sheva",
+    "ישראל",
+    "תל אביב",
+    "הרצליה",
+    "חיפה",
+    "ירושלים",
+    "רעננה",
+    "נתניה",
+    "פתח תקווה",
+    "כפר סבא",
+    "באר שבע",
+    "מחוז",
 )
 REMOTE_TERMS = ("remote", "work from home", "distributed")
 SKILL_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -316,6 +327,11 @@ def _extract_required_skills(title: str, description: str) -> list[str]:
     return found
 
 
+def extract_required_skills(title: str, description: str) -> list[str]:
+    """Extract the deterministic skill vocabulary used by every collector."""
+    return _extract_required_skills(title, description)
+
+
 def _contains_normalized_phrase(normalized_text: str, phrase: str) -> bool:
     normalized_phrase = _normalize_for_skill_search(phrase)
     if not normalized_phrase:
@@ -339,3 +355,8 @@ def _extract_years_experience(description: str) -> str | None:
         if match:
             return f"{match.group(1)}+ years"
     return None
+
+
+def extract_years_experience(description: str) -> str | None:
+    """Extract a conservative minimum-experience signal from a job description."""
+    return _extract_years_experience(description)

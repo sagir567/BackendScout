@@ -180,6 +180,24 @@ def test_score_job_treats_tel_aviv_as_a_match_for_an_israel_target() -> None:
     assert result.location_assessment == LocationAssessment.FIT
 
 
+def test_score_job_treats_hebrew_city_as_a_match_for_an_israel_target() -> None:
+    result = score_job(
+        make_profile(),
+        Job(
+            source="indeed_email",
+            source_url="https://il.indeed.com/viewjob?jk=hebrew123",
+            company="Example",
+            title="Backend Engineer",
+            location="פתח תקווה, מחוז המרכז",
+            description="Build backend APIs with Python.",
+            required_skills=["Python"],
+            years_experience="2 years",
+        ),
+    )
+
+    assert result.location_assessment == LocationAssessment.FIT
+
+
 def test_score_job_recognizes_verified_dotnet_oop_and_relational_database_aliases() -> None:
     profile = make_profile().model_copy(
         update={

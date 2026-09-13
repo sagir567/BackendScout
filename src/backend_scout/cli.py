@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 
 import httpx
 import typer
+from google.auth.exceptions import GoogleAuthError
+from googleapiclient.errors import HttpError as GoogleHttpError
 from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
@@ -35,6 +37,11 @@ from backend_scout.cv_tailoring import (
     validate_tailored_cv_against_evidence,
 )
 from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
+from backend_scout.indeed_email import (
+    INDEED_JOB_EMAIL_QUERY,
+    IndeedEmailCollection,
+    collect_indeed_email_jobs,
+)
 from backend_scout.job_imports import (
     job_with_match_result,
     load_manual_job_import,
@@ -45,6 +52,7 @@ from backend_scout.launchd import (
     LaunchdService,
     install_launchd_service,
     launchd_service_installed,
+    launchd_service_loaded,
     selected_services,
     uninstall_launchd_service,
 )
@@ -54,6 +62,11 @@ from backend_scout.mailbox import (
     format_mailbox_audit_record,
     format_mailbox_digest,
     match_message_to_application,
+)
+from backend_scout.mailbox_state import (
+    DEFAULT_MAILBOX_STATE_PATH,
+    mark_messages_processed,
+    unseen_messages,
 )
 from backend_scout.matcher import ScoredJob, score_jobs
 from backend_scout.models import (
@@ -486,6 +499,7 @@ def collect_preferences_check(
     console.print(f"Excluded title keywords: {', '.join(preferences.excluded_title_keywords) or 'none'}")
     console.print(f"Minimum match score: {preferences.minimum_match_score}")
     console.print(f"Minimum role relevance: {preferences.minimum_role_relevance_points}/25")
+    console.print(f"Maximum jobs per digest: {preferences.maximum_digest_jobs}")
 
 
 @collect_app.command("run")
@@ -503,8 +517,15 @@ def collect_run(
         int | None, typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat.")
     ] = None,
     tracker: TrackerOption = TrackerName.TEST,
+    include_indeed_email: Annotated[
+        bool,
+        typer.Option(
+            "--include-indeed-email/--no-include-indeed-email",
+            help="Include jobs discovered in recent Indeed recommendation emails.",
+        ),
+    ] = True,
 ) -> None:
-    """Collect, filter, score, and optionally sync public Israel-relevant ATS jobs."""
+    """Collect, filter, score, and optionally sync Israel-relevant jobs."""
     if send_digest and not write_notion:
         raise typer.BadParameter("--send-digest requires --write-notion")
     try:
@@ -517,19 +538,41 @@ def collect_run(
 
     collected: list[Job] = []
     failures: list[str] = []
+    indeed_report: IndeedEmailCollection | None = None
     for target in (item for item in targets.companies if item.enabled):
         try:
             collected.extend(collect_public_jobs(target))
         except (httpx.HTTPError, TypeError, ValueError) as exc:
             failures.append(f"{target.name}: {exc}")
+    if include_indeed_email:
+        try:
+            indeed_messages = list_recent_messages(INDEED_JOB_EMAIL_QUERY, 50)
+            indeed_report = collect_indeed_email_jobs(indeed_messages)
+            collected.extend(indeed_report.jobs)
+            failures.extend(f"Indeed email: {warning}" for warning in indeed_report.warnings)
+        except (GoogleAuthError, GoogleHttpError, httpx.HTTPError, OSError, TypeError, ValueError) as exc:
+            failures.append(f"Indeed email: {exc}")
     israel_relevant = [job for job in collected if is_israel_or_remote(job)]
     scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))
-    shortlist = [scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job, preferences)]
+    shortlist_candidates = [
+        scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job, preferences)
+    ]
+    shortlist = sorted(
+        shortlist_candidates,
+        key=lambda item: item.result.match_score,
+        reverse=True,
+    )[: preferences.maximum_digest_jobs]
     _print_scored_jobs_table(shortlist, title="Public ATS Collection Shortlist")
     console.print(
-        f"Collected {len(collected)} public job(s); Israel/remote filter kept {len(israel_relevant)}; "
-        f"unique scored jobs: {len(scored_jobs)}; apply/maybe shortlist: {len(shortlist)}."
+        f"Collected {len(collected)} job(s); Israel/remote filter kept {len(israel_relevant)}; "
+        f"unique scored jobs: {len(scored_jobs)}; digest shortlist: {len(shortlist)} "
+        f"of {len(shortlist_candidates)} eligible."
     )
+    if indeed_report is not None:
+        console.print(
+            f"Indeed email: {indeed_report.inspected_messages} message(s), "
+            f"{indeed_report.discovered_links} link(s), {len(indeed_report.jobs)} parsed job(s)."
+        )
     for failure in failures:
         console.print(f"[yellow]Collector warning:[/yellow] {failure}")
     if not write_notion:
@@ -546,6 +589,7 @@ def collect_run(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     created_pages: list[dict[str, object]] = []
+    updated_pages = 0
     try:
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             schema_problems = validate_applications_data_source(
@@ -561,24 +605,73 @@ def collect_run(
                 )
                 if action == "created":
                     created_pages.append(page)
-            if send_digest and created_pages:
+                else:
+                    updated_pages += 1
+            if send_digest:
                 resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
                 if not settings.telegram_bot_token:
                     raise ValueError("TELEGRAM_BOT_TOKEN is required for --send-digest")
-                items = [application_digest_item_from_page(page) for page in created_pages]
                 with TelegramClient(settings.telegram_bot_token) as telegram_client:
-                    send_digest_messages(telegram_client, notion_client, resolved_chat_id, items, tracker)
+                    if created_pages:
+                        items = [application_digest_item_from_page(page) for page in created_pages]
+                        send_digest_messages(telegram_client, notion_client, resolved_chat_id, items, tracker)
+                    telegram_client.send_message(
+                        resolved_chat_id,
+                        _format_scout_run_summary(
+                            tracker=tracker,
+                            collected=len(collected),
+                            israel_relevant=len(israel_relevant),
+                            shortlisted=len(shortlist),
+                            created=len(created_pages),
+                            already_tracked=updated_pages,
+                            failures=failures,
+                            indeed_report=indeed_report,
+                        ),
+                    )
     except Exception as exc:
         console.print("[red]Public collection sync failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
-    console.print(f"[green]Synced {len(shortlist)} shortlisted job(s); created {len(created_pages)} new Notion row(s).[/green]")
+    console.print(
+        f"[green]Synced {len(shortlist)} shortlisted job(s); created {len(created_pages)} new "
+        f"Notion row(s), refreshed {updated_pages} existing row(s).[/green]"
+    )
     if send_digest:
         console.print(f"[green]Sent {len(created_pages)} new-job digest message(s).[/green]")
 
 
 def _is_public_collection_shortlist(scored_job: ScoredJob, preferences: ScoutingPreferences) -> bool:
     return public_collection_digest_candidate(scored_job, preferences)
+
+
+def _format_scout_run_summary(
+    *,
+    tracker: TrackerName,
+    collected: int,
+    israel_relevant: int,
+    shortlisted: int,
+    created: int,
+    already_tracked: int,
+    failures: list[str],
+    indeed_report: IndeedEmailCollection | None,
+) -> str:
+    lines = [
+        f"BackendScout {tracker.value} scout completed.",
+        f"New matching jobs: {created}",
+        f"Already tracked and refreshed: {already_tracked}",
+        f"Shortlisted: {shortlisted} of {israel_relevant} Israel/remote jobs ({collected} collected)",
+    ]
+    if indeed_report is not None:
+        lines.append(
+            "Indeed email: "
+            f"{indeed_report.inspected_messages} messages, "
+            f"{len(indeed_report.jobs)} jobs parsed"
+        )
+    if failures:
+        lines.append(f"Collector warnings: {len(failures)} (see local log)")
+    if created == 0:
+        lines.append("No new matching job needs review this morning.")
+    return "\n".join(lines)
 
 
 @repos_app.command("validate")
@@ -676,9 +769,18 @@ def launchd_uninstall(
 
 @launchd_app.command("status")
 def launchd_status(agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR) -> None:
-    """Show whether BackendScout launchd plist files are installed."""
+    """Show whether BackendScout launchd services are installed and loaded."""
     for selected in selected_services(LaunchdService.ALL):
-        state = "installed" if launchd_service_installed(agent_dir, selected) else "missing"
+        installed = launchd_service_installed(agent_dir, selected)
+        loaded = launchd_service_loaded(selected)
+        if installed and loaded:
+            state = "installed, loaded"
+        elif installed:
+            state = "installed, not loaded"
+        elif loaded:
+            state = "loaded, plist missing"
+        else:
+            state = "missing"
         console.print(f"{selected.value}: {state}")
 
 
@@ -1388,14 +1490,26 @@ def gmail_watch_once(
         typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat."),
     ] = None,
     tracker: TrackerOption = TrackerName.PRODUCTION,
+    state_path: Annotated[
+        Path,
+        typer.Option("--state-path", help="Ignored checkpoint file for processed Gmail message IDs."),
+    ] = DEFAULT_MAILBOX_STATE_PATH,
+    reprocess: Annotated[
+        bool,
+        typer.Option("--reprocess", help="Ignore the checkpoint and inspect matching messages again."),
+    ] = False,
 ) -> None:
     """Inspect Gmail for employer replies and optionally update the tracker."""
     try:
-        messages = list_recent_messages(query, max_results)
+        fetched_messages = list_recent_messages(query, max_results)
     except Exception as exc:
         console.print("[red]Gmail mailbox scan failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
+    messages = fetched_messages if reprocess else unseen_messages(fetched_messages, state_path)
+    if not messages:
+        console.print("[green]Mailbox scan complete: no new matching messages.[/green]")
+        return
     updates = [(message, classify_gmail_message(message), None) for message in messages]
     updates = [item for item in updates if item[1].status is not None or item[1].confidence == "ambiguous"]
     matched_updates = updates
@@ -1445,6 +1559,8 @@ def gmail_watch_once(
         with TelegramClient(settings.telegram_bot_token) as telegram_client:
             telegram_client.send_message(resolved_chat_id, format_mailbox_digest(matched_updates))
         console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
+    if write_notion or send_digest:
+        mark_messages_processed(messages, state_path)
 
 
 @contacts_app.command("discover")

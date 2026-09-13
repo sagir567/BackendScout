@@ -552,12 +552,27 @@ Repository scanner rules:
 
 Inbox watcher rules:
 
-- Use Gmail readonly metadata/snippets to classify obvious application updates.
+- Use Gmail readonly message bodies to classify obvious application updates;
+  never request mailbox write access.
 - Mark confirmations, rejections, assessments, interviews, and offers only when
   the signal is clear and the email matches an existing application.
 - Send morning digest updates by default; notify immediately only for messages
   that need action, such as an interview or assessment.
 - Keep ambiguous recruiting messages as review items instead of changing Notion.
+- Checkpoint processed message IDs locally so a 15-minute watcher does not send
+  duplicate alerts or append the same audit repeatedly.
+
+Indeed email collector rules:
+
+- Query recent mail from Indeed with the existing Gmail readonly permission.
+- Resolve both direct `viewjob` links and opaque `cts.indeed.com` redirects to a
+  stable `jk` URL when possible.
+- Prefer schema.org `JobPosting` data; when Indeed returns an anti-automation
+  response, fall back to the title, company, and location printed in the email.
+- Recognize Hebrew and English Israeli locations, merge with the public-board
+  candidates, score deterministically, deduplicate, sort, and cap the digest.
+- Treat the Indeed URL as discovery evidence. A later application still prefers
+  a verified official employer portal.
 
 ## Current Next Checkpoint
 
@@ -584,6 +599,11 @@ TODO:
 - [x] Add Gmail readonly mailbox classification and a 15-minute launchd watcher template.
 - [x] Append mailbox status-change audit records to Notion so each update keeps
   the Gmail message ID, subject, sender, reason, and timestamp.
+- [x] Ingest Indeed recommendation emails into the morning production scout.
+- [x] Resolve Indeed tracking links, support Hebrew locations, rank/cap the
+  digest, and send a run summary even when no new jobs are found.
+- [x] Add a mailbox message checkpoint and overlap locks for scheduled jobs.
+- [x] Make every LaunchAgent use the stable project-local uv environment.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.
 ```

@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from backend_scout.cli import app
 from backend_scout.config import TrackerName
 from backend_scout.gmail import GmailMessageSummary
+from backend_scout.indeed_email import IndeedEmailCollection
 from backend_scout.models import ApplicationDigestItem, ApplicationStatus, Job
 from backend_scout.notion import (
     APPLICATIONS_PROPERTY_NAMES,
@@ -55,7 +56,7 @@ def test_profile_check_accepts_valid_profile(tmp_path: Path) -> None:
 
     result = runner.invoke(app, ["profile", "check", "--path", str(profile_path)])
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert "Candidate profile OK" in result.output
 
 
@@ -127,6 +128,7 @@ def test_collect_preferences_check_accepts_example_file() -> None:
     assert result.exit_code == 0
     assert "Scouting preferences OK" in result.output
     assert "Minimum match score: 55" in result.output
+    assert "Maximum jobs per digest: 15" in result.output
 
 
 def test_system_launchd_install_and_status_use_agent_dir(tmp_path: Path) -> None:
@@ -609,7 +611,7 @@ def test_tasks_worker_once_runs_queued_portal_prepare(monkeypatch: pytest.Monkey
     assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
 
 
-def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "backend_scout.cli.list_recent_messages",
         lambda query, max_results: [
@@ -624,14 +626,20 @@ def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch) -> Non
         ],
     )
 
-    result = runner.invoke(app, ["gmail", "watch-once"])
+    result = runner.invoke(
+        app,
+        ["gmail", "watch-once", "--state-path", str(tmp_path / "mailbox.json")],
+    )
 
     assert result.exit_code == 0
     assert "Mailbox Application Updates" in result.output
     assert "assessment" in result.output
 
 
-def test_gmail_watch_once_writeback_updates_status_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gmail_watch_once_writeback_updates_status_and_audit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     updated_statuses = []
     appended_records = []
     monkeypatch.setenv("NOTION_API_KEY", "secret_notion")
@@ -673,12 +681,134 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(monkeypatch: pytest
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
 
-    result = runner.invoke(app, ["gmail", "watch-once", "--write-notion"])
+    result = runner.invoke(
+        app,
+        [
+            "gmail",
+            "watch-once",
+            "--write-notion",
+            "--state-path",
+            str(tmp_path / "mailbox.json"),
+        ],
+    )
 
     assert result.exit_code == 0
     assert updated_statuses == [("page-1", ApplicationStatus.ASSESSMENT)]
     assert appended_records[0][0] == "page-1"
     assert "Gmail message ID: msg-1" in appended_records[0][1]
+
+
+def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    profile_path = tmp_path / "candidate_profile.yaml"
+    write_profile(profile_path)
+    job = Job(
+        source="indeed_email",
+        source_url="https://il.indeed.com/viewjob?jk=abc123",
+        company="Example Labs",
+        title="Backend Engineer",
+        location="Tel Aviv, Israel",
+        description="Build Python APIs with Docker and SQL.",
+        required_skills=["Python", "APIs", "Docker", "SQL"],
+    )
+    sent_messages: list[str] = []
+    digest_pages: list[str] = []
+
+    monkeypatch.setattr("backend_scout.cli.collect_public_jobs", lambda _target: [])
+    monkeypatch.setattr("backend_scout.cli.list_recent_messages", lambda *_args: [])
+    monkeypatch.setattr(
+        "backend_scout.cli.collect_indeed_email_jobs",
+        lambda _messages: IndeedEmailCollection(
+            jobs=[job],
+            inspected_messages=1,
+            discovered_links=1,
+        ),
+    )
+    monkeypatch.setattr("backend_scout.cli.validate_applications_data_source", lambda _schema: [])
+
+    class FakeSettings:
+        notion_api_key = "notion-token"
+        notion_api_version = "2026-03-11"
+        notion_production_applications_data_source_id = "production-data-source"
+        telegram_bot_token = "telegram-token"
+        telegram_default_chat_id = 12345
+
+        @property
+        def telegram_allowed_user_id_set(self) -> set[int]:
+            return set()
+
+    class FakeNotionClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def retrieve_data_source(self, _data_source_id: str) -> dict[str, object]:
+            return {}
+
+        def find_job_page(self, _data_source_id: str, _job: Job) -> None:
+            return None
+
+        def create_job_page(
+            self,
+            data_source_id: str,
+            created_job: Job,
+            status: ApplicationStatus = ApplicationStatus.FOUND,
+        ) -> dict[str, object]:
+            return {
+                "id": "page-indeed",
+                "parent": {"data_source_id": data_source_id},
+                "properties": build_job_page_properties(created_job, status),
+            }
+
+    class FakeTelegramClient:
+        def __init__(self, _token: str) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def send_message(self, _chat_id: int, message: str, **_kwargs: object) -> dict[str, object]:
+            sent_messages.append(message)
+            return {"ok": True}
+
+    monkeypatch.setattr("backend_scout.cli.Settings", FakeSettings)
+    monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
+    monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+    monkeypatch.setattr(
+        "backend_scout.cli.send_digest_messages",
+        lambda _telegram, _notion, _chat_id, items, _tracker: digest_pages.extend(
+            item.notion_page_id for item in items
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "collect",
+            "run",
+            "--profile-path",
+            str(profile_path),
+            "--tracker",
+            "production",
+            "--write-notion",
+            "--send-digest",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert digest_pages == ["page-indeed"]
+    assert "New matching jobs: 1" in sent_messages[0]
+    assert "Indeed email: 1 messages, 1 jobs parsed" in sent_messages[0]
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:

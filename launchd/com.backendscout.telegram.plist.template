@@ -6,13 +6,8 @@
   <string>com.backendscout.telegram</string>
   <key>ProgramArguments</key>
   <array>
-    <string>TODO_ABSOLUTE_PROJECT_PATH/.venv/bin/backend-scout</string>
-    <string>telegram</string>
-    <string>listen</string>
-    <string>--tracker</string>
-    <string>production</string>
-    <string>--timeout-seconds</string>
-    <string>30</string>
+    <string>/bin/zsh</string>
+    <string>TODO_ABSOLUTE_PROJECT_PATH/scripts/run_telegram_listener.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>TODO_ABSOLUTE_PROJECT_PATH</string>

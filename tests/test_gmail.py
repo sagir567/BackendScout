@@ -66,6 +66,9 @@ def test_gmail_scopes_include_send_and_readonly() -> None:
 
 
 def test_list_recent_messages_reads_safe_metadata(monkeypatch) -> None:
+    html_body = base64.urlsafe_b64encode(b"<p>Thank you for applying.</p>").decode("ascii")
+    text_body = base64.urlsafe_b64encode(b"Thank you for applying.").decode("ascii")
+
     class FakeCredentials:
         expired = False
         refresh_token = None
@@ -85,7 +88,12 @@ def test_list_recent_messages_reads_safe_metadata(monkeypatch) -> None:
                         {"name": "From", "value": "jobs@example.com"},
                         {"name": "Subject", "value": "Application received"},
                         {"name": "Date", "value": "Wed, 9 Sep 2026 08:00:00 +0300"},
-                    ]
+                    ],
+                    "mimeType": "multipart/alternative",
+                    "parts": [
+                        {"mimeType": "text/plain", "body": {"data": text_body}},
+                        {"mimeType": "text/html", "body": {"data": html_body}},
+                    ],
                 },
             }
 
@@ -96,11 +104,10 @@ def test_list_recent_messages_reads_safe_metadata(monkeypatch) -> None:
             assert maxResults == 5
             return FakeListRequest()
 
-        def get(self, userId: str, id: str, format: str, metadataHeaders: list) -> FakeGetRequest:
+        def get(self, userId: str, id: str, format: str) -> FakeGetRequest:
             assert userId == "me"
             assert id == "msg-1"
-            assert format == "metadata"
-            assert "Subject" in metadataHeaders
+            assert format == "full"
             return FakeGetRequest()
 
     class FakeUsers:
@@ -124,3 +131,5 @@ def test_list_recent_messages_reads_safe_metadata(monkeypatch) -> None:
     assert messages[0].message_id == "msg-1"
     assert messages[0].subject == "Application received"
     assert messages[0].from_header == "jobs@example.com"
+    assert messages[0].body_text == "Thank you for applying."
+    assert messages[0].body_html == "<p>Thank you for applying.</p>"

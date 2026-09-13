@@ -207,3 +207,16 @@ def test_israel_filter_rejects_unrelated_onsite_locations() -> None:
     )
 
     assert not is_israel_or_remote(job)
+
+
+def test_israel_filter_accepts_hebrew_indeed_locations() -> None:
+    job = Job(
+        source="indeed_email",
+        source_url="https://il.indeed.com/viewjob?jk=abc123",
+        company="Example",
+        title="Backend Engineer",
+        location="רעננה, מחוז המרכז",
+        description="Build services.",
+    )
+
+    assert is_israel_or_remote(job)

@@ -26,6 +26,22 @@ def test_classify_gmail_message_detects_assessment() -> None:
     assert classification.needs_immediate_attention
 
 
+def test_classify_gmail_message_uses_full_body_text() -> None:
+    message = GmailMessageSummary(
+        message_id="msg-body",
+        thread_id="thread-body",
+        from_header="jobs@example.com",
+        subject="Next step",
+        date_header="",
+        snippet="Open this message for details.",
+        body_text="Please schedule an interview with our engineering team.",
+    )
+
+    classification = classify_gmail_message(message)
+
+    assert classification.status == ApplicationStatus.INTERVIEW
+
+
 def test_classify_gmail_message_detects_rejection() -> None:
     classification = classify_gmail_message(_message("Update", "Unfortunately we are not moving forward."))
 

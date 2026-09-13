@@ -78,6 +78,19 @@ def launchd_service_installed(agent_dir: Path, service: LaunchdService) -> bool:
     return agent_path(agent_dir, service).exists()
 
 
+def launchd_service_loaded(
+    service: LaunchdService,
+    runner: type[subprocess] = subprocess,
+) -> bool:
+    result = runner.run(
+        ["launchctl", "print", f"gui/{_user_id()}/{SERVICE_LABELS[service]}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def _user_id() -> int:
     import os
 

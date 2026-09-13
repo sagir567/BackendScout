@@ -113,6 +113,17 @@ ISRAEL_LOCATION_TERMS = {
     "petah tikva",
     "rishon lezion",
     "beer sheva",
+    "ישראל",
+    "תל אביב",
+    "הרצליה",
+    "חיפה",
+    "ירושלים",
+    "רעננה",
+    "נתניה",
+    "פתח תקווה",
+    "כפר סבא",
+    "באר שבע",
+    "מחוז",
 }
 
 
@@ -636,7 +647,7 @@ def _reason_summary(
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
-    return " ".join(re.findall(r"[a-z0-9+#]+", value.lower()))
+    return " ".join(re.findall(r"[a-z0-9+#\u0590-\u05ff]+", value.lower()))
 
 
 def _keyword_set(value: str | None) -> set[str]:

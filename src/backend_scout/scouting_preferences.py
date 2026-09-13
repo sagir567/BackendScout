@@ -21,6 +21,7 @@ class ScoutingPreferences(BaseModel):
     )
     minimum_match_score: int = Field(default=55, ge=0, le=100)
     minimum_role_relevance_points: int = Field(default=15, ge=0, le=25)
+    maximum_digest_jobs: int = Field(default=15, ge=1, le=50)
 
     @field_validator("preferred_title_keywords", "maybe_title_keywords", "excluded_title_keywords", mode="before")
     @classmethod

@@ -203,6 +203,18 @@ routine workflow transitions do not require a terminal command. It does not
 interpret ordinary text as delivery authorization and cannot submit an
 application by itself.
 
+The recommended installation path renders, replaces, and loads all four
+services in one command:
+
+```bash
+uv --cache-dir .uv-cache run --no-editable backend-scout system launchd install all --load --replace
+uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
+```
+
+The status command distinguishes an installed plist from a service that is
+actually loaded. The manual steps below remain useful for troubleshooting one
+service in isolation.
+
 1. Edit `launchd/com.backendscout.telegram.plist.template` and replace every
    `TODO_ABSOLUTE_PROJECT_PATH` with `/Users/sagi/Documents/CV/BackendScout`.
 2. Copy the edited file to
@@ -285,7 +297,7 @@ It runs daily at 08:00 local time. The exact manual and scheduled command is:
 
 ```bash
 uv --cache-dir .uv-cache run --no-editable backend-scout collect run \
-  --tracker production --write-notion --send-digest
+  --tracker production --include-indeed-email --write-notion --send-digest
 ```
 
 Logs are stored in ignored `data/logs/`. To test the job immediately, run the
@@ -295,11 +307,17 @@ command above in the project terminal; to unload the schedule later, run:
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.backendscout.daily.plist
 ```
 
+The daily runner uses an ignored lock directory to prevent overlapping morning
+scans. It always sends a Telegram completion summary, including on zero-result
+runs, and ranks/caps the digest using `config/scouting_preferences.yaml`.
+
 ## Mailbox Watcher Scheduler
 
 The mailbox watcher runs every 15 minutes and uses Gmail readonly to detect
 status changes. It writes to the production tracker only when the signal is
-clear and the message can be matched to an existing application.
+clear and the message can be matched to an existing application. Processed
+message IDs are kept in ignored `data/mailbox/processed_status_messages.json`,
+so a recurring watcher does not repeat the same alert.
 
 1. Edit `launchd/com.backendscout.mailbox.plist.template` and replace
    `TODO_ABSOLUTE_PROJECT_PATH` with `/Users/sagi/Documents/CV/BackendScout`.
