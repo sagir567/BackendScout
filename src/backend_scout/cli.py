@@ -45,6 +45,7 @@ from backend_scout.cv_tailoring import (
 from backend_scout.durable_runtime import launch_durable_schedules, stop_durable_runtime
 from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
 from backend_scout.guided_submission import generate_guided_form_plan
+from backend_scout.inbox_store import begin_inbox_event, finish_inbox_event
 from backend_scout.indeed_email import (
     INDEED_JOB_EMAIL_QUERY,
     IndeedEmailCollection,
@@ -1453,23 +1454,53 @@ def telegram_poll_once(
                 return enqueue_task(kind, task_tracker, payload).task_id
 
             updates = telegram_client.get_updates(offset=offset, timeout=timeout_seconds)
-            processed_actions = [
-                action
-                for update in updates
-                if (action := process_telegram_update(
-                    telegram_client,
-                    notion_client,
-                    update,
-                    settings.telegram_allowed_user_id_set,
-                    settings.cv_archive_root,
-                    deliver_reviewed_email,
-                    confirm_whatsapp_handoff,
-                    tracker,
-                    data_source_id,
-                    portal_submission_authorization_handler=authorize_portal_submission,
-                    task_enqueue_handler=enqueue_long_task,
-                ))
-            ]
+            processed_actions = []
+            failed_updates = 0
+            for update in updates:
+                event_id = str(update.get("update_id", "unknown"))
+                if not begin_inbox_event(
+                    settings.workflow_database_path, "telegram", event_id, update
+                ):
+                    continue
+                try:
+                    action = process_telegram_update(
+                        telegram_client,
+                        notion_client,
+                        update,
+                        settings.telegram_allowed_user_id_set,
+                        settings.cv_archive_root,
+                        deliver_reviewed_email,
+                        confirm_whatsapp_handoff,
+                        tracker,
+                        data_source_id,
+                        portal_submission_authorization_handler=authorize_portal_submission,
+                        task_enqueue_handler=enqueue_long_task,
+                    )
+                    finish_inbox_event(
+                        settings.workflow_database_path, "telegram", event_id
+                    )
+                    if action:
+                        processed_actions.append(action)
+                except (
+                    GoogleAuthError,
+                    GoogleHttpError,
+                    KeyError,
+                    OSError,
+                    ValidationError,
+                    ValueError,
+                    httpx.HTTPError,
+                ) as exc:
+                    failed_updates += 1
+                    finish_inbox_event(
+                        settings.workflow_database_path,
+                        "telegram",
+                        event_id,
+                        error=_task_failure_message(exc),
+                    )
+                    console.print(
+                        f"[red]Telegram update {event_id} failed:[/red] "
+                        f"{_task_failure_message(exc)}"
+                    )
     except Exception as exc:
         console.print("[red]Telegram polling failed[/red]")
         console.print(str(exc))
@@ -1479,7 +1510,8 @@ def telegram_poll_once(
         _store_last_telegram_update_id(TELEGRAM_OFFSET_PATH, max(update["update_id"] for update in updates))
 
     console.print(
-        f"[green]Processed {len(processed_actions)} approval action(s) from {len(updates)} update(s).[/green]"
+        f"[green]Processed {len(processed_actions)} action(s) from {len(updates)} update(s); "
+        f"{failed_updates} failed.[/green]"
     )
 
 

@@ -61,6 +61,10 @@ The general worker owns schedules, scouting, mailbox scans, CV drafting, and
 contact discovery, so a portal waiting for attention cannot block the morning
 digest.
 
+Telegram update IDs are journaled in SQLite. Completed updates are idempotent,
+failed updates retain their error, and one bad update no longer stops the rest
+of the fetched batch.
+
 Migration commands:
 
 ```bash

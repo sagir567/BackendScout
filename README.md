@@ -64,6 +64,7 @@ draft have both been approved.
   repos and public GitHub repos, without automatically turning them into claims.
 - Fast Telegram callback acknowledgements plus `/status` and `/scout` commands
   for a Telegram-first operating loop.
+- Durable Telegram update deduplication and per-update failure isolation.
 - A local task queue so long work can be requested from Telegram and processed
   outside the button callback.
 - Separate general and single-concurrency browser worker lanes, so a portal
