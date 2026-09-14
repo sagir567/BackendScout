@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from backend_scout.runtime_bundle import deploy_runtime_files, runtime_manifest
+from backend_scout.runtime_bundle import (
+    active_runtime_path,
+    deploy_runtime_files,
+    runtime_manifest,
+)
 
 
 def _source_tree(root: Path) -> None:
@@ -25,14 +29,18 @@ def test_deploy_runtime_rewrites_private_paths_and_preserves_state(tmp_path: Pat
 
     deploy_runtime_files(source, runtime)
 
-    env = (runtime / ".env").read_text(encoding="utf-8")
+    first_release = active_runtime_path(runtime).resolve()
+    env = (first_release / ".env").read_text(encoding="utf-8")
     assert "SECRET=kept-private" in env
     assert f'CV_ARCHIVE_ROOT="{runtime}/private/cv_archive"' in env
     assert f'BROWSER_PROFILE_ROOT="{runtime}/private/browser_profile"' in env
-    assert (runtime / "data" / "telegram" / "last_update_id.txt").read_text() == "41"
+    assert (first_release / "data" / "telegram" / "last_update_id.txt").read_text() == "41"
 
     (runtime / "data" / "telegram" / "last_update_id.txt").write_text("99", encoding="utf-8")
     deploy_runtime_files(source, runtime)
 
     assert (runtime / "data" / "telegram" / "last_update_id.txt").read_text() == "99"
-    assert runtime_manifest(runtime) is not None
+    second_release = active_runtime_path(runtime).resolve()
+    assert second_release != first_release
+    assert first_release.is_dir()
+    assert runtime_manifest(runtime)["active_path"] == str(second_release)

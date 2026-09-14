@@ -46,7 +46,7 @@ def agent_path(agent_dir: Path, service: LaunchdService) -> Path:
 
 def render_launchd_template(project_root: Path, service: LaunchdService) -> str:
     template = template_path(project_root, service).read_text(encoding="utf-8")
-    return template.replace("TODO_ABSOLUTE_PROJECT_PATH", str(project_root.resolve()))
+    return template.replace("TODO_ABSOLUTE_PROJECT_PATH", str(project_root.expanduser().absolute()))
 
 
 def install_launchd_service(

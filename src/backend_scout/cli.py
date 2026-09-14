@@ -113,6 +113,7 @@ from backend_scout.repo_scanner import (
 from backend_scout.revisions import load_revision_feedback
 from backend_scout.runtime_bundle import (
     DEFAULT_RUNTIME_ROOT,
+    active_runtime_path,
     deploy_runtime_files,
     runtime_manifest,
     runtime_private_path,
@@ -826,6 +827,7 @@ def runtime_deploy(
     """Copy code/config privately, build its venv, and optionally activate launchd."""
     try:
         manifest_path = deploy_runtime_files(Path.cwd(), runtime_root)
+        active_runtime = active_runtime_path(runtime_root)
         uv_path = shutil.which("uv") or "/opt/homebrew/bin/uv"
         subprocess.run(
             [
@@ -837,13 +839,13 @@ def runtime_deploy(
                 "--reinstall-package",
                 "backend-scout",
             ],
-            cwd=runtime_root,
+            cwd=active_runtime,
             check=True,
         )
         if load:
             for service in selected_services(LaunchdService.ALL):
                 install_launchd_service(
-                    runtime_root,
+                    active_runtime,
                     DEFAULT_LAUNCHD_AGENT_DIR,
                     service,
                     load=True,

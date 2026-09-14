@@ -82,6 +82,12 @@ unknown portal can be prepared for review but must not use a generic submit
 button. A click without verified confirmation enters `submission_unknown` and
 is never retried automatically.
 
+Runtime deployment creates an immutable directory under `releases/`, links its
+`data` and `private` paths to shared state, installs dependencies inside that
+release, and atomically moves the `current` symlink only after the files are
+complete. LaunchAgents execute through `current`, eliminating source/runtime
+drift while preserving rollback-ready older releases.
+
 ## Repo Files To Keep Updated
 
 - `README.md`: current setup, commands, and project state.
