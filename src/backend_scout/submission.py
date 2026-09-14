@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import sleep
 from urllib.parse import urljoin, urlparse
@@ -27,6 +27,7 @@ from backend_scout.guided_submission import (
     validate_guided_form_plan,
 )
 from backend_scout.models import CareerEvidence
+from backend_scout.portal_adapters import PortalAdapter, adapter_for_url
 from backend_scout.verification_handoff import VerificationHandoffServer, apply_handoff_actions
 
 GuidedPlanBuilder = Callable[
@@ -45,12 +46,28 @@ class BrowserPreparationResult:
     screenshot_sha256: str | None = None
     guided_plan_used: bool = False
     guided_summary: str | None = None
+    adapter_name: str | None = None
+    page_fingerprint: str | None = None
 
 
 @dataclass(frozen=True)
 class CapturedGuidedForm:
     snapshot: GuidedFormSnapshot
     controls: dict[str, object]
+
+
+@dataclass(frozen=True)
+class BrowserCheckpoint:
+    requested_url: str
+    resolved_url: str
+    adapter_name: str | None
+    page_fingerprint: str
+    cv_sha256: str
+    screenshot_path: str | None
+
+
+PREPARED_CHECKPOINT_NAME = "prepared-checkpoint.json"
+PREPARED_SCREENSHOT_NAME = "prepared-review.png"
 
 
 HUMAN_VERIFICATION_MARKERS = ("captcha", "recaptcha", "hcaptcha", "turnstile", "verify you are human")
@@ -146,8 +163,9 @@ def wait_for_page_verification_clear(
         handoff.close()
 
 
-def is_submission_confirmation(page_text: str) -> bool:
-    return any(marker in page_text.casefold() for marker in SUBMISSION_CONFIRMATION_MARKERS)
+def is_submission_confirmation(page_text: str, adapter: PortalAdapter | None = None) -> bool:
+    markers = adapter.confirmation_markers if adapter else SUBMISSION_CONFIRMATION_MARKERS
+    return any(marker in page_text.casefold() for marker in markers)
 
 
 def prepare_visible_submission(
@@ -195,13 +213,18 @@ def prepare_visible_submission(
                 verification_handoff_host,
                 verification_handoff_port,
             ):
-                return _fill_safe_fields(
+                result = _fill_safe_fields(
                     page,
                     evidence,
                     approved_attachment,
                     form_answers,
                     guided_plan_builder,
                 )
+                result = _save_prepared_checkpoint(
+                    profile_root, application_url, page, approved_attachment, result
+                )
+                context.close()
+                return result
             context.close()
             return BrowserPreparationResult(
                 "awaiting_human_verification", (), "Human verification detected; complete it through Chrome Remote Desktop."
@@ -213,6 +236,9 @@ def prepare_visible_submission(
             approved_attachment,
             form_answers,
             guided_plan_builder,
+        )
+        result = _save_prepared_checkpoint(
+            profile_root, application_url, page, approved_attachment, result
         )
         context.close()
     return result
@@ -827,7 +853,30 @@ def submit_visible_submission(
                 prepared.unresolved_required_fields,
                 page.url,
             )
-        submit = _find_unambiguous_submit_control(page)
+        adapter = adapter_for_url(page.url)
+        if adapter is None:
+            context.close()
+            return BrowserPreparationResult(
+                "submission_prepared",
+                prepared.filled_fields,
+                "This portal has no verified submission adapter. The form remains prepared for review.",
+                ("supported_portal_adapter",),
+                page.url,
+            )
+        checkpoint_problem = _checkpoint_problem(
+            profile_root, page, approved_attachment, adapter
+        )
+        if checkpoint_problem:
+            context.close()
+            return BrowserPreparationResult(
+                "submission_prepared",
+                prepared.filled_fields,
+                checkpoint_problem,
+                ("prepared_page_changed",),
+                page.url,
+                adapter_name=adapter.name,
+            )
+        submit = _find_unambiguous_submit_control(page, adapter)
         if not submit.count() or not submit.is_visible():
             context.close()
             return BrowserPreparationResult(
@@ -850,7 +899,7 @@ def submit_visible_submission(
             )
             body = _page_and_frame_text(page)
             if not contains_human_verification(body, [frame.url for frame in page.frames]):
-                if is_submission_confirmation(body):
+                if is_submission_confirmation(body, adapter):
                     screenshot_path, screenshot_sha256 = _capture_submission_screenshot(page, proof_path)
                     context.close()
                     return BrowserPreparationResult(
@@ -871,7 +920,7 @@ def submit_visible_submission(
             return BrowserPreparationResult(
                 "awaiting_human_verification", prepared.filled_fields, "Human verification appeared after submit."
             )
-        if is_submission_confirmation(body):
+        if is_submission_confirmation(body, adapter):
             screenshot_path, screenshot_sha256 = _capture_submission_screenshot(page, proof_path)
             context.close()
             return BrowserPreparationResult(
@@ -883,17 +932,19 @@ def submit_visible_submission(
             )
         context.close()
     return BrowserPreparationResult(
-        "submission_prepared",
+        "submission_unknown",
         prepared.filled_fields,
-        "Submit was clicked but no confirmation page was detected; submission was not recorded.",
+        "Submit was clicked but no confirmation page was detected. Manual review is required; it will not be retried automatically.",
+        adapter_name=adapter.name,
     )
 
 
-def _find_unambiguous_submit_control(page):
+def _find_unambiguous_submit_control(page, adapter: PortalAdapter):
     for scope in _form_scopes(page):
-        submit = scope.locator('button[type="submit"], input[type="submit"]').first
-        if submit.count() and submit.is_visible():
-            return submit
+        for selector in adapter.submit_selectors:
+            submit = scope.locator(selector).first
+            if submit.count() and submit.is_visible():
+                return submit
         buttons = scope.locator("button")
         matches = []
         for index in range(buttons.count()):
@@ -903,6 +954,89 @@ def _find_unambiguous_submit_control(page):
         if len(matches) == 1:
             return matches[0]
     return page.locator("button").filter(has_text="__backend_scout_no_submit_match__").first
+
+
+def _save_prepared_checkpoint(
+    profile_root: Path,
+    requested_url: str,
+    page,
+    approved_attachment: Path,
+    result: BrowserPreparationResult,
+) -> BrowserPreparationResult:
+    adapter = adapter_for_url(page.url)
+    fingerprint = _page_fingerprint(page)
+    screenshot_path = profile_root / PREPARED_SCREENSHOT_NAME
+    try:
+        page.screenshot(path=str(screenshot_path), full_page=True)
+        resolved_screenshot: str | None = str(screenshot_path.resolve())
+    except PlaywrightError:
+        LOGGER.warning("Could not capture prepared-page review screenshot", exc_info=True)
+        resolved_screenshot = None
+    checkpoint = BrowserCheckpoint(
+        requested_url=requested_url,
+        resolved_url=page.url,
+        adapter_name=adapter.name if adapter else None,
+        page_fingerprint=fingerprint,
+        cv_sha256=hashlib.sha256(approved_attachment.read_bytes()).hexdigest(),
+        screenshot_path=resolved_screenshot,
+    )
+    path = profile_root / PREPARED_CHECKPOINT_NAME
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(asdict(checkpoint), indent=2), encoding="utf-8")
+    temporary.replace(path)
+    return replace(
+        result,
+        adapter_name=checkpoint.adapter_name,
+        page_fingerprint=fingerprint,
+        screenshot_path=resolved_screenshot,
+    )
+
+
+def load_browser_checkpoint(profile_root: Path) -> BrowserCheckpoint:
+    path = profile_root / PREPARED_CHECKPOINT_NAME
+    try:
+        return BrowserCheckpoint(**json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("The exact prepared-page checkpoint is missing or invalid") from exc
+
+
+def _checkpoint_problem(
+    profile_root: Path,
+    page,
+    approved_attachment: Path,
+    adapter: PortalAdapter,
+) -> str | None:
+    try:
+        checkpoint = load_browser_checkpoint(profile_root)
+    except ValueError:
+        return "The prepared-page checkpoint is invalid. Prepare the portal again."
+    if checkpoint.adapter_name != adapter.name:
+        return "The portal adapter changed after review. Prepare the portal again."
+    if checkpoint.cv_sha256 != hashlib.sha256(approved_attachment.read_bytes()).hexdigest():
+        return "The approved CV changed after portal preparation. Prepare the portal again."
+    if checkpoint.page_fingerprint != _page_fingerprint(page):
+        return "The application form changed after review. Prepare the portal again."
+    return None
+
+
+def _page_fingerprint(page) -> str:
+    controls = page.locator("input, textarea, select, button").evaluate_all(
+        """elements => elements.map(element => ({
+            tag: element.tagName.toLowerCase(),
+            type: (element.getAttribute('type') || '').toLowerCase(),
+            name: element.getAttribute('name') || '',
+            id: element.id || '',
+            required: Boolean(element.required) || element.getAttribute('aria-required') === 'true',
+            label: Array.from(element.labels || []).map(label => label.innerText.trim()).join('|')
+                || element.getAttribute('aria-label') || element.getAttribute('placeholder') || '',
+        }))"""
+    )
+    parsed = urlparse(page.url)
+    payload = {
+        "url": f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+        "controls": controls,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def _capture_submission_screenshot(page, proof_path: Path | None) -> tuple[str | None, str | None]:

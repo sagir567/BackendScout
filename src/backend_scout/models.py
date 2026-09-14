@@ -37,6 +37,7 @@ class ApplicationStatus(str, Enum):
     APPROVED_TO_SUBMIT = "approved_to_submit"
     SUBMISSION_PREPARED = "submission_prepared"
     AWAITING_HUMAN_VERIFICATION = "awaiting_human_verification"
+    SUBMISSION_UNKNOWN = "submission_unknown"
     SUBMITTED = "submitted"
     RECRUITER_REPLY = "recruiter_reply"
     ASSESSMENT = "assessment"
@@ -576,11 +577,17 @@ APPLICATION_STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] 
     },
     ApplicationStatus.SUBMISSION_PREPARED: {
         ApplicationStatus.AWAITING_HUMAN_VERIFICATION,
+        ApplicationStatus.SUBMISSION_UNKNOWN,
         ApplicationStatus.SUBMITTED,
         ApplicationStatus.CLOSED,
     },
     ApplicationStatus.AWAITING_HUMAN_VERIFICATION: {
         ApplicationStatus.SUBMISSION_PREPARED,
+        ApplicationStatus.SUBMISSION_UNKNOWN,
+        ApplicationStatus.CLOSED,
+    },
+    ApplicationStatus.SUBMISSION_UNKNOWN: {
+        ApplicationStatus.SUBMITTED,
         ApplicationStatus.CLOSED,
     },
     ApplicationStatus.SUBMITTED: {

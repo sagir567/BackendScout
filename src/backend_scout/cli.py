@@ -1,3 +1,5 @@
+import hashlib
+import json
 import shutil
 import subprocess
 import time
@@ -122,6 +124,7 @@ from backend_scout.scouting_preferences import (
 )
 from backend_scout.submission import (
     BrowserPreparationResult,
+    load_browser_checkpoint,
     prepare_visible_submission,
     submit_visible_submission,
 )
@@ -1414,12 +1417,16 @@ def telegram_poll_once(
                     raise ValueError("Portal submission requires an application URL")
                 manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
                 verify_manifest(manifest, manifest.draft_id)
+                checkpoint, answers_sha256 = _portal_approval_binding(settings, page_id, tracker)
                 authorize_portal_submit(
                     page_id,
                     authorization_id,
                     tracker,
                     application_url,
                     manifest,
+                    prepared_fingerprint=checkpoint.page_fingerprint,
+                    adapter_name=checkpoint.adapter_name,
+                    answers_sha256=answers_sha256,
                 )
 
             def enqueue_long_task(
@@ -1989,7 +1996,7 @@ def apply_prepare(
             )
             result = prepare_visible_submission(
                 job.application_url or job.source_url,
-                settings.browser_profile_root,
+                settings.browser_profile_root / page_id,
                 evidence,
                 Path(manifest.attachment_path),
                 lambda handoff_url: _notify_human_verification(
@@ -2049,7 +2056,15 @@ def apply_request_submit(
             manifest = load_manifest(settings.cv_archive_root, job.company, page_id)
             verify_manifest(manifest, manifest.draft_id)
             authorization = create_portal_submit_authorization(
-                page_id, tracker, application_url, manifest
+                page_id,
+                tracker,
+                application_url,
+                manifest,
+                prepared_fingerprint=(checkpoint := load_browser_checkpoint(
+                    settings.browser_profile_root / page_id
+                )).page_fingerprint,
+                adapter_name=checkpoint.adapter_name,
+                answers_sha256=_application_answers_sha256(page_id, tracker),
             )
             resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
             portal_host = urlparse(application_url).netloc or application_url
@@ -2124,7 +2139,7 @@ def apply_resume(
             if application.status == ApplicationStatus.AWAITING_HUMAN_VERIFICATION:
                 result = prepare_visible_submission(
                     application_url,
-                    settings.browser_profile_root,
+                    settings.browser_profile_root / page_id,
                     evidence,
                     Path(review.attachment_path),
                     lambda handoff_url: _notify_human_verification(
@@ -2147,7 +2162,15 @@ def apply_resume(
                 )
                 return result
             authorization = find_pending_portal_submit_authorization(
-                page_id, tracker, application_url, manifest
+                page_id,
+                tracker,
+                application_url,
+                manifest,
+                prepared_fingerprint=(checkpoint := load_browser_checkpoint(
+                    settings.browser_profile_root / page_id
+                )).page_fingerprint,
+                adapter_name=checkpoint.adapter_name,
+                answers_sha256=_application_answers_sha256(page_id, tracker),
             )
             schema_problems = validate_submission_data_source(
                 notion_client.retrieve_data_source(data_source_id)
@@ -2160,14 +2183,21 @@ def apply_resume(
             )
             result = submit_visible_submission(
                 application_url,
-                settings.browser_profile_root,
+                settings.browser_profile_root / page_id,
                 evidence,
                 Path(review.attachment_path),
                 lambda handoff_url: _notify_human_verification(
                     notion_client, settings, page_id, job.company, job.title, handoff_url
                 ),
                 lambda: consume_portal_submit_authorization(
-                    page_id, authorization.authorization_id, tracker, application_url, manifest
+                    page_id,
+                    authorization.authorization_id,
+                    tracker,
+                    application_url,
+                    manifest,
+                    prepared_fingerprint=checkpoint.page_fingerprint,
+                    adapter_name=checkpoint.adapter_name,
+                    answers_sha256=_application_answers_sha256(page_id, tracker),
                 ),
                 load_application_form_answers(page_id, tracker),
                 wait_for_human_seconds,
@@ -2201,6 +2231,8 @@ def apply_resume(
                 notion_client.update_application_status(
                     page_id, ApplicationStatus.AWAITING_HUMAN_VERIFICATION
                 )
+            elif result.state == "submission_unknown":
+                notion_client.update_application_status(page_id, ApplicationStatus.SUBMISSION_UNKNOWN)
             else:
                 notion_client.update_application_status(page_id, ApplicationStatus.SUBMISSION_PREPARED)
     except Exception as exc:
@@ -2266,6 +2298,22 @@ def _verification_handoff_host(settings: Settings) -> str | None:
     if not settings.verification_handoff_enabled:
         return None
     return discover_tailscale_ipv4()
+
+
+def _application_answers_sha256(page_id: str, tracker: TrackerName) -> str:
+    answers = load_application_form_answers(page_id, tracker)
+    payload = answers.model_dump(mode="json") if answers is not None else None
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _portal_approval_binding(
+    settings: Settings,
+    page_id: str,
+    tracker: TrackerName,
+):
+    checkpoint = load_browser_checkpoint(settings.browser_profile_root / page_id)
+    return checkpoint, _application_answers_sha256(page_id, tracker)
 
 
 def _build_guided_plan_builder(settings: Settings, enabled: bool):

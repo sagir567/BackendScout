@@ -134,6 +134,24 @@ def test_application_status_transition_supports_revision_and_human_verification(
     )
 
 
+def test_uncertain_submission_cannot_retry_the_portal() -> None:
+    job = Job(
+        source="manual",
+        source_url="https://example.com/jobs/backend",
+        company="Example",
+        title="Backend Engineer",
+        description="Build APIs.",
+    )
+
+    Application(job=job, status=ApplicationStatus.SUBMISSION_PREPARED).validate_status_transition(
+        ApplicationStatus.SUBMISSION_UNKNOWN
+    )
+    with pytest.raises(ValueError, match="Cannot transition"):
+        Application(job=job, status=ApplicationStatus.SUBMISSION_UNKNOWN).validate_status_transition(
+            ApplicationStatus.SUBMISSION_PREPARED
+        )
+
+
 def test_application_status_transition_supports_assessment_after_submission() -> None:
     job = Job(
         source="manual",

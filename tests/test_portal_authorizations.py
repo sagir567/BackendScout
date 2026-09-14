@@ -96,6 +96,56 @@ def test_new_portal_authorization_has_no_clock_expiry(tmp_path: Path) -> None:
     assert authorization.expires_at is None
 
 
+def test_portal_authorization_is_bound_to_prepared_page_adapter_and_answers(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "authorizations"
+    manifest = _manifest(tmp_path / "drafts")
+    authorization = create_portal_submit_authorization(
+        "page-123",
+        TrackerName.PRODUCTION,
+        "https://jobs.example.test/apply",
+        manifest,
+        root,
+        prepared_fingerprint="form-v1",
+        adapter_name="greenhouse",
+        answers_sha256="answers-v1",
+    )
+
+    mismatches = (
+        ({"prepared_fingerprint": "form-v2"}, "different prepared page"),
+        ({"adapter_name": "comeet"}, "different portal adapter"),
+        ({"answers_sha256": "answers-v2"}, "different application answers"),
+    )
+    defaults = {
+        "prepared_fingerprint": "form-v1",
+        "adapter_name": "greenhouse",
+        "answers_sha256": "answers-v1",
+    }
+    for override, message in mismatches:
+        with pytest.raises(ValueError, match=message):
+            authorize_portal_submit(
+                "page-123",
+                authorization.authorization_id,
+                TrackerName.PRODUCTION,
+                "https://jobs.example.test/apply",
+                manifest,
+                root,
+                **(defaults | override),
+            )
+
+    authorized = authorize_portal_submit(
+        "page-123",
+        authorization.authorization_id,
+        TrackerName.PRODUCTION,
+        "https://jobs.example.test/apply",
+        manifest,
+        root,
+        **defaults,
+    )
+    assert authorized.authorized_at is not None
+
+
 def test_legacy_expiring_authorization_and_finder_remain_supported(tmp_path: Path) -> None:
     root = tmp_path / "authorizations"
     manifest = _manifest(tmp_path / "drafts")

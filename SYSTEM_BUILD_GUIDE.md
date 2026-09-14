@@ -66,6 +66,13 @@ uv run --no-editable backend-scout tasks worker --enable-schedules
 Do not disable the legacy daily and mailbox launchd services until a test run
 and production shadow run of the durable schedules have both succeeded.
 
+The browser migration uses one profile directory per Notion page and records a
+prepared-page fingerprint, CV checksum, adapter name, and review screenshot.
+Only Greenhouse, Comeet, and Lever have final-submit adapters initially. An
+unknown portal can be prepared for review but must not use a generic submit
+button. A click without verified confirmation enters `submission_unknown` and
+is never retried automatically.
+
 ## Repo Files To Keep Updated
 
 - `README.md`: current setup, commands, and project state.

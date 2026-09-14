@@ -50,6 +50,8 @@ draft have both been approved.
   body, and approved attachment before a message can be sent.
 - Conservative browser preparation for approved portal applications, followed
   by one-time Telegram authorization for the final submit click.
+- Per-application browser checkpoints and verified Greenhouse, Comeet, and
+  Lever submit adapters; unsupported portals stop after preparation.
 - A low-cost OpenAI-guided fallback for unfamiliar form labels. It sends one
   compact, value-free form schema only after deterministic filling leaves gaps,
   then validates every proposed mapping locally before using approved facts.

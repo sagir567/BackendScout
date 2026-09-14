@@ -10,6 +10,8 @@ from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import CvDraftManifest
 
 PORTAL_AUTHORIZATIONS_ROOT = Path("data/portal_authorizations")
+
+
 class PortalSubmitAuthorization(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -24,6 +26,9 @@ class PortalSubmitAuthorization(BaseModel):
     expires_at: datetime | None = None
     authorized_at: datetime | None = None
     consumed_at: datetime | None = None
+    prepared_fingerprint: str | None = None
+    adapter_name: str | None = None
+    answers_sha256: str | None = None
 
 
 def create_portal_submit_authorization(
@@ -32,6 +37,10 @@ def create_portal_submit_authorization(
     application_url: str,
     manifest: CvDraftManifest,
     root: Path = PORTAL_AUTHORIZATIONS_ROOT,
+    *,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> PortalSubmitAuthorization:
     now = datetime.now(UTC)
     authorization = PortalSubmitAuthorization(
@@ -44,6 +53,9 @@ def create_portal_submit_authorization(
         pdf_sha256=manifest.pdf_sha256 or _sha256_for_path(manifest.pdf_path),
         requested_at=now,
         expires_at=None,
+        prepared_fingerprint=prepared_fingerprint,
+        adapter_name=adapter_name,
+        answers_sha256=answers_sha256,
     )
     save_portal_submit_authorization(authorization, root)
     return authorization
@@ -56,9 +68,21 @@ def authorize_portal_submit(
     application_url: str,
     manifest: CvDraftManifest,
     root: Path = PORTAL_AUTHORIZATIONS_ROOT,
+    *,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> PortalSubmitAuthorization:
     authorization = load_portal_submit_authorization(page_id, authorization_id, root)
-    _validate_binding(authorization, tracker, application_url, manifest)
+    _validate_binding(
+        authorization,
+        tracker,
+        application_url,
+        manifest,
+        prepared_fingerprint,
+        adapter_name,
+        answers_sha256,
+    )
     if authorization.authorized_at is not None:
         raise ValueError("Portal submission was already authorized")
     authorization = authorization.model_copy(update={"authorized_at": datetime.now(UTC)})
@@ -73,9 +97,16 @@ def require_portal_submit_authorization(
     application_url: str,
     manifest: CvDraftManifest,
     root: Path = PORTAL_AUTHORIZATIONS_ROOT,
+    *,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> PortalSubmitAuthorization:
     authorization = load_portal_submit_authorization(page_id, authorization_id, root)
-    _validate_binding(authorization, tracker, application_url, manifest)
+    _validate_binding(
+        authorization, tracker, application_url, manifest,
+        prepared_fingerprint, adapter_name, answers_sha256,
+    )
     if authorization.authorized_at is None:
         raise ValueError("Portal submission still needs Telegram approval")
     if authorization.consumed_at is not None:
@@ -89,12 +120,24 @@ def find_pending_portal_submit_authorization(
     application_url: str,
     manifest: CvDraftManifest,
     root: Path = PORTAL_AUTHORIZATIONS_ROOT,
+    *,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> PortalSubmitAuthorization:
     authorizations: list[PortalSubmitAuthorization] = []
     for path in root.glob(f"{page_id}-*.json") if root.is_dir() else []:
         try:
             authorization = PortalSubmitAuthorization.model_validate_json(path.read_text(encoding="utf-8"))
-            _validate_binding(authorization, tracker, application_url, manifest)
+            _validate_binding(
+                authorization,
+                tracker,
+                application_url,
+                manifest,
+                prepared_fingerprint,
+                adapter_name,
+                answers_sha256,
+            )
         except (OSError, ValueError):
             continue
         if authorization.authorized_at is not None and authorization.consumed_at is None:
@@ -111,9 +154,16 @@ def consume_portal_submit_authorization(
     application_url: str,
     manifest: CvDraftManifest,
     root: Path = PORTAL_AUTHORIZATIONS_ROOT,
+    *,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> PortalSubmitAuthorization:
     authorization = require_portal_submit_authorization(
-        page_id, authorization_id, tracker, application_url, manifest, root
+        page_id, authorization_id, tracker, application_url, manifest, root,
+        prepared_fingerprint=prepared_fingerprint,
+        adapter_name=adapter_name,
+        answers_sha256=answers_sha256,
     )
     authorization = authorization.model_copy(update={"consumed_at": datetime.now(UTC)})
     save_portal_submit_authorization(authorization, root)
@@ -147,6 +197,9 @@ def _validate_binding(
     tracker: TrackerName,
     application_url: str,
     manifest: CvDraftManifest,
+    prepared_fingerprint: str | None = None,
+    adapter_name: str | None = None,
+    answers_sha256: str | None = None,
 ) -> None:
     if authorization.notion_page_id != manifest.notion_page_id:
         raise ValueError("Portal submission authorization belongs to a different application")
@@ -159,6 +212,15 @@ def _validate_binding(
     pdf_sha256 = manifest.pdf_sha256 or _sha256_for_path(manifest.pdf_path)
     if authorization.docx_sha256 != manifest.docx_sha256 or authorization.pdf_sha256 != pdf_sha256:
         raise ValueError("Portal submission authorization does not match the approved CV files")
+    if (
+        authorization.prepared_fingerprint is not None
+        and authorization.prepared_fingerprint != prepared_fingerprint
+    ):
+        raise ValueError("Portal submission authorization belongs to a different prepared page")
+    if authorization.adapter_name is not None and authorization.adapter_name != adapter_name:
+        raise ValueError("Portal submission authorization belongs to a different portal adapter")
+    if authorization.answers_sha256 is not None and authorization.answers_sha256 != answers_sha256:
+        raise ValueError("Portal submission authorization belongs to different application answers")
     if authorization.expires_at is not None and datetime.now(UTC) >= authorization.expires_at:
         raise ValueError("Portal submission authorization expired; request a new Telegram approval")
 
