@@ -11,8 +11,9 @@ These rules apply to all work in this repository.
 
 ## Storage Preference
 
-- Prefer a Notion-first tracker over SQL when implementing the application tracking system, unless the user explicitly approves a different storage choice.
-- If local storage is needed for caching, drafts, or tests, ask before adding it as a durable project dependency.
+- Use SQLite/DBOS as the approved operational workflow store. Keep Notion as the
+  human-facing dashboard and synchronized projection.
+- Do not create a second authoritative workflow store.
 
 ## Existing CV Archive
 

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     gmail_oauth_client_secret_path: Path | None = None
     browser_profile_root: Path = Path("browser-profile")
     submission_proof_root: Path = Path("data/submission_proofs")
+    workflow_database_path: Path = Path("data/runtime/backendscout.sqlite3")
     verification_handoff_enabled: bool = True
     verification_handoff_port: int = 0
     remote_desktop_instructions: str = (

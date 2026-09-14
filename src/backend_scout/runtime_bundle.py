@@ -15,6 +15,7 @@ RUNTIME_ENV_OVERRIDES = {
     "CV_ARCHIVE_ROOT": "private/cv_archive",
     "BROWSER_PROFILE_ROOT": "private/browser_profile",
     "SUBMISSION_PROOF_ROOT": "private/submission_proofs",
+    "WORKFLOW_DATABASE_PATH": "private/backendscout.sqlite3",
 }
 
 

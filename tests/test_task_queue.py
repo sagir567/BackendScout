@@ -6,10 +6,12 @@ from backend_scout.config import TrackerName
 from backend_scout.task_queue import (
     QueuedTaskKind,
     QueuedTaskStatus,
+    claim_next_task,
     enqueue_task,
     list_tasks,
     mark_task_status,
     next_queued_task,
+    retry_task,
 )
 
 
@@ -88,3 +90,43 @@ def test_next_queued_task_prioritizes_final_submit(tmp_path: Path) -> None:
 
     assert selected is not None
     assert selected.task_id == submit.task_id
+
+
+def test_sqlite_claim_is_atomic_and_records_attempt(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    task = enqueue_task(QueuedTaskKind.CV_DRAFT, TrackerName.PRODUCTION, path=path)
+
+    claimed = claim_next_task(path, lease_seconds=60)
+
+    assert claimed is not None
+    assert claimed.task_id == task.task_id
+    assert claimed.status == QueuedTaskStatus.RUNNING
+    assert claimed.attempts == 1
+    assert claimed.lease_until is not None
+    assert claim_next_task(path) is None
+
+
+def test_sqlite_retry_moves_exhausted_task_to_dead_letter(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    task = enqueue_task(
+        QueuedTaskKind.PORTAL_PREPARE,
+        TrackerName.PRODUCTION,
+        path=path,
+        max_attempts=1,
+    )
+    claim_next_task(path)
+
+    failed = retry_task(task.task_id, "frame detached", path, delay_seconds=0)
+
+    assert failed.status == QueuedTaskStatus.DEAD_LETTER
+    assert failed.last_error == "frame detached"
+
+
+def test_sqlite_deduplicates_active_work(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    payload = {"page_id": "page-123"}
+    first = enqueue_task(QueuedTaskKind.PORTAL_PREPARE, TrackerName.TEST, payload, path)
+    duplicate = enqueue_task(QueuedTaskKind.PORTAL_PREPARE, TrackerName.TEST, payload, path)
+
+    assert duplicate.task_id == first.task_id
+    assert len(list_tasks(path)) == 1

@@ -19,7 +19,8 @@ BackendScout is a job-search agent for backend engineering roles. It should:
 ## Core Design Principles
 
 - Human approval is part of the architecture, not an afterthought.
-- The tracker source of truth is Notion.
+- SQLite is the operational source of truth for workflow execution. Notion is
+  the human-facing dashboard and synchronized projection.
 - The CV archive stays outside this repo and is configured locally through
   `CV_ARCHIVE_ROOT`.
 - The system must be truthful and interview-explainable.
@@ -30,7 +31,7 @@ BackendScout is a job-search agent for backend engineering roles. It should:
 ## Current Architecture
 
 ```text
-Daily Scheduler
+Durable Scheduler (DBOS)
   -> Job Collectors
   -> Job Parser
   -> Matcher
@@ -39,7 +40,8 @@ Daily Scheduler
   -> CV Tailor
   -> Final Human Approval
   -> Submitter
-  -> Notion Tracker
+  -> SQLite Workflow State
+  -> Notion Projection
   -> Prep Coach
 ```
 
@@ -52,6 +54,9 @@ Daily Scheduler
 - `AGENTS.md`: rules for Codex and future agents working in this repo.
 
 Local-only notes belong in `docs/` and are not committed.
+
+The architecture research and migration rationale are committed in
+`ARCHITECTURE_RESEARCH.md`.
 
 ## Phase 1: Foundation
 
@@ -140,8 +145,10 @@ uv run --no-editable backend-scout profile check
 
 ## Phase 3: Notion Tracker
 
-Notion is the human-facing source of truth. The agent can read and write the
-`Applications` data source, but critical state changes still need approval.
+Notion is the human-facing tracker. During the durable-runtime migration it
+remains the compatibility tracker; afterward SQLite owns workflow state and an
+outbox synchronizes reviewed changes to Notion. Critical state changes always
+require the same approval rules regardless of storage.
 
 Required properties:
 

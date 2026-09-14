@@ -130,10 +130,12 @@ from backend_scout.task_queue import (
     QueuedTask,
     QueuedTaskKind,
     QueuedTaskStatus,
+    claim_next_task,
     enqueue_task,
     list_tasks,
     mark_task_status,
-    next_queued_task,
+    migrate_legacy_queue,
+    retry_task,
 )
 from backend_scout.telegram import (
     TelegramClient,
@@ -916,11 +918,10 @@ def tasks_worker_once(
     ] = DEFAULT_TASK_QUEUE_PATH,
 ) -> None:
     """Process one queued task and exit."""
-    task = next_queued_task(queue_path)
+    task = claim_next_task(queue_path)
     if task is None:
         console.print("[yellow]No queued tasks.[/yellow]")
         return
-    mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=queue_path)
     completion_message: str | None = None
     try:
         if task.kind == QueuedTaskKind.SCOUT_TODAY:
@@ -979,14 +980,33 @@ def tasks_worker_once(
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
         failure_message = _task_failure_message(exc)
-        mark_task_status(task.task_id, QueuedTaskStatus.FAILED, failure_message, queue_path)
-        _send_task_telegram_message(task, f"Task {task.task_id} failed: {failure_message}")
+        failed = retry_task(task.task_id, failure_message, queue_path)
+        retry_note = (
+            "will retry automatically"
+            if failed.status == QueuedTaskStatus.RETRYING
+            else "moved to dead letter after exhausting retries"
+        )
+        _send_task_telegram_message(
+            task,
+            f"{_task_label(task)} failed: {failure_message}. It {retry_note}. "
+            f"Correlation: {task.correlation_id or task.task_id}.",
+        )
         console.print(f"[red]Task {task.task_id} failed:[/red] {failure_message}")
         raise typer.Exit(1) from exc
     mark_task_status(task.task_id, QueuedTaskStatus.DONE, path=queue_path)
     if completion_message:
         _send_task_telegram_message(task, completion_message)
     console.print(f"[green]Task {task.task_id} completed.[/green]")
+
+
+@tasks_app.command("migrate-json")
+def tasks_migrate_json(
+    source: Annotated[Path, typer.Option("--source")] = Path("data/tasks/tasks.json"),
+    destination: Annotated[Path, typer.Option("--destination")] = DEFAULT_TASK_QUEUE_PATH,
+) -> None:
+    """Import the legacy JSON task history into the durable SQLite queue."""
+    imported = migrate_legacy_queue(source, destination)
+    console.print(f"[green]Imported {imported} legacy task(s).[/green]")
 
 
 @notion_app.command("check")
@@ -2237,6 +2257,14 @@ def _format_portal_task_result(
     if result.unresolved_required_fields:
         message += "\nNeeds input: " + ", ".join(result.unresolved_required_fields)
     return message
+
+
+def _task_label(task: QueuedTask) -> str:
+    company = task.payload.get("company")
+    role = task.payload.get("title")
+    if isinstance(company, str) and isinstance(role, str):
+        return f"{company} - {role} task"
+    return f"{task.kind.value.replace('_', ' ')} task {task.task_id}"
 
 
 def _send_task_telegram_message(task: QueuedTask, message: str) -> None:
