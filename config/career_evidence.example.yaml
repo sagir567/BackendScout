@@ -23,6 +23,8 @@ projects:
   - id: project_todo_1
     name: TODO Project Name
     link: TODO https://github.com/username/project
+    selection_keywords:
+      - TODO Technology or domain that must appear in a job before selecting this project
     bullets:
       - id: project_todo_1_bullet_1
         text: TODO A truthful project detail.

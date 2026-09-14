@@ -294,11 +294,15 @@ class ProjectEvidence(BaseModel):
     id: str
     name: str
     link: str | None = None
+    selection_keywords: list[str] = Field(default_factory=list)
     bullets: list[EvidenceBullet] = Field(min_length=1)
 
     _normalize_id = field_validator("id", mode="before")(_normalize_required_string)
     _normalize_name = field_validator("name", mode="before")(_normalize_required_string)
     _normalize_link = field_validator("link", mode="before")(_normalize_optional_string)
+    _normalize_selection_keywords = field_validator("selection_keywords", mode="before")(
+        _normalize_string_list
+    )
 
 
 class EducationEvidence(BaseModel):

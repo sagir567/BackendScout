@@ -391,7 +391,11 @@ Current implementation as of 2026-09-01:
 - The final PDF must be exactly one page and use at least 90% of the usable
   page height. BackendScout measures the rendered PDF locally with pdfplumber,
   selects the fullest valid layout candidate, and fails before delivery if it
-  cannot satisfy both conditions.
+  cannot satisfy both conditions. If typography scaling jumps from a sparse
+  page to two pages, a second deterministic pass stretches vertical spacing
+  while preserving font size, line wrapping, and factual content.
+- Skill labels returned by the model are intersected with the verified evidence
+  list before validation, so unsupported labels are omitted rather than shown.
 - Before drafting, `cv coverage <notion-page-id>` measures the factual evidence
   ledger against the job's explicit requirements. Its 90/100 target is separate
   from the match score: tailoring can improve presentation, but it cannot make a
@@ -420,6 +424,13 @@ Current implementation as of 2026-09-01:
 - Link labels are set per URL in the private `cv_style.yaml`, which allows
   personal GitHub, organization GitHub, LinkedIn, and project links to remain
   distinct without exposing raw URLs.
+- Project evidence includes candidate-maintained `selection_keywords`. Projects
+  that do not match the target job are removed before the model request and are
+  rejected again during validation if returned. The header keeps only general
+  professional profiles; repository links render only with a selected relevant
+  project. This prevents a C++ repository from appearing on a Python/agent CV.
+- Small cloud exercises are represented in the appropriate technical-skills
+  category instead of consuming a standalone Projects entry.
 - The private `tailoring_guidance` list in `cv_style.yaml` holds reusable
   precision rules. It can describe how verified technologies should be named,
   but cannot authorize unsupported claims.
@@ -649,6 +660,7 @@ TODO:
   Agents SDK plus constrained Playwright-tool design.
 - [x] Implement and black-box test the OpenAI-guided fallback for unfamiliar
   application forms without changing the existing approval gates.
+- [x] Filter CV projects and repository links by explicit job-relevance keywords.
 - [ ] Add job-specific interview preparation packets after tailoring approval.
 - [x] Keep submission disabled until `approved_to_submit`.
 ```

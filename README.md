@@ -284,6 +284,13 @@ under your name disabled, shows technical skills in their own section, and turns
 GitHub, LinkedIn, and project URLs into labeled clickable links instead of visible
 raw URLs.
 
+Each project has explicit `selection_keywords`. Before the OpenAI request,
+BackendScout removes projects whose keywords do not appear in the target job.
+The CV header keeps only general profiles such as the primary GitHub account and
+LinkedIn; a repository link is rendered only inside a project that passed this
+relevance check and was selected for the draft. Small cloud practice belongs in
+the relevant technical-skills category rather than a standalone project.
+
 For a no-write validation preview after a job reaches `approved_to_tailor`:
 
 ```bash
@@ -318,7 +325,11 @@ the configured archive. The PDF message includes an approval button tied to that
 exact draft checksum; only that button can advance the job to `approved_to_submit`.
 Every generated CV is checked against a hard presentation contract: exactly one
 page, with visible text reaching at least 90% of the usable page height. A draft
-that cannot meet both conditions fails before it is sent for review.
+that cannot meet both conditions fails before it is sent for review. When normal
+typography scaling would wrap the document to a second page, BackendScout can
+increase vertical spacing independently so it fills the page without adding
+irrelevant content or changing factual claims. Model-produced skill labels that
+do not exactly match verified evidence are removed before final validation.
 
 Add a private, job-specific note before drafting with Telegram:
 

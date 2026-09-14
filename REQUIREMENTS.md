@@ -29,6 +29,9 @@ Current runtime packages include Pydantic, Pydantic Settings, Typer, Rich,
 HTTPX, Beautiful Soup, python-dotenv, PyYAML, the OpenAI Python SDK and Agents SDK,
 python-docx, pdfplumber, Google API client libraries, Keyring, and Playwright.
 LibreOffice is also required locally when generating PDF copies of CV drafts.
+BackendScout checks the shell path, standard macOS app locations, and the bundled
+Codex dependency runtime. Set `LIBREOFFICE_EXECUTABLE` only when none of those
+locations applies.
 
 The official install command is:
 
@@ -67,6 +70,7 @@ NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID=TODO
 TELEGRAM_BOT_TOKEN=TODO
 TELEGRAM_ALLOWED_USER_IDS=TODO_COMMA_SEPARATED_NUMERIC_IDS
 CV_ARCHIVE_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_CV_ARCHIVE
+LIBREOFFICE_EXECUTABLE=TODO_OPTIONAL_ABSOLUTE_PATH_TO_SOFFICE
 GMAIL_OAUTH_CLIENT_SECRET_PATH=TODO_ABSOLUTE_PATH_TO_GOOGLE_OAUTH_CLIENT_SECRET_JSON
 BROWSER_PROFILE_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_BROWSER_PROFILE
 SUBMISSION_PROOF_ROOT=TODO_ABSOLUTE_PATH_TO_PRIVATE_SUBMISSION_PROOFS

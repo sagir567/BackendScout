@@ -1429,8 +1429,8 @@ def cv_draft(
                 )
 
             if dry_run:
-                draft = build_evidence_only_draft(evidence)
-                validate_tailored_cv_against_evidence(draft, evidence, style)
+                draft = build_evidence_only_draft(evidence, job)
+                validate_tailored_cv_against_evidence(draft, evidence, style, job)
                 console.print("[green]Evidence-only draft preview is valid.[/green]")
                 console.print(f"Company: {job.company}")
                 console.print(f"Role: {job.title}")

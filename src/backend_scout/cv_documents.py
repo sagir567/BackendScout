@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from backend_scout.models import CareerEvidence, CvStyle, TailoredCv
 
 MIN_CV_PAGE_FILL_RATIO = 0.90
 _LAYOUT_SCALES = (1.0, 1.03, 1.06, 1.09, 1.12, 1.15, 1.18, 1.21, 1.24)
+_VERTICAL_STRETCH_SCALES = (1.02, 1.04, 1.06, 1.08, 1.10, 1.12, 1.14, 1.16, 1.18, 1.20)
 _VERTICAL_MARGIN_INCHES = 0.55
 
 
@@ -29,6 +31,7 @@ def render_checked_cv_artifacts(
     """Render exactly one well-filled CV page or fail without writing final artifacts."""
     style = style or CvStyle()
     candidates: list[tuple[PdfLayoutMetrics, Path, Path]] = []
+    primary_candidates: list[tuple[PdfLayoutMetrics, Path, Path, float]] = []
     with tempfile.TemporaryDirectory(prefix="backendscout-cv-layout-") as temporary_directory:
         temporary_root = Path(temporary_directory)
         for index, scale in enumerate(_LAYOUT_SCALES):
@@ -39,6 +42,28 @@ def render_checked_cv_artifacts(
             metrics = measure_pdf_layout(candidate_pdf)
             if metrics.page_count == 1:
                 candidates.append((metrics, candidate_docx, candidate_pdf))
+                primary_candidates.append((metrics, candidate_docx, candidate_pdf, scale))
+
+        if primary_candidates and not _has_valid_layout(candidates):
+            _, _, _, best_primary_scale = max(
+                primary_candidates,
+                key=lambda candidate: candidate[0].content_fill_ratio,
+            )
+            for index, stretch in enumerate(_VERTICAL_STRETCH_SCALES):
+                candidate_docx = temporary_root / f"spacing-candidate-{index}.docx"
+                candidate_pdf = temporary_root / f"spacing-candidate-{index}.pdf"
+                create_cv_docx(
+                    evidence,
+                    draft,
+                    candidate_docx,
+                    style,
+                    layout_scale=best_primary_scale,
+                    vertical_scale=best_primary_scale * stretch,
+                )
+                convert_docx_to_pdf(candidate_docx, candidate_pdf)
+                metrics = measure_pdf_layout(candidate_pdf)
+                if metrics.page_count == 1:
+                    candidates.append((metrics, candidate_docx, candidate_pdf))
 
         metrics, selected_docx, selected_pdf = _select_valid_layout(candidates)
         docx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,12 +109,20 @@ def _select_valid_layout(
     return max(valid, key=lambda candidate: candidate[0].content_fill_ratio)
 
 
+def _has_valid_layout(candidates: list[tuple[PdfLayoutMetrics, Path, Path]]) -> bool:
+    return any(
+        metrics.page_count == 1 and metrics.content_fill_ratio >= MIN_CV_PAGE_FILL_RATIO
+        for metrics, _, _ in candidates
+    )
+
+
 def create_cv_docx(
     evidence: CareerEvidence,
     draft: TailoredCv,
     output_path: Path,
     style: CvStyle | None = None,
     layout_scale: float = 1.0,
+    vertical_scale: float | None = None,
 ) -> Path:
     """Render a single-column, evidence-audited CV using a compact technical layout."""
     from docx import Document
@@ -97,6 +130,7 @@ def create_cv_docx(
     from docx.shared import Inches, Pt, RGBColor
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    spacing_scale = vertical_scale or layout_scale
     document = Document()
     section = document.sections[0]
     section.top_margin = Inches(_VERTICAL_MARGIN_INCHES)
@@ -107,8 +141,8 @@ def create_cv_docx(
     normal = document.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(10 * layout_scale)
-    normal.paragraph_format.space_after = Pt(2 * layout_scale)
-    normal.paragraph_format.line_spacing = layout_scale
+    normal.paragraph_format.space_after = Pt(2 * spacing_scale)
+    normal.paragraph_format.line_spacing = spacing_scale
 
     name = document.add_paragraph()
     name.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -117,27 +151,32 @@ def create_cv_docx(
     name_run.font.name = "Calibri"
     name_run.font.size = Pt(17 * layout_scale)
     name_run.font.color.rgb = RGBColor(11, 37, 69)
-    name.paragraph_format.space_after = Pt(2)
+    name.paragraph_format.space_after = Pt(2 * spacing_scale)
 
     style = style or CvStyle()
     contact = document.add_paragraph()
     contact_values = [evidence.identity.email, evidence.identity.phone, evidence.identity.location]
-    _add_contact_line(contact, contact_values, evidence.identity.links, style.link_labels)
+    _add_contact_line(
+        contact,
+        contact_values,
+        _global_identity_links(evidence.identity.links),
+        style.link_labels,
+    )
     contact.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    contact.paragraph_format.space_after = Pt(6 * layout_scale)
+    contact.paragraph_format.space_after = Pt(6 * spacing_scale)
 
     if style.include_headline and draft.headline:
         headline = document.add_paragraph(draft.headline)
         headline.alignment = WD_ALIGN_PARAGRAPH.CENTER
         headline.runs[0].italic = True
-        headline.paragraph_format.space_after = Pt(8)
+        headline.paragraph_format.space_after = Pt(8 * spacing_scale)
 
     if draft.summary:
-        _add_heading(document, "SUMMARY", layout_scale)
+        _add_heading(document, "SUMMARY", layout_scale, spacing_scale)
         document.add_paragraph(draft.summary)
 
     if draft.skills:
-        _add_heading(document, "TECHNICAL SKILLS", layout_scale)
+        _add_heading(document, "TECHNICAL SKILLS", layout_scale, spacing_scale)
         for group in draft.skills:
             skill_line = document.add_paragraph()
             category = skill_line.add_run(f"{group.category}: ")
@@ -146,21 +185,27 @@ def create_cv_docx(
 
     experience_by_id = {item.id: item for item in evidence.experience}
     if draft.experience:
-        _add_heading(document, "EXPERIENCE", layout_scale)
+        _add_heading(document, "EXPERIENCE", layout_scale, spacing_scale)
         for tailored in draft.experience:
             source = experience_by_id[tailored.evidence_id]
             _add_role_heading(
-                document, source.title, source.organization, source.start_date, source.end_date, layout_scale
+                document,
+                source.title,
+                source.organization,
+                source.start_date,
+                source.end_date,
+                layout_scale,
+                spacing_scale,
             )
             if source.location:
                 location = document.add_paragraph(source.location)
                 location.runs[0].italic = True
-                location.paragraph_format.space_after = Pt(1)
-            _add_bullets(document, [bullet.text for bullet in tailored.bullets], layout_scale)
+                location.paragraph_format.space_after = Pt(spacing_scale)
+            _add_bullets(document, [bullet.text for bullet in tailored.bullets], spacing_scale)
 
     project_by_id = {item.id: item for item in evidence.projects}
     if draft.projects:
-        _add_heading(document, "PROJECTS", layout_scale)
+        _add_heading(document, "PROJECTS", layout_scale, spacing_scale)
         for tailored in draft.projects:
             source = project_by_id[tailored.evidence_id]
             project = document.add_paragraph()
@@ -168,10 +213,10 @@ def create_cv_docx(
             if source.link:
                 project.add_run(" | ")
                 _add_hyperlink(project, _link_label(source.link, style.link_labels), source.link)
-            _add_bullets(document, [bullet.text for bullet in tailored.bullets], layout_scale)
+            _add_bullets(document, [bullet.text for bullet in tailored.bullets], spacing_scale)
 
     if draft.education:
-        _add_heading(document, "EDUCATION", layout_scale)
+        _add_heading(document, "EDUCATION", layout_scale, spacing_scale)
         for item in draft.education:
             line = document.add_paragraph()
             line.add_run(item.credential).bold = True
@@ -180,7 +225,7 @@ def create_cv_docx(
                 line.add_run(f" | {item.end_date}")
 
     if draft.publications:
-        _add_heading(document, "PUBLICATIONS", layout_scale)
+        _add_heading(document, "PUBLICATIONS", layout_scale, spacing_scale)
         for item in draft.publications:
             line = document.add_paragraph()
             line.add_run(item.title).bold = True
@@ -191,9 +236,12 @@ def create_cv_docx(
 
 
 def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    soffice = resolve_libreoffice_executable()
     if not soffice:
-        raise RuntimeError("LibreOffice is required to generate a PDF CV draft")
+        raise RuntimeError(
+            "LibreOffice is required to generate a PDF CV draft. Set "
+            "LIBREOFFICE_EXECUTABLE when it is installed outside the launchd PATH."
+        )
 
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="backendscout-lo-") as profile:
@@ -222,12 +270,44 @@ def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
     return pdf_path
 
 
-def _add_heading(document, text: str, layout_scale: float = 1.0) -> None:
+def resolve_libreoffice_executable(
+    configured_path: str | None = None,
+    *,
+    lookup: Callable[[str], str | None] = shutil.which,
+    fallback_paths: Iterable[Path] | None = None,
+) -> str | None:
+    """Find LibreOffice in interactive shells, app bundles, or the Codex runtime."""
+    configured = configured_path or os.environ.get("LIBREOFFICE_EXECUTABLE")
+    if configured and _is_executable_file(Path(configured).expanduser()):
+        return str(Path(configured).expanduser())
+    for command in ("soffice", "libreoffice"):
+        if executable := lookup(command):
+            return executable
+    candidates = fallback_paths or (
+        Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+        Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice",
+        Path.home()
+        / ".cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/soffice",
+    )
+    return next((str(path) for path in candidates if _is_executable_file(path)), None)
+
+
+def _is_executable_file(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def _add_heading(
+    document,
+    text: str,
+    layout_scale: float = 1.0,
+    spacing_scale: float | None = None,
+) -> None:
     from docx.shared import Pt, RGBColor
 
+    spacing_scale = spacing_scale or layout_scale
     paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(6 * layout_scale)
-    paragraph.paragraph_format.space_after = Pt(2 * layout_scale)
+    paragraph.paragraph_format.space_before = Pt(6 * spacing_scale)
+    paragraph.paragraph_format.space_after = Pt(2 * spacing_scale)
     run = paragraph.add_run(text)
     run.bold = True
     run.font.name = "Calibri"
@@ -242,13 +322,15 @@ def _add_role_heading(
     start_date: str,
     end_date: str,
     layout_scale: float = 1.0,
+    spacing_scale: float | None = None,
 ) -> None:
     from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
     from docx.shared import Inches, Pt
 
+    spacing_scale = spacing_scale or layout_scale
     paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_before = Pt(3 * layout_scale)
-    paragraph.paragraph_format.space_after = Pt(1)
+    paragraph.paragraph_format.space_before = Pt(3 * spacing_scale)
+    paragraph.paragraph_format.space_after = Pt(spacing_scale)
     paragraph.paragraph_format.tab_stops.add_tab_stop(
         Inches(6.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.SPACES
     )
@@ -256,13 +338,14 @@ def _add_role_heading(
     paragraph.add_run(f"\t{start_date} - {end_date}")
 
 
-def _add_bullets(document, bullets: list[str], layout_scale: float = 1.0) -> None:
+def _add_bullets(document, bullets: list[str], spacing_scale: float = 1.0) -> None:
     from docx.shared import Pt
 
     for bullet in bullets:
         paragraph = document.add_paragraph(style="List Bullet")
         paragraph.add_run(bullet)
-        paragraph.paragraph_format.space_after = Pt(0 * layout_scale)
+        paragraph.paragraph_format.line_spacing = spacing_scale
+        paragraph.paragraph_format.space_after = Pt(0)
 
 
 def _add_contact_line(
@@ -280,6 +363,26 @@ def _add_contact_line(
         if visible_values or link != links[0]:
             paragraph.add_run(" | ")
         _add_hyperlink(paragraph, _link_label(link, custom_labels), link)
+
+
+def _global_identity_links(links: list[str]) -> list[str]:
+    """Keep general profiles in the header; project links belong to selected projects."""
+    selected: list[str] = []
+    github_profile_selected = False
+    for link in links:
+        parsed = urlparse(link)
+        host = parsed.netloc.casefold().removeprefix("www.")
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if host == "github.com":
+            if len(path_parts) == 1 and not github_profile_selected:
+                selected.append(link)
+                github_profile_selected = True
+            continue
+        if host == "linkedin.com" or not host:
+            selected.append(link)
+            continue
+        selected.append(link)
+    return selected
 
 
 def _add_hyperlink(paragraph, label: str, url: str) -> None:
