@@ -20,6 +20,8 @@ professional. Preserve any ownership qualifier in the evidence, including
 AI-assisted, directed, guided, reviewed, collaborated, or taught; never turn it
 into a claim of sole hands-on implementation. Follow every cv_style rule. Never
 put a raw URL in headline, summary, or a bullet; document rendering handles links.
+In Technical Skills, copy only exact item strings from career_evidence.skills;
+do not rename, combine, broaden, or infer skill labels.
 Return JSON that exactly matches the supplied schema."""
 
 RAW_URL_PATTERN = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -97,9 +99,23 @@ def generate_tailored_cv(
     if not response.output_text:
         raise ValueError("OpenAI returned no CV draft text")
 
-    draft = TailoredCv.model_validate_json(response.output_text)
+    draft = remove_unsupported_skills(
+        TailoredCv.model_validate_json(response.output_text),
+        evidence,
+    )
     validate_tailored_cv_against_evidence(draft, evidence, style)
     return draft
+
+
+def remove_unsupported_skills(draft: TailoredCv, evidence: CareerEvidence) -> TailoredCv:
+    """Drop model-selected skill labels that are absent from verified evidence."""
+    allowed_skills = {item.casefold() for group in evidence.skills for item in group.items}
+    filtered_groups = []
+    for group in draft.skills:
+        supported_items = [item for item in group.items if item.casefold() in allowed_skills]
+        if supported_items:
+            filtered_groups.append(group.model_copy(update={"items": supported_items}))
+    return draft.model_copy(update={"skills": filtered_groups})
 
 
 def build_evidence_only_draft(evidence: CareerEvidence) -> TailoredCv:

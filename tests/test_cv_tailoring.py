@@ -3,6 +3,7 @@ import pytest
 from backend_scout.cv_tailoring import (
     build_evidence_only_draft,
     openai_json_schema,
+    remove_unsupported_skills,
     validate_tailored_cv_against_evidence,
 )
 from backend_scout.models import (
@@ -74,6 +75,17 @@ def test_tailored_draft_rejects_skill_not_in_evidence() -> None:
 
     with pytest.raises(ValueError, match="skill not present"):
         validate_tailored_cv_against_evidence(draft, evidence)
+
+
+def test_unsupported_model_skill_is_removed_without_changing_verified_skills() -> None:
+    evidence = make_evidence()
+    draft = build_evidence_only_draft(evidence)
+    draft.skills[0].items.append("Kubernetes")
+
+    filtered = remove_unsupported_skills(draft, evidence)
+
+    assert filtered.skills[0].items == ["Python", "FastAPI"]
+    validate_tailored_cv_against_evidence(filtered, evidence)
 
 
 def test_openai_schema_requires_every_nested_property() -> None:
