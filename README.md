@@ -66,6 +66,8 @@ draft have both been approved.
   for a Telegram-first operating loop.
 - A local task queue so long work can be requested from Telegram and processed
   outside the button callback.
+- Separate general and single-concurrency browser worker lanes, so a portal
+  waiting for attention cannot delay scouting, mailbox updates, or CV work.
 - Portal-submission proof screenshots saved locally, hashed, sent to Telegram,
   and recorded in Notion's submission audit.
 - Gmail mailbox scanning with `gmail.readonly` to classify confirmations,

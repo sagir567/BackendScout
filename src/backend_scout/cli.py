@@ -131,7 +131,9 @@ from backend_scout.submission import (
 from backend_scout.tailoring_notes import load_tailoring_note
 from backend_scout.targets import DEFAULT_TARGET_COMPANIES_PATH, load_target_companies
 from backend_scout.task_queue import (
+    BROWSER_TASK_KINDS,
     DEFAULT_TASK_QUEUE_PATH,
+    GENERAL_TASK_KINDS,
     QueuedTask,
     QueuedTaskKind,
     QueuedTaskStatus,
@@ -921,13 +923,25 @@ def tasks_worker_once(
         Path,
         typer.Option("--queue-path", help="Ignored local task queue JSON path."),
     ] = DEFAULT_TASK_QUEUE_PATH,
+    lane: Annotated[str, typer.Option("--lane", help="Task lane: general, browser, or all.")] = "all",
 ) -> None:
     """Process one queued task and exit."""
-    task = claim_next_task(queue_path)
+    task = claim_next_task(queue_path, allowed_kinds=_worker_lane_kinds(lane))
     if task is None:
         console.print("[yellow]No queued tasks.[/yellow]")
         return
     _process_claimed_task(task, queue_path)
+
+
+def _worker_lane_kinds(lane: str) -> frozenset[QueuedTaskKind] | None:
+    normalized = lane.strip().casefold()
+    if normalized == "general":
+        return GENERAL_TASK_KINDS
+    if normalized == "browser":
+        return BROWSER_TASK_KINDS
+    if normalized == "all":
+        return None
+    raise typer.BadParameter("lane must be general, browser, or all")
 
 
 @tasks_app.command("worker")
@@ -938,15 +952,17 @@ def tasks_worker(
         bool,
         typer.Option("--enable-schedules", help="Run DBOS daily-scout and mailbox schedules."),
     ] = False,
+    lane: Annotated[str, typer.Option("--lane", help="Task lane: general, browser, or all.")] = "all",
 ) -> None:
     """Continuously process durable tasks with lease-based crash recovery."""
-    console.print(f"[green]Durable task worker listening on {queue_path}.[/green]")
+    allowed_kinds = _worker_lane_kinds(lane)
+    console.print(f"[green]Durable {lane} task worker listening on {queue_path}.[/green]")
     if enable_schedules:
         settings = Settings()
         launch_durable_schedules(queue_path, settings.telegram_default_chat_id)
     try:
         while True:
-            task = claim_next_task(queue_path)
+            task = claim_next_task(queue_path, allowed_kinds=allowed_kinds)
             if task is None:
                 time.sleep(poll_seconds)
                 continue

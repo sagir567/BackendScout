@@ -40,6 +40,12 @@ class QueuedTaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+BROWSER_TASK_KINDS = frozenset(
+    {QueuedTaskKind.PORTAL_PREPARE, QueuedTaskKind.PORTAL_SUBMIT}
+)
+GENERAL_TASK_KINDS = frozenset(set(QueuedTaskKind) - BROWSER_TASK_KINDS)
+
+
 class QueuedTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -121,21 +127,31 @@ def claim_next_task(
     path: Path = DEFAULT_TASK_QUEUE_PATH,
     *,
     lease_seconds: int = 900,
+    allowed_kinds: frozenset[QueuedTaskKind] | None = None,
 ) -> QueuedTask | None:
     """Atomically claim the highest-priority available task."""
     if _is_json_path(path):
-        task = next_queued_task(path)
+        task = next_queued_task(path, allowed_kinds=allowed_kinds)
         if task is None:
             return None
         return mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=path)
     now = datetime.now(UTC)
     with _transaction(path) as connection:
         _recover_expired(connection, now)
+        kind_filter = ""
+        parameters: list[str] = [_dt(now)]
+        if allowed_kinds is not None:
+            if not allowed_kinds:
+                return None
+            placeholders = ", ".join("?" for _ in allowed_kinds)
+            kind_filter = f" AND kind IN ({placeholders})"
+            parameters.extend(kind.value for kind in sorted(allowed_kinds, key=lambda item: item.value))
         row = connection.execute(
-            """
+            f"""
             SELECT * FROM tasks
             WHERE status IN ('queued', 'retrying')
               AND (available_at IS NULL OR available_at <= ?)
+              {kind_filter}
             ORDER BY
               CASE kind
                 WHEN 'portal_submit' THEN 0
@@ -149,7 +165,7 @@ def claim_next_task(
               created_at
             LIMIT 1
             """,
-            (_dt(now),),
+            parameters,
         ).fetchone()
         if row is None:
             return None
@@ -169,7 +185,11 @@ def claim_next_task(
         return _row_to_task(claimed)
 
 
-def next_queued_task(path: Path = DEFAULT_TASK_QUEUE_PATH) -> QueuedTask | None:
+def next_queued_task(
+    path: Path = DEFAULT_TASK_QUEUE_PATH,
+    *,
+    allowed_kinds: frozenset[QueuedTaskKind] | None = None,
+) -> QueuedTask | None:
     if _is_json_path(path):
         queued = list_tasks(path, QueuedTaskStatus.QUEUED)
     else:
@@ -181,6 +201,8 @@ def next_queued_task(path: Path = DEFAULT_TASK_QUEUE_PATH) -> QueuedTask | None:
                 (now,),
             ).fetchall()
         queued = [_row_to_task(row) for row in rows]
+    if allowed_kinds is not None:
+        queued = [task for task in queued if task.kind in allowed_kinds]
     if not queued:
         return None
     priorities = {

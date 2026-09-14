@@ -6,5 +6,4 @@ cd "$PROJECT_ROOT"
 mkdir -p data/logs data/runtime
 
 exec /opt/homebrew/bin/uv --cache-dir .uv-cache run --no-editable backend-scout tasks worker \
-  --lane general --enable-schedules \
-  >> data/logs/task-worker.log 2>&1
+  --lane browser >> data/logs/browser-worker.log 2>&1

@@ -10,6 +10,7 @@ class LaunchdService(str, Enum):
     TELEGRAM = "telegram"
     MAILBOX = "mailbox"
     WORKER = "worker"
+    BROWSER = "browser"
     ALL = "all"
 
 
@@ -18,12 +19,19 @@ SERVICE_LABELS = {
     LaunchdService.TELEGRAM: "com.backendscout.telegram",
     LaunchdService.MAILBOX: "com.backendscout.mailbox",
     LaunchdService.WORKER: "com.backendscout.worker",
+    LaunchdService.BROWSER: "com.backendscout.browser",
 }
 
 
 def selected_services(service: LaunchdService) -> list[LaunchdService]:
     if service == LaunchdService.ALL:
-        return [LaunchdService.TELEGRAM, LaunchdService.WORKER, LaunchdService.MAILBOX, LaunchdService.DAILY]
+        return [
+            LaunchdService.TELEGRAM,
+            LaunchdService.WORKER,
+            LaunchdService.BROWSER,
+            LaunchdService.MAILBOX,
+            LaunchdService.DAILY,
+        ]
     return [service]
 
 

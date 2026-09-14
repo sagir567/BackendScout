@@ -56,6 +56,11 @@ DBOS stores durable schedule execution in the same private SQLite database. The
 daily production scout and 15-minute mailbox schedule enqueue idempotent tasks;
 the task worker stays alive and checks for work every second.
 
+Browser preparation and submission run in a dedicated single-concurrency lane.
+The general worker owns schedules, scouting, mailbox scans, CV drafting, and
+contact discovery, so a portal waiting for attention cannot block the morning
+digest.
+
 Migration commands:
 
 ```bash

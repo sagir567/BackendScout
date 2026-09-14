@@ -4,6 +4,8 @@ import pytest
 
 from backend_scout.config import TrackerName
 from backend_scout.task_queue import (
+    BROWSER_TASK_KINDS,
+    GENERAL_TASK_KINDS,
     QueuedTaskKind,
     QueuedTaskStatus,
     claim_next_task,
@@ -130,3 +132,15 @@ def test_sqlite_deduplicates_active_work(tmp_path: Path) -> None:
 
     assert duplicate.task_id == first.task_id
     assert len(list_tasks(path)) == 1
+
+
+def test_sqlite_worker_lanes_claim_only_their_own_tasks(tmp_path: Path) -> None:
+    path = tmp_path / "runtime.sqlite3"
+    general = enqueue_task(QueuedTaskKind.SCOUT_TODAY, TrackerName.PRODUCTION, path=path)
+    browser = enqueue_task(QueuedTaskKind.PORTAL_SUBMIT, TrackerName.PRODUCTION, path=path)
+
+    claimed_general = claim_next_task(path, allowed_kinds=GENERAL_TASK_KINDS)
+    claimed_browser = claim_next_task(path, allowed_kinds=BROWSER_TASK_KINDS)
+
+    assert claimed_general is not None and claimed_general.task_id == general.task_id
+    assert claimed_browser is not None and claimed_browser.task_id == browser.task_id

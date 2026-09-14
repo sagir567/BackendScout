@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.backendscout.browser</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>TODO_ABSOLUTE_PROJECT_PATH/scripts/run_browser_worker.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/browser-launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/browser-launchd.err.log</string>
+</dict>
+</plist>
