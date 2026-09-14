@@ -1,7 +1,7 @@
 """Private, one-time approvals for a final portal submit click."""
 
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -10,9 +10,6 @@ from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import CvDraftManifest
 
 PORTAL_AUTHORIZATIONS_ROOT = Path("data/portal_authorizations")
-PORTAL_SUBMIT_AUTHORIZATION_TTL = timedelta(minutes=15)
-
-
 class PortalSubmitAuthorization(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -24,7 +21,7 @@ class PortalSubmitAuthorization(BaseModel):
     docx_sha256: str
     pdf_sha256: str
     requested_at: datetime
-    expires_at: datetime
+    expires_at: datetime | None = None
     authorized_at: datetime | None = None
     consumed_at: datetime | None = None
 
@@ -46,7 +43,7 @@ def create_portal_submit_authorization(
         docx_sha256=manifest.docx_sha256,
         pdf_sha256=manifest.pdf_sha256 or _sha256_for_path(manifest.pdf_path),
         requested_at=now,
-        expires_at=now + PORTAL_SUBMIT_AUTHORIZATION_TTL,
+        expires_at=None,
     )
     save_portal_submit_authorization(authorization, root)
     return authorization
@@ -162,7 +159,7 @@ def _validate_binding(
     pdf_sha256 = manifest.pdf_sha256 or _sha256_for_path(manifest.pdf_path)
     if authorization.docx_sha256 != manifest.docx_sha256 or authorization.pdf_sha256 != pdf_sha256:
         raise ValueError("Portal submission authorization does not match the approved CV files")
-    if datetime.now(UTC) >= authorization.expires_at:
+    if authorization.expires_at is not None and datetime.now(UTC) >= authorization.expires_at:
         raise ValueError("Portal submission authorization expired; request a new Telegram approval")
 
 

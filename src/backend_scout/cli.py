@@ -1997,7 +1997,7 @@ def apply_request_submit(
                 f"Portal: {portal_host}\n"
                 f"Exact CV draft: {manifest.draft_id}\n"
                 "Press Submit now to authorize one browser submit click. "
-                "This approval expires in 15 minutes."
+                "The approval remains valid until used or until the job, portal URL, or CV changes."
             )
             with TelegramClient(settings.telegram_bot_token) as telegram_client:
                 telegram_client.send_message(

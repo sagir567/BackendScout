@@ -505,8 +505,8 @@ Current implementation:
   generated DOM IDs, including Wix-hosted forms.
 - `apply request-submit` sends a final Telegram review that names the company,
   role, portal host, and exact CV draft. Its private authorization is bound to
-  the page, tracker, portal URL, DOCX checksum, and PDF checksum; it expires
-  after 15 minutes and can be consumed once.
+  the page, tracker, portal URL, DOCX checksum, and PDF checksum. It has no
+  clock expiry, can be consumed once, and becomes invalid when a binding changes.
 - `apply resume` may click an unambiguous submit control only after that final
   Telegram approval. If a CAPTCHA appears before or after that click, it keeps
   the exact visible browser session open for the configured remote-verification

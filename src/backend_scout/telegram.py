@@ -571,7 +571,7 @@ def process_telegram_update(
                         f"Queued submission task {queued_task_id}."
                     )
                 else:
-                    message_text = "Run apply resume within 15 minutes."
+                    message_text = "Run apply resume to use this one-time approval."
             telegram_client.send_message(
                 chat_id,
                 message_text,

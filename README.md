@@ -418,13 +418,14 @@ worker to send the final review card automatically; unresolved fields are sent
 back to the same authorized chat.
 
 Portal submissions have higher queue priority than new portal preparations, so
-a short-lived `Submit now` authorization is processed before unrelated forms.
+a `Submit now` authorization is processed before unrelated forms.
 Repeated presses for the same active task reuse its existing queue record, and
 every attention message identifies the company and role it belongs to.
 
 After preparation, request the final Telegram card. Its `Submit now` button
 authorizes one browser submit click for the exact current CV and portal URL,
-expires in 15 minutes, and cannot be reused for another CV revision or tracker:
+has no clock expiry, and cannot be reused or transferred to another CV revision,
+portal URL, job, or tracker:
 
 ```bash
 uv run --no-editable backend-scout apply request-submit NOTION_PAGE_ID --tracker production

@@ -86,7 +86,17 @@ def test_portal_authorization_rejects_wrong_tracker_url_and_newer_cv(tmp_path: P
         )
 
 
-def test_portal_authorization_expires_and_finder_returns_latest_valid_record(tmp_path: Path) -> None:
+def test_new_portal_authorization_has_no_clock_expiry(tmp_path: Path) -> None:
+    root = tmp_path / "authorizations"
+    manifest = _manifest(tmp_path / "drafts")
+    authorization = create_portal_submit_authorization(
+        "page-123", TrackerName.PRODUCTION, "https://jobs.example.test/apply", manifest, root
+    )
+
+    assert authorization.expires_at is None
+
+
+def test_legacy_expiring_authorization_and_finder_remain_supported(tmp_path: Path) -> None:
     root = tmp_path / "authorizations"
     manifest = _manifest(tmp_path / "drafts")
     expired = create_portal_submit_authorization(
