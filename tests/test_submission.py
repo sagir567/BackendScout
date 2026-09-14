@@ -25,6 +25,7 @@ from backend_scout.submission import (
     contains_human_verification,
     is_explicit_apply_now_label,
     is_submission_confirmation,
+    redirected_from_job_to_home,
     resolve_apply_now_url,
     wait_for_human_verification_clear,
 )
@@ -199,6 +200,21 @@ def test_apply_now_url_resolution_allows_only_public_http_destinations() -> None
     assert resolve_apply_now_url(current, "https://ats.example.test/jobs/123") == "https://ats.example.test/jobs/123"
     assert resolve_apply_now_url(current, "javascript:submit()") is None
     assert resolve_apply_now_url(current, None) is None
+
+
+def test_job_redirect_to_company_home_is_not_treated_as_an_application() -> None:
+    assert redirected_from_job_to_home(
+        "https://makers.example.test/role/backend-engineer",
+        "https://makers.example.test/",
+    )
+    assert not redirected_from_job_to_home(
+        "https://makers.example.test/role/backend-engineer",
+        "https://ats.example.test/jobs/123",
+    )
+    assert not redirected_from_job_to_home(
+        "https://makers.example.test/role/backend-engineer",
+        "https://makers.example.test/role/backend-engineer/",
+    )
 
 
 def test_follow_verified_apply_link_clicks_only_opening_cta_button() -> None:

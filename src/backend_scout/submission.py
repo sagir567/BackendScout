@@ -62,6 +62,7 @@ SUBMISSION_CONFIRMATION_MARKERS = (
     "thanks for applying",
 )
 FINAL_SUBMIT_LABELS = ("apply now", "submit application")
+COOKIE_DISMISS_LABELS = ("reject all", "decline all", "only necessary", "necessary only")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -174,8 +175,16 @@ def prepare_visible_submission(
             str(profile_root), headless=False, accept_downloads=True
         )
         page = context.pages[0] if context.pages else context.new_page()
-        page.goto(application_url, wait_until="domcontentloaded")
-        _follow_verified_apply_link(page)
+        if not _open_application_page(page, application_url):
+            resolved_url = page.url
+            context.close()
+            return BrowserPreparationResult(
+                "submission_prepared",
+                (),
+                "The job URL redirected to a general company page; no application action was taken.",
+                ("application_url",),
+                resolved_url,
+            )
         if contains_human_verification(_page_and_frame_text(page), [frame.url for frame in page.frames]):
             # Keep the visible persistent browser alive while the candidate uses
             # the private handoff. No challenge is inspected, answered, or bypassed.
@@ -663,6 +672,55 @@ def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:
     return destination
 
 
+def redirected_from_job_to_home(requested_url: str, resolved_url: str) -> bool:
+    requested = urlparse(requested_url)
+    resolved = urlparse(resolved_url)
+    requested_path = requested.path.rstrip("/")
+    resolved_path = resolved.path.rstrip("/")
+    return bool(
+        requested.netloc.casefold() == resolved.netloc.casefold()
+        and requested_path
+        and resolved_path == ""
+    )
+
+
+def _open_application_page(page, application_url: str) -> bool:
+    page.goto(application_url, wait_until="domcontentloaded")
+    _dismiss_cookie_consent(page)
+    if redirected_from_job_to_home(application_url, page.url):
+        return False
+    _follow_verified_apply_link(page)
+    _dismiss_cookie_consent(page)
+    return True
+
+
+def _dismiss_cookie_consent(page) -> bool:
+    """Dismiss only an explicit cookie dialog, preferring non-essential rejection."""
+    for scope in _form_scopes(page):
+        try:
+            containers = scope.locator(
+                '[role="dialog"], [id*="cookie" i], [class*="cookie" i]'
+            )
+            for container_index in range(containers.count()):
+                container = containers.nth(container_index)
+                if not container.is_visible():
+                    continue
+                text = container.inner_text(timeout=2_000).casefold()
+                if "cookie" not in text:
+                    continue
+                buttons = container.locator("button")
+                for button_index in range(buttons.count()):
+                    button = buttons.nth(button_index)
+                    label = " ".join(button.inner_text().strip().casefold().split())
+                    if button.is_visible() and label in COOKIE_DISMISS_LABELS:
+                        button.click(timeout=3_000)
+                        page.wait_for_timeout(300)
+                        return True
+        except PlaywrightError as exc:
+            LOGGER.debug("Cookie dialog changed while dismissing it: %s", exc)
+    return False
+
+
 def _follow_verified_apply_link(page) -> None:
     """Follow only an explicit opening apply CTA; never click a final submit control here."""
     try:
@@ -727,8 +785,16 @@ def submit_visible_submission(
             str(profile_root), headless=False, accept_downloads=True
         )
         page = context.pages[0] if context.pages else context.new_page()
-        page.goto(application_url, wait_until="domcontentloaded")
-        _follow_verified_apply_link(page)
+        if not _open_application_page(page, application_url):
+            resolved_url = page.url
+            context.close()
+            return BrowserPreparationResult(
+                "submission_prepared",
+                (),
+                "The job URL redirected to a general company page; no submission was attempted.",
+                ("application_url",),
+                resolved_url,
+            )
         verification_present = contains_human_verification(
             _page_and_frame_text(page), [frame.url for frame in page.frames]
         )
