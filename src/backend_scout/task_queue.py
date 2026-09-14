@@ -56,18 +56,41 @@ def enqueue_task(
     path: Path = DEFAULT_TASK_QUEUE_PATH,
 ) -> QueuedTask:
     queue = load_task_queue(path)
+    requested_payload = payload or {}
+    for existing in queue.tasks:
+        if (
+            existing.kind == kind
+            and existing.tracker == tracker
+            and existing.payload == requested_payload
+            and existing.status in {QueuedTaskStatus.QUEUED, QueuedTaskStatus.RUNNING}
+        ):
+            return existing
     now = datetime.now(UTC)
     task = QueuedTask(
         task_id=uuid4().hex[:12],
         kind=kind,
         tracker=tracker,
-        payload=payload or {},
+        payload=requested_payload,
         created_at=now,
         updated_at=now,
     )
     queue.tasks.append(task)
     save_task_queue(queue, path)
     return task
+
+
+def next_queued_task(path: Path = DEFAULT_TASK_QUEUE_PATH) -> QueuedTask | None:
+    queued = list_tasks(path, QueuedTaskStatus.QUEUED)
+    if not queued:
+        return None
+    priorities = {
+        QueuedTaskKind.PORTAL_SUBMIT: 0,
+        QueuedTaskKind.CV_DRAFT: 10,
+        QueuedTaskKind.PORTAL_PREPARE: 20,
+        QueuedTaskKind.CONTACT_DISCOVERY: 30,
+        QueuedTaskKind.SCOUT_TODAY: 40,
+    }
+    return min(queued, key=lambda task: (priorities[task.kind], task.created_at))
 
 
 def load_task_queue(path: Path = DEFAULT_TASK_QUEUE_PATH) -> TaskQueue:

@@ -267,7 +267,8 @@ uv run --no-editable backend-scout tasks worker-once
 With the launchd worker enabled, pressing `Approve tailoring` queues the CV
 draft automatically. Approving the exact CV now returns a `Prepare portal`
 button that safely carries the full Notion page ID. `/submit_status` resends
-these buttons for all CV-approved jobs. The typed `/prepare_NOTION_PAGE_ID`
+`Prepare` buttons for CV-approved jobs and `Resume` buttons for portals that
+still need fields or attachments. The typed `/prepare_NOTION_PAGE_ID`
 form remains a fallback and rejects incomplete IDs before queueing any work.
 
 Candidate-confirmed portal answers are stored privately per job and tracker.
@@ -415,6 +416,11 @@ From Telegram, press the `Prepare portal` button sent after CV approval. The
 listener acknowledges it immediately and the worker performs preparation. A complete form causes the
 worker to send the final review card automatically; unresolved fields are sent
 back to the same authorized chat.
+
+Portal submissions have higher queue priority than new portal preparations, so
+a short-lived `Submit now` authorization is processed before unrelated forms.
+Repeated presses for the same active task reuse its existing queue record, and
+every attention message identifies the company and role it belongs to.
 
 After preparation, request the final Telegram card. Its `Submit now` button
 authorizes one browser submit click for the exact current CV and portal URL,

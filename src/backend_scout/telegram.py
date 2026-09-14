@@ -319,7 +319,11 @@ def build_portal_progress_reply_markup(
     rows = [
         [
             {
-                "text": f"Prepare {item.company}"[:40],
+                "text": (
+                    f"Resume {item.company}"
+                    if item.status == ApplicationStatus.SUBMISSION_PREPARED
+                    else f"Prepare {item.company}"
+                )[:40],
                 "callback_data": encode_callback_data(
                     TelegramApprovalAction.PREPARE_PORTAL,
                     item.notion_page_id,
@@ -328,7 +332,8 @@ def build_portal_progress_reply_markup(
             }
         ]
         for item in items
-        if item.status == ApplicationStatus.APPROVED_TO_SUBMIT
+        if item.status
+        in {ApplicationStatus.APPROVED_TO_SUBMIT, ApplicationStatus.SUBMISSION_PREPARED}
     ]
     return {"inline_keyboard": rows} if rows else None
 
@@ -455,8 +460,11 @@ def process_telegram_update(
         portal_submission_authorization_handler(page_id, draft_id)
         next_status = application.status
     elif action == TelegramApprovalAction.PREPARE_PORTAL:
-        if application.status != ApplicationStatus.APPROVED_TO_SUBMIT:
-            raise ValueError("Portal preparation requires an approved CV")
+        if application.status not in {
+            ApplicationStatus.APPROVED_TO_SUBMIT,
+            ApplicationStatus.SUBMISSION_PREPARED,
+        }:
+            raise ValueError("Portal preparation requires an approved CV or prepared portal")
         next_status = application.status
     else:
         next_status = _status_for_action(action)
@@ -512,7 +520,12 @@ def process_telegram_update(
         queued_task_id = task_enqueue_handler(
             QueuedTaskKind.PORTAL_PREPARE,
             tracker,
-            {"page_id": page_id, "chat_id": chat_id},
+            {
+                "page_id": page_id,
+                "chat_id": chat_id,
+                "company": application.company,
+                "title": application.title,
+            },
         )
     elif (
         action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT
@@ -522,7 +535,12 @@ def process_telegram_update(
         queued_task_id = task_enqueue_handler(
             QueuedTaskKind.PORTAL_SUBMIT,
             tracker,
-            {"page_id": page_id, "chat_id": chat_id},
+            {
+                "page_id": page_id,
+                "chat_id": chat_id,
+                "company": application.company,
+                "title": application.title,
+            },
         )
     if isinstance(chat_id, int) and isinstance(message_id, int):
         try:

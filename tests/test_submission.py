@@ -18,6 +18,7 @@ from backend_scout.submission import (
     _capture_submission_screenshot,
     _control_has_value,
     _follow_verified_apply_link,
+    _form_scopes,
     _matches_confirmed_option,
     _unresolved_required_fields,
     apply_guided_form_plan,
@@ -123,6 +124,27 @@ def test_cv_attachment_accepts_visible_filename_after_react_removes_input(tmp_pa
             return Locator(present=True)
 
     assert _attach_approved_file(Scope(), attachment)
+
+
+def test_form_scopes_skip_frames_detached_during_portal_loading() -> None:
+    class Frame:
+        def __init__(self, detached: bool) -> None:
+            self.detached = detached
+
+        def is_detached(self) -> bool:
+            return self.detached
+
+    main_frame = Frame(False)
+    attached_frame = Frame(False)
+
+    class Page:
+        def __init__(self) -> None:
+            self.frames = [main_frame, Frame(True), attached_frame]
+            self.main_frame = main_frame
+
+    page = Page()
+
+    assert _form_scopes(page) == [page, attached_frame]
 
 
 def test_submission_detects_captcha_without_attempting_to_solve_it() -> None:

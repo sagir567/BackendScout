@@ -111,7 +111,7 @@ def test_build_portal_prepare_markup_binds_full_page_id() -> None:
     assert prepare_button["callback_data"] == f"b:p:{page_id}"
 
 
-def test_portal_progress_markup_only_includes_cv_approved_jobs() -> None:
+def test_portal_progress_markup_labels_approved_and_prepared_jobs() -> None:
     approved = ApplicationDigestItem(
         notion_page_id="3da71273-fa0b-81bb-960c-ce61727c4088",
         company="DOKKA",
@@ -125,8 +125,10 @@ def test_portal_progress_markup_only_includes_cv_approved_jobs() -> None:
     markup = build_portal_progress_reply_markup([approved, prepared], TrackerName.PRODUCTION)
 
     assert markup is not None
-    assert len(markup["inline_keyboard"]) == 1
+    assert len(markup["inline_keyboard"]) == 2
     assert markup["inline_keyboard"][0][0]["callback_data"] == f"b:p:{approved.notion_page_id}"
+    assert markup["inline_keyboard"][0][0]["text"] == "Prepare DOKKA"
+    assert markup["inline_keyboard"][1][0]["text"] == "Resume DOKKA"
 
 
 def test_process_telegram_update_queues_portal_prepare_from_inline_button() -> None:
@@ -174,7 +176,12 @@ def test_process_telegram_update_queues_portal_prepare_from_inline_button() -> N
         (
             QueuedTaskKind.PORTAL_PREPARE,
             TrackerName.PRODUCTION,
-            {"page_id": page_id, "chat_id": 12345},
+            {
+                "page_id": page_id,
+                "chat_id": 12345,
+                "company": "Example Cloud",
+                "title": "Backend Engineer",
+            },
         )
     ]
     assert "task-prepare" in sent_messages[0][1]
@@ -302,7 +309,12 @@ def test_process_telegram_update_authorizes_portal_submit_without_changing_statu
         (
             QueuedTaskKind.PORTAL_SUBMIT,
             TrackerName.TEST,
-            {"page_id": "page-123", "chat_id": 12345},
+            {
+                "page_id": "page-123",
+                "chat_id": 12345,
+                "company": "Example Cloud",
+                "title": "Backend Engineer",
+            },
         )
     ]
     assert updated_statuses == []

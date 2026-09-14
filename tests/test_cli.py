@@ -691,6 +691,43 @@ def test_tasks_worker_once_runs_approved_portal_submit(
     assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
 
 
+def test_tasks_worker_once_prioritizes_submit_over_older_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    queue_path = tmp_path / "tasks.json"
+    prepare = enqueue_task(
+        QueuedTaskKind.PORTAL_PREPARE,
+        TrackerName.PRODUCTION,
+        {"page_id": "prepare-page", "chat_id": 12345},
+        queue_path,
+    )
+    submit = enqueue_task(
+        QueuedTaskKind.PORTAL_SUBMIT,
+        TrackerName.PRODUCTION,
+        {"page_id": "submit-page", "chat_id": 12345},
+        queue_path,
+    )
+    calls = []
+    monkeypatch.setattr(
+        "backend_scout.cli.apply_resume",
+        lambda *args, **kwargs: calls.append((args, kwargs))
+        or BrowserPreparationResult(
+            state=ApplicationStatus.SUBMITTED.value,
+            filled_fields=("cv_attachment",),
+            message="Submitted.",
+        ),
+    )
+
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
+
+    assert result.exit_code == 0
+    assert calls == [(("submit-page",), {"tracker": TrackerName.PRODUCTION})]
+    statuses = {task.task_id: task.status for task in list_tasks(queue_path)}
+    assert statuses[submit.task_id] == QueuedTaskStatus.DONE
+    assert statuses[prepare.task_id] == QueuedTaskStatus.QUEUED
+
+
 def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "backend_scout.cli.list_recent_messages",

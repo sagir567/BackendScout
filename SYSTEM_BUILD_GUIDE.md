@@ -336,10 +336,11 @@ Current implementation as of 2026-08-31:
   Gmail, or browser work starts, so buttons should stop blinking quickly.
 - `Approve tailoring` can create a local queued CV draft task. Approving that
   exact CV returns an inline `Prepare portal` button, and `/submit_status`
-  resends buttons for every CV-approved job. This avoids Telegram truncating
-  long, hyphenated Notion IDs. The typed `/prepare_<page-id>` fallback validates
-  the complete ID before queueing. `tasks worker-once` processes one task at a
-  time; the launchd worker runs the same command every minute with a local lock.
+  resends `Prepare` buttons for CV-approved jobs and `Resume` buttons for
+  partially prepared forms. This avoids Telegram truncating long, hyphenated
+  Notion IDs. The typed `/prepare_<page-id>` fallback validates the complete ID
+  before queueing. `tasks worker-once` processes one task at a time; the
+  launchd worker runs the same command every minute with a local lock.
 - Only configured Telegram user IDs may trigger approval actions.
 - `Approve tailoring` transitions `digest_sent -> approved_to_tailor`.
 - `Close` transitions the current job to `closed` when that transition is valid.
@@ -578,6 +579,13 @@ Telegram. This keeps the actionable API or validation error instead of the
 uninformative numeric exit code. A regression test covers the previously
 observed short-ID failure (`/prepare_3da71273`), which now queues nothing and
 directs the user to `/submit_status` for reliable buttons.
+
+The task queue deduplicates identical queued or running work and prioritizes a
+Telegram-authorized portal submission over unrelated preparation, CV, and
+scouting tasks. Portal result messages include the company and role so several
+prepared applications cannot be mistaken for one another. Browser inspection
+also skips detached frames and tolerates portals rebuilding their iframe tree
+during redirects and form rendering.
 
 This follows official OpenAI guidance to use Structured Outputs and keep
 domain-specific side effects inside constrained application tools. Tracing is

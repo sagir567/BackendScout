@@ -245,18 +245,24 @@ def _fill_safe_fields(
         for field, selector, value, label in candidates:
             if not value:
                 continue
-            locator = scope.locator(selector).first
-            if not locator.count() or not locator.is_visible():
-                locator = scope.get_by_label(label, exact=True).first
-            if locator.count() and locator.is_visible() and _fill_control_if_blank(locator, value):
-                filled.append(field)
+            try:
+                locator = scope.locator(selector).first
+                if not locator.count() or not locator.is_visible():
+                    locator = scope.get_by_label(label, exact=True).first
+                if locator.count() and locator.is_visible() and _fill_control_if_blank(locator, value):
+                    filled.append(field)
+            except PlaywrightError as exc:
+                LOGGER.debug("Form scope changed while filling %s: %s", field, exc)
 
         if _attach_approved_file(scope, approved_attachment):
             filled.append("cv_attachment")
             break
     if form_answers:
         for scope in scopes:
-            filled.extend(_fill_candidate_confirmed_answers(scope, form_answers))
+            try:
+                filled.extend(_fill_candidate_confirmed_answers(scope, form_answers))
+            except PlaywrightError as exc:
+                LOGGER.debug("Form scope changed while applying confirmed answers: %s", exc)
     unresolved = list(_unresolved_required_fields(page))
     if "cv_attachment" not in filled:
         unresolved.append("cv_attachment")
@@ -301,8 +307,13 @@ def capture_guided_form(page) -> CapturedGuidedForm:
     fields: list[GuidedFormField] = []
     controls: dict[str, object] = {}
     for scope_index, scope in enumerate(_form_scopes(page)):
-        candidates = scope.locator("input, textarea, select")
-        for control_index in range(candidates.count()):
+        try:
+            candidates = scope.locator("input, textarea, select")
+            candidate_count = candidates.count()
+        except PlaywrightError as exc:
+            LOGGER.debug("Form scope changed before guided capture: %s", exc)
+            continue
+        for control_index in range(candidate_count):
             control = candidates.nth(control_index)
             try:
                 metadata = control.evaluate(
@@ -521,11 +532,16 @@ def _unresolved_required_fields(page) -> tuple[str, ...]:
     """Return visible required controls still blank after conservative preparation."""
     unresolved: list[str] = []
     for scope in _form_scopes(page):
-        required_controls = scope.locator(
-            'input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"], '
-            'input[required]:not([type="checkbox"]):not([type="radio"]), textarea[required], select[required]'
-        )
-        for index in range(required_controls.count()):
+        try:
+            required_controls = scope.locator(
+                'input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"], '
+                'input[required]:not([type="checkbox"]):not([type="radio"]), textarea[required], select[required]'
+            )
+            required_count = required_controls.count()
+        except PlaywrightError as exc:
+            LOGGER.debug("Form scope changed before required-field inspection: %s", exc)
+            continue
+        for index in range(required_count):
             control = required_controls.nth(index)
             label = _control_label(control)
             if not control.is_visible() or not label:
@@ -533,10 +549,17 @@ def _unresolved_required_fields(page) -> tuple[str, ...]:
             if not _control_has_value(control):
                 unresolved.append(label)
 
-        required_choices = scope.locator('input[type="checkbox"][required], input[type="radio"][required]')
+        try:
+            required_choices = scope.locator(
+                'input[type="checkbox"][required], input[type="radio"][required]'
+            )
+            required_choice_count = required_choices.count()
+        except PlaywrightError as exc:
+            LOGGER.debug("Form scope changed before required-choice inspection: %s", exc)
+            continue
         checked_groups: set[str] = set()
         choice_groups: dict[str, list[object]] = {}
-        for index in range(required_choices.count()):
+        for index in range(required_choice_count):
             choice = required_choices.nth(index)
             if not choice.is_visible():
                 continue
@@ -553,7 +576,18 @@ def _unresolved_required_fields(page) -> tuple[str, ...]:
 def _form_scopes(page) -> list[object]:
     frames = getattr(page, "frames", [])
     main_frame = getattr(page, "main_frame", None)
-    return [page, *(frame for frame in frames if frame != main_frame)]
+    scopes: list[object] = [page]
+    for frame in frames:
+        if frame == main_frame:
+            continue
+        try:
+            is_detached = getattr(frame, "is_detached", None)
+            if callable(is_detached) and is_detached():
+                continue
+        except PlaywrightError:
+            continue
+        scopes.append(frame)
+    return scopes
 
 
 def _control_label(control) -> str | None:
@@ -603,10 +637,10 @@ def _attach_approved_file(scope, approved_attachment: Path) -> bool:
         'input[type="file"]'
     )
     for attempt in range(3):
-        upload = scope.locator(selector).first
-        if not upload.count():
-            return False
         try:
+            upload = scope.locator(selector).first
+            if not upload.count():
+                return False
             upload.set_input_files(str(approved_attachment), timeout=5_000)
             if approved_attachment.name in scope.locator("body").inner_text(timeout=2_000):
                 return True
@@ -631,27 +665,33 @@ def resolve_apply_now_url(current_url: str, href: str | None) -> str | None:
 
 def _follow_verified_apply_link(page) -> None:
     """Follow only an explicit opening apply CTA; never click a final submit control here."""
-    links = page.locator("a")
-    for index in range(links.count()):
-        link = links.nth(index)
-        if not link.is_visible() or link.inner_text().strip().casefold() != "apply now":
-            continue
-        destination = resolve_apply_now_url(page.url, link.get_attribute("href"))
-        if destination and destination != page.url:
-            page.goto(destination, wait_until="domcontentloaded")
+    try:
+        links = page.locator("a")
+        for index in range(links.count()):
+            link = links.nth(index)
+            if not link.is_visible() or link.inner_text().strip().casefold() != "apply now":
+                continue
+            destination = resolve_apply_now_url(page.url, link.get_attribute("href"))
+            if destination and destination != page.url:
+                page.goto(destination, wait_until="domcontentloaded")
+                _wait_for_application_form(page)
+            return
+        buttons = page.locator("button")
+        for index in range(buttons.count()):
+            button = buttons.nth(index)
+            label = button.inner_text().strip()
+            if not button.is_visible() or not re.fullmatch(
+                r"apply(?: for this job| now)?", label, flags=re.IGNORECASE
+            ):
+                continue
+            if button.evaluate("element => Boolean(element.closest('form'))"):
+                continue
+            button.click()
             _wait_for_application_form(page)
-        return
-    buttons = page.locator("button")
-    for index in range(buttons.count()):
-        button = buttons.nth(index)
-        label = button.inner_text().strip()
-        if not button.is_visible() or not re.fullmatch(r"apply(?: for this job| now)?", label, flags=re.IGNORECASE):
-            continue
-        if button.evaluate("element => Boolean(element.closest('form'))"):
-            continue
-        button.click()
+            return
+    except PlaywrightError as exc:
+        LOGGER.debug("Application page changed while following its apply link: %s", exc)
         _wait_for_application_form(page)
-        return
 
 
 def _wait_for_application_form(page, timeout_ms: int = 8_000) -> None:

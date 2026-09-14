@@ -133,6 +133,7 @@ from backend_scout.task_queue import (
     enqueue_task,
     list_tasks,
     mark_task_status,
+    next_queued_task,
 )
 from backend_scout.telegram import (
     TelegramClient,
@@ -915,11 +916,10 @@ def tasks_worker_once(
     ] = DEFAULT_TASK_QUEUE_PATH,
 ) -> None:
     """Process one queued task and exit."""
-    queued = list_tasks(queue_path, QueuedTaskStatus.QUEUED)
-    if not queued:
+    task = next_queued_task(queue_path)
+    if task is None:
         console.print("[yellow]No queued tasks.[/yellow]")
         return
-    task = queued[0]
     mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=queue_path)
     completion_message: str | None = None
     try:
@@ -955,6 +955,7 @@ def tasks_worker_once(
                     completion_message = _format_portal_task_result(
                         "Portal preparation needs attention",
                         preparation,
+                        task,
                     )
         elif task.kind == QueuedTaskKind.PORTAL_SUBMIT:
             submission = apply_resume(
@@ -972,6 +973,7 @@ def tasks_worker_once(
                 completion_message = _format_portal_task_result(
                     "Portal submission needs attention",
                     submission,
+                    task,
                 )
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
@@ -2220,8 +2222,18 @@ def _build_guided_plan_builder(settings: Settings, enabled: bool):
     return build
 
 
-def _format_portal_task_result(title: str, result: BrowserPreparationResult) -> str:
-    message = f"{title}.\nState: {result.state}.\n{result.message}"
+def _format_portal_task_result(
+    title: str,
+    result: BrowserPreparationResult,
+    task: QueuedTask,
+) -> str:
+    company = task.payload.get("company")
+    role = task.payload.get("title")
+    if isinstance(company, str) and isinstance(role, str):
+        job_label = f"{company} - {role}"
+    else:
+        job_label = f"Notion page {task.payload.get('page_id', 'unknown')}"
+    message = f"{title}.\nJob: {job_label}\nState: {result.state}.\n{result.message}"
     if result.unresolved_required_fields:
         message += "\nNeeds input: " + ", ".join(result.unresolved_required_fields)
     return message
