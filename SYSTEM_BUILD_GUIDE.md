@@ -45,6 +45,27 @@ Durable Scheduler (DBOS)
   -> Prep Coach
 ```
 
+## Durable Runtime Migration
+
+The first migration checkpoint replaces the JSON queue with a SQLite queue that
+supports atomic claims, worker leases, retry backoff, dead-letter tasks,
+idempotency keys, and an append-only task event log. JSON paths remain supported
+only for compatibility tests and one-time history import.
+
+DBOS stores durable schedule execution in the same private SQLite database. The
+daily production scout and 15-minute mailbox schedule enqueue idempotent tasks;
+the task worker stays alive and checks for work every second.
+
+Migration commands:
+
+```bash
+uv run --no-editable backend-scout tasks migrate-json
+uv run --no-editable backend-scout tasks worker --enable-schedules
+```
+
+Do not disable the legacy daily and mailbox launchd services until a test run
+and production shadow run of the durable schedules have both succeeded.
+
 ## Repo Files To Keep Updated
 
 - `README.md`: current setup, commands, and project state.

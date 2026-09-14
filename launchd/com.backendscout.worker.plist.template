@@ -9,9 +9,9 @@
     <string>/bin/zsh</string>
     <string>TODO_ABSOLUTE_PROJECT_PATH/scripts/run_task_worker.sh</string>
   </array>
-  <key>StartInterval</key>
-  <integer>60</integer>
   <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
   <string>TODO_ABSOLUTE_PROJECT_PATH/data/logs/worker-launchd.out.log</string>

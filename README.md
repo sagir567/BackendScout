@@ -7,11 +7,15 @@ I am building it for two reasons: to make my job search more systematic, and
 to gain hands-on experience designing reliable AI-agent workflows with real
 tools, state, approvals, and external integrations.
 
+The production runtime is migrating to DBOS workflows backed by local SQLite.
+SQLite owns operational execution state; Notion remains the dashboard I review
+and edit. `ARCHITECTURE_RESEARCH.md` explains the findings and migration design.
+
 ## What It Does
 
 - Imports and normalizes job opportunities.
 - Scores jobs with deterministic, explainable matching rules.
-- Uses Notion as the application tracker and source of workflow state.
+- Uses Notion as the human-facing application dashboard.
 - Sends Telegram job digests with approval controls.
 - Keeps every application action behind explicit approval gates.
 - Generates truthful, job-specific CV drafts after approval and keeps exact

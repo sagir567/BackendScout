@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -39,6 +40,7 @@ from backend_scout.cv_tailoring import (
     generate_tailored_cv,
     validate_tailored_cv_against_evidence,
 )
+from backend_scout.durable_runtime import launch_durable_schedules, stop_durable_runtime
 from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
 from backend_scout.guided_submission import generate_guided_form_plan
 from backend_scout.indeed_email import (
@@ -922,10 +924,50 @@ def tasks_worker_once(
     if task is None:
         console.print("[yellow]No queued tasks.[/yellow]")
         return
+    _process_claimed_task(task, queue_path)
+
+
+@tasks_app.command("worker")
+def tasks_worker(
+    queue_path: Annotated[Path, typer.Option("--queue-path")] = DEFAULT_TASK_QUEUE_PATH,
+    poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.1, max=60)] = 1.0,
+    enable_schedules: Annotated[
+        bool,
+        typer.Option("--enable-schedules", help="Run DBOS daily-scout and mailbox schedules."),
+    ] = False,
+) -> None:
+    """Continuously process durable tasks with lease-based crash recovery."""
+    console.print(f"[green]Durable task worker listening on {queue_path}.[/green]")
+    if enable_schedules:
+        settings = Settings()
+        launch_durable_schedules(queue_path, settings.telegram_default_chat_id)
+    try:
+        while True:
+            task = claim_next_task(queue_path)
+            if task is None:
+                time.sleep(poll_seconds)
+                continue
+            try:
+                _process_claimed_task(task, queue_path)
+            except typer.Exit:
+                continue
+    finally:
+        if enable_schedules:
+            stop_durable_runtime()
+
+
+def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
     completion_message: str | None = None
     try:
         if task.kind == QueuedTaskKind.SCOUT_TODAY:
             collect_run(
+                write_notion=True,
+                send_digest=True,
+                chat_id=task.payload.get("chat_id"),
+                tracker=task.tracker,
+            )
+        elif task.kind == QueuedTaskKind.MAILBOX_SCAN:
+            gmail_watch_once(
                 write_notion=True,
                 send_digest=True,
                 chat_id=task.payload.get("chat_id"),

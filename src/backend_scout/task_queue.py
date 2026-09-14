@@ -23,6 +23,7 @@ LEGACY_TASK_QUEUE_PATH = Path("data/tasks/tasks.json")
 
 class QueuedTaskKind(str, Enum):
     SCOUT_TODAY = "scout_today"
+    MAILBOX_SCAN = "mailbox_scan"
     CV_DRAFT = "cv_draft"
     CONTACT_DISCOVERY = "contact_discovery"
     PORTAL_PREPARE = "portal_prepare"
@@ -142,6 +143,7 @@ def claim_next_task(
                 WHEN 'portal_prepare' THEN 20
                 WHEN 'contact_discovery' THEN 30
                 WHEN 'scout_today' THEN 40
+                WHEN 'mailbox_scan' THEN 50
                 ELSE 100
               END,
               created_at
@@ -187,6 +189,7 @@ def next_queued_task(path: Path = DEFAULT_TASK_QUEUE_PATH) -> QueuedTask | None:
         QueuedTaskKind.PORTAL_PREPARE: 20,
         QueuedTaskKind.CONTACT_DISCOVERY: 30,
         QueuedTaskKind.SCOUT_TODAY: 40,
+        QueuedTaskKind.MAILBOX_SCAN: 50,
     }
     return min(queued, key=lambda task: (priorities[task.kind], task.created_at))
 
