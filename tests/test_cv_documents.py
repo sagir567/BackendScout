@@ -8,6 +8,7 @@ from backend_scout.cv_documents import (
     PdfLayoutMetrics,
     _select_valid_layout,
     create_cv_docx,
+    resolve_libreoffice_executable,
 )
 from backend_scout.cv_tailoring import build_evidence_only_draft
 from backend_scout.models import CareerEvidence, CvStyle, TailoredCv
@@ -88,6 +89,20 @@ def test_create_cv_docx_uses_per_link_label(tmp_path: Path) -> None:
     assert "https://github.com/test-candidate" not in "\n".join(
         paragraph.text for paragraph in document.paragraphs
     )
+
+
+def test_libreoffice_resolver_supports_launchd_without_shell_path(tmp_path: Path) -> None:
+    executable = tmp_path / "soffice"
+    executable.write_text("fixture", encoding="utf-8")
+    executable.chmod(0o755)
+
+    resolved = resolve_libreoffice_executable(
+        configured_path="",
+        lookup=lambda command: None,
+        fallback_paths=[executable],
+    )
+
+    assert resolved == str(executable)
 
 
 def test_layout_selection_requires_one_page_with_at_least_ninety_percent_fill(tmp_path: Path) -> None:

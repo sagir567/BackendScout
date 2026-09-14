@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -191,9 +192,12 @@ def create_cv_docx(
 
 
 def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    soffice = resolve_libreoffice_executable()
     if not soffice:
-        raise RuntimeError("LibreOffice is required to generate a PDF CV draft")
+        raise RuntimeError(
+            "LibreOffice is required to generate a PDF CV draft. Set "
+            "LIBREOFFICE_EXECUTABLE when it is installed outside the launchd PATH."
+        )
 
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="backendscout-lo-") as profile:
@@ -220,6 +224,32 @@ def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> Path:
     if generated_pdf != pdf_path:
         generated_pdf.replace(pdf_path)
     return pdf_path
+
+
+def resolve_libreoffice_executable(
+    configured_path: str | None = None,
+    *,
+    lookup: Callable[[str], str | None] = shutil.which,
+    fallback_paths: Iterable[Path] | None = None,
+) -> str | None:
+    """Find LibreOffice in interactive shells, app bundles, or the Codex runtime."""
+    configured = configured_path or os.environ.get("LIBREOFFICE_EXECUTABLE")
+    if configured and _is_executable_file(Path(configured).expanduser()):
+        return str(Path(configured).expanduser())
+    for command in ("soffice", "libreoffice"):
+        if executable := lookup(command):
+            return executable
+    candidates = fallback_paths or (
+        Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+        Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice",
+        Path.home()
+        / ".cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/soffice",
+    )
+    return next((str(path) for path in candidates if _is_executable_file(path)), None)
+
+
+def _is_executable_file(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
 
 
 def _add_heading(document, text: str, layout_scale: float = 1.0) -> None:
