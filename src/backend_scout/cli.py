@@ -24,6 +24,7 @@ from backend_scout.config import Settings, TrackerName
 from backend_scout.contact_records import require_verified_contact, save_contacts
 from backend_scout.contacts import discover_job_post_contacts, discover_official_page_contacts
 from backend_scout.cv_artifacts import (
+    cv_artifact_paths,
     draft_directory,
     load_manifest,
     next_draft_directory,
@@ -1461,8 +1462,7 @@ def cv_draft(
             if application.status == ApplicationStatus.REVISION_REQUESTED:
                 notion_client.update_application_status(page_id, ApplicationStatus.APPROVED_TO_TAILOR)
             directory = next_draft_directory(settings.cv_archive_root, job.company, page_id)
-            docx_path = directory / "cv_draft.docx"
-            pdf_path = directory / "cv_draft.pdf"
+            docx_path, pdf_path = cv_artifact_paths(directory, evidence.identity.full_name)
             layout_metrics = render_checked_cv_artifacts(evidence, draft, docx_path, pdf_path, style)
             manifest = write_manifest(
                 directory,

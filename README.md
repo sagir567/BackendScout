@@ -320,8 +320,8 @@ For a model-backed draft, configure `OPENAI_API_KEY` and a private
 uv run --no-editable backend-scout cv draft NOTION_PAGE_ID --chat-id TELEGRAM_CHAT_ID
 ```
 
-The command writes `cv_draft.docx`, `cv_draft.pdf`, and a private manifest under
-the configured archive. The PDF message includes an approval button tied to that
+The command writes `<candidate name> CV.docx`, `<candidate name> CV.pdf`, and a
+private manifest under the configured archive. The PDF message includes an approval button tied to that
 exact draft checksum; only that button can advance the job to `approved_to_submit`.
 Every generated CV is checked against a hard presentation contract: exactly one
 page, with visible text reaching at least 90% of the usable page height. A draft

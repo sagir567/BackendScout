@@ -37,6 +37,14 @@ def next_draft_directory(archive_root: Path, company: str, notion_page_id: str) 
     return root / f"v{max(versions, default=0) + 1}"
 
 
+def cv_artifact_paths(directory: Path, candidate_name: str) -> tuple[Path, Path]:
+    """Return professional attachment names without exposing identity in source code."""
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "", candidate_name).strip().rstrip(".")
+    if not safe_name:
+        raise ValueError("Candidate name cannot produce a valid CV filename")
+    return directory / f"{safe_name} CV.docx", directory / f"{safe_name} CV.pdf"
+
+
 def write_manifest(
     directory: Path,
     notion_page_id: str,

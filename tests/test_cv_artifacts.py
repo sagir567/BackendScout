@@ -3,12 +3,25 @@ from pathlib import Path
 import pytest
 
 from backend_scout.cv_artifacts import (
+    cv_artifact_paths,
     draft_directory,
     load_manifest,
     next_draft_directory,
     verify_manifest,
     write_manifest,
 )
+
+
+def test_cv_artifact_paths_use_candidate_name_as_attachment_name(tmp_path: Path) -> None:
+    docx_path, pdf_path = cv_artifact_paths(tmp_path, "Sagi Yosef Azulay")
+
+    assert docx_path.name == "Sagi Yosef Azulay CV.docx"
+    assert pdf_path.name == "Sagi Yosef Azulay CV.pdf"
+
+
+def test_cv_artifact_paths_reject_an_invalid_candidate_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="valid CV filename"):
+        cv_artifact_paths(tmp_path, "///")
 
 
 def test_manifest_binds_a_draft_to_its_exact_docx(tmp_path: Path) -> None:

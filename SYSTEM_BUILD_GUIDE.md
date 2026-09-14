@@ -388,6 +388,9 @@ Current implementation as of 2026-09-01:
   headline under the candidate name and prohibits visible raw URLs.
 - DOCX contact and project links render as labeled external hyperlinks, such as
   `GitHub` and `LinkedIn`, rather than printing full URLs.
+- Attachment filenames are derived from the private candidate identity as
+  `<candidate name> CV.docx` and `<candidate name> CV.pdf`; personal identity is
+  not hardcoded in the public source tree.
 - The final PDF must be exactly one page and use at least 90% of the usable
   page height. BackendScout measures the rendered PDF locally with pdfplumber,
   selects the fullest valid layout candidate, and fails before delivery if it
