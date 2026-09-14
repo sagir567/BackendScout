@@ -1,4 +1,5 @@
 import json
+import re
 from collections import Counter
 from collections.abc import Callable
 from enum import Enum
@@ -30,6 +31,7 @@ class TelegramApprovalAction(str, Enum):
     REQUEST_REVISION = "request_revision"
     SEND_EMAIL = "send_email"
     CONFIRM_WHATSAPP = "confirm_whatsapp"
+    PREPARE_PORTAL = "prepare_portal"
     AUTHORIZE_PORTAL_SUBMIT = "authorize_portal_submit"
     CLOSE = "close"
 
@@ -286,6 +288,51 @@ def build_portal_submit_reply_markup(
     }
 
 
+def build_portal_prepare_reply_markup(
+    page_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Prepare portal",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.PREPARE_PORTAL,
+                        page_id,
+                        tracker=tracker,
+                    ),
+                },
+                {
+                    "text": "Close",
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
+                },
+            ]
+        ]
+    }
+
+
+def build_portal_progress_reply_markup(
+    items: list[ApplicationDigestItem], tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any] | None:
+    rows = [
+        [
+            {
+                "text": f"Prepare {item.company}"[:40],
+                "callback_data": encode_callback_data(
+                    TelegramApprovalAction.PREPARE_PORTAL,
+                    item.notion_page_id,
+                    tracker=tracker,
+                ),
+            }
+        ]
+        for item in items
+        if item.status == ApplicationStatus.APPROVED_TO_SUBMIT
+    ]
+    return {"inline_keyboard": rows} if rows else None
+
+
 def encode_callback_data(
     action: TelegramApprovalAction,
     page_id: str,
@@ -298,6 +345,7 @@ def encode_callback_data(
         TelegramApprovalAction.REQUEST_REVISION: "r",
         TelegramApprovalAction.SEND_EMAIL: "e",
         TelegramApprovalAction.CONFIRM_WHATSAPP: "w",
+        TelegramApprovalAction.PREPARE_PORTAL: "b",
         TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT: "p",
         TelegramApprovalAction.CLOSE: "c",
     }[action]
@@ -322,6 +370,7 @@ def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str, str | N
         "r": TelegramApprovalAction.REQUEST_REVISION,
         "e": TelegramApprovalAction.SEND_EMAIL,
         "w": TelegramApprovalAction.CONFIRM_WHATSAPP,
+        "b": TelegramApprovalAction.PREPARE_PORTAL,
         "p": TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
         "c": TelegramApprovalAction.CLOSE,
     }.get(parts[0])
@@ -405,6 +454,10 @@ def process_telegram_update(
             raise ValueError("Portal submission can only be authorized after browser preparation")
         portal_submission_authorization_handler(page_id, draft_id)
         next_status = application.status
+    elif action == TelegramApprovalAction.PREPARE_PORTAL:
+        if application.status != ApplicationStatus.APPROVED_TO_SUBMIT:
+            raise ValueError("Portal preparation requires an approved CV")
+        next_status = application.status
     else:
         next_status = _status_for_action(action)
     if action in {
@@ -415,7 +468,10 @@ def process_telegram_update(
             raise ValueError("CV review action requires an exact draft artifact")
         manifest = load_manifest(cv_archive_root, application.company, page_id)
         verify_manifest(manifest, draft_id)
-    if action != TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
+    if action not in {
+        TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
+        TelegramApprovalAction.PREPARE_PORTAL,
+    }:
         validate_application_status_transition(application.status, next_status)
     if action == TelegramApprovalAction.SEND_EMAIL:
         if not draft_id or email_delivery_handler is None:
@@ -428,6 +484,7 @@ def process_telegram_update(
     if action not in {
         TelegramApprovalAction.SEND_EMAIL,
         TelegramApprovalAction.CONFIRM_WHATSAPP,
+        TelegramApprovalAction.PREPARE_PORTAL,
         TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT,
     }:
         update_application_status(notion_client, page_id, next_status)
@@ -444,6 +501,16 @@ def process_telegram_update(
     ):
         queued_task_id = task_enqueue_handler(
             QueuedTaskKind.CV_DRAFT,
+            tracker,
+            {"page_id": page_id, "chat_id": chat_id},
+        )
+    elif (
+        action == TelegramApprovalAction.PREPARE_PORTAL
+        and task_enqueue_handler is not None
+        and isinstance(chat_id, int)
+    ):
+        queued_task_id = task_enqueue_handler(
+            QueuedTaskKind.PORTAL_PREPARE,
             tracker,
             {"page_id": page_id, "chat_id": chat_id},
         )
@@ -467,11 +534,18 @@ def process_telegram_update(
                 message_text = (
                     f"Send revision feedback as /revise_{page_id} followed by the changes you want."
                 )
-            elif action == TelegramApprovalAction.APPROVE_TO_SUBMIT:
+            reply_markup = None
+            if action == TelegramApprovalAction.APPROVE_TO_SUBMIT:
                 message_text = (
                     f"CV approved for {application.company}. "
-                    f"Send /prepare_{page_id} when you want BackendScout to prepare the portal."
+                    "Press Prepare portal when you want BackendScout to open and fill the application."
                 )
+                reply_markup = build_portal_prepare_reply_markup(page_id, tracker)
+            elif action == TelegramApprovalAction.PREPARE_PORTAL:
+                if queued_task_id:
+                    message_text = f"Queued portal preparation task {queued_task_id} for {application.company}."
+                else:
+                    message_text = "The portal worker is unavailable. Try /submit_status shortly."
             elif action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
                 if queued_task_id:
                     message_text = (
@@ -483,9 +557,12 @@ def process_telegram_update(
             telegram_client.send_message(
                 chat_id,
                 message_text,
+                reply_markup=reply_markup,
             )
         except ValueError:
             pass
+    if action == TelegramApprovalAction.PREPARE_PORTAL:
+        return "portal_prepare_queued" if queued_task_id else "portal_prepare_unavailable"
     return next_status.value
 
 
@@ -500,6 +577,8 @@ def _status_for_action(action: TelegramApprovalAction) -> ApplicationStatus:
         return ApplicationStatus.SUBMITTED
     if action == TelegramApprovalAction.CONFIRM_WHATSAPP:
         return ApplicationStatus.SUBMITTED
+    if action == TelegramApprovalAction.PREPARE_PORTAL:
+        return ApplicationStatus.APPROVED_TO_SUBMIT
     if action == TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT:
         return ApplicationStatus.SUBMISSION_PREPARED
     if action == TelegramApprovalAction.CLOSE:
@@ -528,6 +607,7 @@ def _process_message(
     feedback = feedback.strip()
     chat = message.get("chat", {})
     chat_id = chat.get("id")
+    reply_markup = None
     if command.casefold() in {"/status", "status"}:
         counts = _application_status_counts(notion_client, data_source_id)
         confirmation = _format_status_counts(counts, tracker)
@@ -560,6 +640,7 @@ def _process_message(
             limit=10,
         )
         confirmation = _format_application_list(f"{tracker.value.title()} jobs ready for portal progress", applications)
+        reply_markup = build_portal_progress_reply_markup(applications, tracker)
         result = "submit_status_sent"
     elif command.casefold() in {"/scout", "/scout_today", "scout"} or text.strip().casefold() in {
         "run scout",
@@ -588,14 +669,21 @@ def _process_message(
         page_id = command.removeprefix("/prepare_")
         if not isinstance(chat_id, int):
             return None
-        task_id = _enqueue_task(
-            task_enqueue_handler,
-            QueuedTaskKind.PORTAL_PREPARE,
-            tracker,
-            {"page_id": page_id, "chat_id": chat_id},
-        )
-        confirmation = f"Queued portal preparation task {task_id}."
-        result = "portal_prepare_queued"
+        if not _is_complete_notion_page_id(page_id):
+            confirmation = (
+                "That portal command contains an incomplete Notion ID, so nothing was queued. "
+                "Send /submit_status and press the correct Prepare button instead."
+            )
+            result = "invalid_portal_prepare_command"
+        else:
+            task_id = _enqueue_task(
+                task_enqueue_handler,
+                QueuedTaskKind.PORTAL_PREPARE,
+                tracker,
+                {"page_id": page_id, "chat_id": chat_id},
+            )
+            confirmation = f"Queued portal preparation task {task_id}."
+            result = "portal_prepare_queued"
     elif command.startswith("/revise_"):
         if not feedback:
             raise ValueError("Revision feedback cannot be empty")
@@ -626,6 +714,7 @@ def _process_message(
         telegram_client.send_message(
             chat_id,
             confirmation,
+            reply_markup=reply_markup,
         )
     return result
 
@@ -639,6 +728,11 @@ def _enqueue_task(
     if task_enqueue_handler is not None:
         return task_enqueue_handler(kind, tracker, payload)
     return enqueue_task(kind, tracker, payload).task_id
+
+
+def _is_complete_notion_page_id(value: str) -> bool:
+    compact = value.replace("-", "")
+    return bool(re.fullmatch(r"[0-9a-fA-F]{32}", compact))
 
 
 def _assert_page_tracker(page: dict[str, Any], data_source_id: str | None) -> None:

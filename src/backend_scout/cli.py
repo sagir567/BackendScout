@@ -138,6 +138,7 @@ from backend_scout.telegram import (
     TelegramClient,
     build_cv_draft_reply_markup,
     build_email_review_reply_markup,
+    build_portal_prepare_reply_markup,
     build_portal_submit_reply_markup,
     build_whatsapp_handoff_reply_markup,
     process_telegram_update,
@@ -975,9 +976,10 @@ def tasks_worker_once(
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
-        mark_task_status(task.task_id, QueuedTaskStatus.FAILED, str(exc), queue_path)
-        _send_task_telegram_message(task, f"Task {task.task_id} failed: {exc}")
-        console.print(f"[red]Task {task.task_id} failed:[/red] {exc}")
+        failure_message = _task_failure_message(exc)
+        mark_task_status(task.task_id, QueuedTaskStatus.FAILED, failure_message, queue_path)
+        _send_task_telegram_message(task, f"Task {task.task_id} failed: {failure_message}")
+        console.print(f"[red]Task {task.task_id} failed:[/red] {failure_message}")
         raise typer.Exit(1) from exc
     mark_task_status(task.task_id, QueuedTaskStatus.DONE, path=queue_path)
     if completion_message:
@@ -1155,6 +1157,52 @@ def telegram_send_digest(
     console.print(
         f"[green]Sent {len(sent_messages)} digest message(s) to chat {chat_id}.[/green]"
     )
+
+
+@telegram_app.command("send-prepare-actions")
+def telegram_send_prepare_actions(
+    chat_id: Annotated[
+        int | None,
+        typer.Option("--chat-id", help="Telegram chat ID; defaults to the configured daily chat."),
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=25)] = 10,
+    tracker: TrackerOption = TrackerName.TEST,
+) -> None:
+    """Resend reliable Prepare portal buttons for CV-approved jobs."""
+    settings = Settings()
+    if not settings.telegram_bot_token or not settings.notion_api_key:
+        console.print("[red]Notion and Telegram configuration are required.[/red]")
+        raise typer.Exit(1)
+    try:
+        data_source_id = _require_tracker_data_source_id(settings, tracker)
+        resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+        with NotionClient(
+            settings.notion_api_key,
+            settings.notion_api_version,
+        ) as notion_client, TelegramClient(settings.telegram_bot_token) as telegram_client:
+            jobs = list_jobs_by_status(
+                notion_client,
+                data_source_id,
+                ApplicationStatus.APPROVED_TO_SUBMIT,
+                page_size=limit,
+            )
+            for job in jobs:
+                telegram_client.send_message(
+                    resolved_chat_id,
+                    f"{job.company} - {job.title}\nThe exact CV is approved and ready for portal preparation.",
+                    reply_markup=build_portal_prepare_reply_markup(
+                        job.notion_page_id,
+                        tracker,
+                    ),
+                )
+    except Exception as exc:
+        console.print("[red]Sending portal actions failed[/red]")
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    if not jobs:
+        console.print("[yellow]No jobs are currently approved_to_submit.[/yellow]")
+        return
+    console.print(f"[green]Sent {len(jobs)} portal preparation action(s).[/green]")
 
 
 @telegram_app.command("peek-updates")
@@ -2211,6 +2259,16 @@ def _payload_string(payload: dict[str, object], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Queued task is missing string payload key: {key}")
     return value
+
+
+def _task_failure_message(exc: Exception) -> str:
+    cause: BaseException = exc
+    seen: set[int] = set()
+    while cause.__cause__ is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        cause = cause.__cause__
+    message = str(cause).strip()
+    return message or cause.__class__.__name__
 
 
 def _payload_int(payload: dict[str, object], key: str) -> int:

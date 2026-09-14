@@ -326,7 +326,7 @@ Current implementation as of 2026-08-31:
   it alive across terminal sessions and write only local ignored logs.
 - The listener processes only authorized callback buttons and the explicit
   `/tailor_<page-id>`, `/revise_<page-id>`, `/draft_<page-id>`,
-  `/prepare_<page-id>`, `/status`, `/jobs`, `/today`, `/submit_status`, and
+  `/prepare_<page-id>` fallback, `/status`, `/jobs`, `/today`, `/submit_status`, and
   `/scout` commands. Free-form messages do not authorize delivery or external
   submission.
 - `/jobs` lists actionable open applications, `/today` lists recent tracked
@@ -334,10 +334,12 @@ Current implementation as of 2026-08-31:
   submit progress.
 - Telegram callback queries are acknowledged immediately before slower Notion,
   Gmail, or browser work starts, so buttons should stop blinking quickly.
-- `Approve tailoring` can create a local queued CV draft task, and `/scout`,
-  `/draft_<page-id>`, and `/prepare_<page-id>` enqueue the corresponding long
-  work. `tasks worker-once` processes one task at a time; the launchd worker
-  runs the same command every minute with a local lock.
+- `Approve tailoring` can create a local queued CV draft task. Approving that
+  exact CV returns an inline `Prepare portal` button, and `/submit_status`
+  resends buttons for every CV-approved job. This avoids Telegram truncating
+  long, hyphenated Notion IDs. The typed `/prepare_<page-id>` fallback validates
+  the complete ID before queueing. `tasks worker-once` processes one task at a
+  time; the launchd worker runs the same command every minute with a local lock.
 - Only configured Telegram user IDs may trigger approval actions.
 - `Approve tailoring` transitions `digest_sent -> approved_to_tailor`.
 - `Close` transitions the current job to `closed` when that transition is valid.
@@ -566,10 +568,16 @@ The execution path is:
    CV checksum, Telegram submit authorization, visible confirmation, proof
    screenshot, and Notion audit gates remain unchanged.
 
-The Telegram path is end to end: `/prepare_<page-id>` queues preparation,
-successful preparation sends the final review card, and `Submit now` queues the
-authorized resume task. Slow browser and model work stays in the worker, so the
-listener acknowledges buttons immediately.
+The Telegram path is end to end: an inline `Prepare portal` callback queues
+preparation, successful preparation sends the final review card, and `Submit
+now` queues the authorized resume task. Slow browser and model work stays in
+the worker, so the listener acknowledges buttons immediately.
+
+Portal task failures unwrap nested CLI exits before being stored or sent to
+Telegram. This keeps the actionable API or validation error instead of the
+uninformative numeric exit code. A regression test covers the previously
+observed short-ID failure (`/prepare_3da71273`), which now queues nothing and
+directs the user to `/submit_status` for reliable buttons.
 
 This follows official OpenAI guidance to use Structured Outputs and keep
 domain-specific side effects inside constrained application tools. Tracing is

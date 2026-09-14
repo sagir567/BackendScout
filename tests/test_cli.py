@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Self
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from backend_scout.cli import app
@@ -629,6 +630,36 @@ def test_tasks_worker_once_runs_queued_portal_prepare(monkeypatch: pytest.Monkey
         )
     ]
     assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
+
+
+def test_tasks_worker_once_reports_wrapped_command_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    queue_path = tmp_path / "tasks.json"
+    enqueue_task(
+        QueuedTaskKind.PORTAL_PREPARE,
+        TrackerName.PRODUCTION,
+        {"page_id": "3da71273-fa0b-81bb-960c-ce61727c4088", "chat_id": 12345},
+        queue_path,
+    )
+
+    def fail_prepare(*args, **kwargs):
+        try:
+            raise ValueError("Notion rejected the complete page lookup")
+        except ValueError as exc:
+            raise typer.Exit(1) from exc
+
+    monkeypatch.setattr("backend_scout.cli.apply_prepare", fail_prepare)
+    monkeypatch.setattr("backend_scout.cli._send_task_telegram_message", lambda *args: None)
+
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(queue_path)])
+
+    assert result.exit_code == 1
+    failed_task = list_tasks(queue_path)[0]
+    assert failed_task.status == QueuedTaskStatus.FAILED
+    assert failed_task.last_error == "Notion rejected the complete page lookup"
+    assert "failed: Notion rejected the complete page lookup" in result.output
 
 
 def test_tasks_worker_once_runs_approved_portal_submit(

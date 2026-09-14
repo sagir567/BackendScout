@@ -250,7 +250,6 @@ processes authorized button actions plus supported commands:
 /submit_status
 /scout
 /draft_NOTION_PAGE_ID
-/prepare_NOTION_PAGE_ID
 /tailor_NOTION_PAGE_ID Emphasize this truthful angle.
 /revise_NOTION_PAGE_ID Make the summary tighter.
 ```
@@ -266,8 +265,10 @@ uv run --no-editable backend-scout tasks worker-once
 ```
 
 With the launchd worker enabled, pressing `Approve tailoring` queues the CV
-draft automatically. After approving the exact CV, send `/prepare_NOTION_PAGE_ID`
-when I want the agent to prepare the browser portal.
+draft automatically. Approving the exact CV now returns a `Prepare portal`
+button that safely carries the full Notion page ID. `/submit_status` resends
+these buttons for all CV-approved jobs. The typed `/prepare_NOTION_PAGE_ID`
+form remains a fallback and rejects incomplete IDs before queueing any work.
 
 Candidate-confirmed portal answers are stored privately per job and tracker.
 The answer store supports both single controls and exact multi-select choices,
@@ -410,8 +411,8 @@ uv run --no-editable backend-scout apply prepare NOTION_PAGE_ID --tracker produc
 Use `--deterministic-only` to disable the optional mapper for a run. Ordinary
 forms that the deterministic adapter completes use no model tokens.
 
-From Telegram, send `/prepare_NOTION_PAGE_ID`. The listener acknowledges it
-immediately and the worker performs preparation. A complete form causes the
+From Telegram, press the `Prepare portal` button sent after CV approval. The
+listener acknowledges it immediately and the worker performs preparation. A complete form causes the
 worker to send the final review card automatically; unresolved fields are sent
 back to the same authorized chat.
 

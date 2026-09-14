@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
@@ -9,6 +12,8 @@ from backend_scout.telegram import (
     TelegramClient,
     build_cv_draft_reply_markup,
     build_digest_reply_markup,
+    build_portal_prepare_reply_markup,
+    build_portal_progress_reply_markup,
     build_portal_submit_reply_markup,
     encode_callback_data,
     format_digest_message,
@@ -94,6 +99,138 @@ def test_build_portal_submit_markup_binds_the_final_action_to_one_request() -> N
     submit_button = markup["inline_keyboard"][0][0]
     assert submit_button["text"] == "Submit now"
     assert submit_button["callback_data"] == "p:p:page-123:approval-1"
+
+
+def test_build_portal_prepare_markup_binds_full_page_id() -> None:
+    page_id = "3da71273-fa0b-81bb-960c-ce61727c4088"
+
+    markup = build_portal_prepare_reply_markup(page_id, TrackerName.PRODUCTION)
+
+    prepare_button = markup["inline_keyboard"][0][0]
+    assert prepare_button["text"] == "Prepare portal"
+    assert prepare_button["callback_data"] == f"b:p:{page_id}"
+
+
+def test_portal_progress_markup_only_includes_cv_approved_jobs() -> None:
+    approved = ApplicationDigestItem(
+        notion_page_id="3da71273-fa0b-81bb-960c-ce61727c4088",
+        company="DOKKA",
+        title="Backend Engineer",
+        status=ApplicationStatus.APPROVED_TO_SUBMIT,
+        source="manual",
+        source_url="https://example.test/jobs/backend",
+    )
+    prepared = approved.model_copy(update={"status": ApplicationStatus.SUBMISSION_PREPARED})
+
+    markup = build_portal_progress_reply_markup([approved, prepared], TrackerName.PRODUCTION)
+
+    assert markup is not None
+    assert len(markup["inline_keyboard"]) == 1
+    assert markup["inline_keyboard"][0][0]["callback_data"] == f"b:p:{approved.notion_page_id}"
+
+
+def test_process_telegram_update_queues_portal_prepare_from_inline_button() -> None:
+    page_id = "3da71273-fa0b-81bb-960c-ce61727c4088"
+    queued = []
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def answer_callback_query(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def edit_message_reply_markup(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text, reply_markup))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def retrieve_page(self, requested_page_id: str) -> dict[str, object]:
+            assert requested_page_id == page_id
+            return _application_page(page_id, ApplicationStatus.APPROVED_TO_SUBMIT)
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {
+            "callback_query": {
+                "id": "callback-prepare",
+                "from": {"id": 12345},
+                "data": f"b:p:{page_id}",
+                "message": {"message_id": 99, "chat": {"id": 12345}},
+            }
+        },
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append(
+            (kind, tracker, payload)
+        )
+        or "task-prepare",
+    )
+
+    assert result == "portal_prepare_queued"
+    assert queued == [
+        (
+            QueuedTaskKind.PORTAL_PREPARE,
+            TrackerName.PRODUCTION,
+            {"page_id": page_id, "chat_id": 12345},
+        )
+    ]
+    assert "task-prepare" in sent_messages[0][1]
+
+
+def test_cv_approval_sends_portal_prepare_button(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_messages = []
+    updated_statuses = []
+
+    class FakeTelegramClient:
+        def answer_callback_query(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def edit_message_reply_markup(self, *args, **kwargs) -> dict[str, object]:
+            return {"ok": True}
+
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text, reply_markup))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def retrieve_page(self, page_id: str) -> dict[str, object]:
+            return _application_page(page_id, ApplicationStatus.CV_DRAFTED)
+
+        def update_application_status(self, page_id: str, status: ApplicationStatus) -> dict[str, object]:
+            updated_statuses.append((page_id, status))
+            return {"id": page_id}
+
+    monkeypatch.setattr(
+        "backend_scout.telegram.load_manifest",
+        lambda *args: SimpleNamespace(draft_id="draft-v3"),
+    )
+    monkeypatch.setattr("backend_scout.telegram.verify_manifest", lambda *args: None)
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {
+            "callback_query": {
+                "id": "callback-cv-approval",
+                "from": {"id": 12345},
+                "data": "s:p:page-123:draft-v3",
+                "message": {"message_id": 99, "chat": {"id": 12345}},
+            }
+        },
+        {12345},
+        cv_archive_root=Path("/private/cv"),
+        tracker=TrackerName.PRODUCTION,
+    )
+
+    assert result == "approved_to_submit"
+    assert updated_statuses == [("page-123", ApplicationStatus.APPROVED_TO_SUBMIT)]
+    assert "Press Prepare portal" in sent_messages[0][1]
+    button = sent_messages[0][2]["inline_keyboard"][0][0]
+    assert button["text"] == "Prepare portal"
+    assert button["callback_data"] == "b:p:page-123"
 
 
 def test_process_telegram_update_authorizes_portal_submit_without_changing_status() -> None:
@@ -735,6 +872,7 @@ def test_process_telegram_message_queues_cv_draft_with_handler() -> None:
 
 def test_process_telegram_message_queues_portal_prepare_with_handler() -> None:
     queued = []
+    page_id = "3da71273-fa0b-81bb-960c-ce61727c4088"
 
     class FakeTelegramClient:
         def send_message(self, *args, **kwargs) -> dict[str, object]:
@@ -746,14 +884,41 @@ def test_process_telegram_message_queues_portal_prepare_with_handler() -> None:
     result = process_telegram_update(
         FakeTelegramClient(),
         FakeNotionClient(),
-        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/prepare_page-123"}},
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": f"/prepare_{page_id}"}},
         {12345},
         tracker=TrackerName.PRODUCTION,
         task_enqueue_handler=lambda kind, tracker, payload: queued.append((kind, tracker, payload)) or "task-123",
     )
 
     assert result == "portal_prepare_queued"
-    assert queued == [(QueuedTaskKind.PORTAL_PREPARE, TrackerName.PRODUCTION, {"page_id": "page-123", "chat_id": 12345})]
+    assert queued == [(QueuedTaskKind.PORTAL_PREPARE, TrackerName.PRODUCTION, {"page_id": page_id, "chat_id": 12345})]
+
+
+def test_process_telegram_message_rejects_truncated_portal_page_id() -> None:
+    queued = []
+    sent_messages = []
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None) -> dict[str, object]:
+            sent_messages.append((chat_id, text, reply_markup))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        pass
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": "/prepare_3da71273"}},
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append((kind, tracker, payload)) or "task-123",
+    )
+
+    assert result == "invalid_portal_prepare_command"
+    assert queued == []
+    assert "nothing was queued" in sent_messages[0][1]
+    assert "/submit_status" in sent_messages[0][1]
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:
