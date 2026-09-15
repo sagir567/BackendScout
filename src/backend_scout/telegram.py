@@ -510,7 +510,12 @@ def process_telegram_update(
         queued_task_id = task_enqueue_handler(
             QueuedTaskKind.CV_DRAFT,
             tracker,
-            {"page_id": page_id, "chat_id": chat_id},
+            {
+                "page_id": page_id,
+                "chat_id": chat_id,
+                "company": application.company,
+                "title": application.title,
+            },
         )
     elif (
         action == TelegramApprovalAction.PREPARE_PORTAL
@@ -547,7 +552,12 @@ def process_telegram_update(
             telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
             message_text = f"Updated {application.company} - {application.title} to {next_status.value}."
             if queued_task_id:
-                message_text += f" Queued CV draft task {queued_task_id}."
+                task_label = {
+                    TelegramApprovalAction.APPROVE_TO_TAILOR: "CV draft",
+                    TelegramApprovalAction.PREPARE_PORTAL: "portal preparation",
+                    TelegramApprovalAction.AUTHORIZE_PORTAL_SUBMIT: "portal submission",
+                }.get(action, "background")
+                message_text += f" Queued {task_label} task {queued_task_id}."
             if action == TelegramApprovalAction.REQUEST_REVISION:
                 message_text = (
                     f"Send revision feedback as /revise_{page_id} followed by the changes you want."
@@ -727,7 +737,19 @@ def _process_message(
         confirmation = f"Saved tailoring note for {application.company}. It will guide the next evidence-only CV draft."
         result = "tailoring_note_saved"
     else:
-        return None
+        if not isinstance(chat_id, int) or task_enqueue_handler is None:
+            return None
+        prompt = feedback if command.casefold() == "/ask" else text.strip()
+        if not prompt:
+            raise ValueError("Send a question after /ask")
+        task_id = _enqueue_task(
+            task_enqueue_handler,
+            QueuedTaskKind.AGENT_CHAT,
+            tracker,
+            {"chat_id": chat_id, "prompt": prompt},
+        )
+        confirmation = f"Thinking about that now. Task: {task_id}."
+        result = "agent_chat_queued"
     if isinstance(chat_id, int):
         telegram_client.send_message(
             chat_id,

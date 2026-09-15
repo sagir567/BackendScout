@@ -65,6 +65,11 @@ Telegram update IDs are journaled in SQLite. Completed updates are idempotent,
 failed updates retain their error, and one bad update no longer stops the rest
 of the fetched batch.
 
+Authorized free-text Telegram messages and `/ask ...` are queued as inexpensive
+agent-chat tasks. The OpenAI Agents SDK stores conversation history in SQLite,
+but the agent has no execution tools: it can explain, ask for facts, and propose
+next steps while deterministic commands retain all state-changing authority.
+
 Migration commands:
 
 ```bash

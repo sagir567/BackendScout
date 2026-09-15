@@ -65,6 +65,8 @@ draft have both been approved.
 - Fast Telegram callback acknowledgements plus `/status` and `/scout` commands
   for a Telegram-first operating loop.
 - Durable Telegram update deduplication and per-update failure isolation.
+- Persistent `/ask` and free-text Telegram conversations backed by the OpenAI
+  Agents SDK; the assistant is advisory and cannot bypass workflow gates.
 - Immutable versioned local releases with an atomic `current` pointer and
   shared private state across upgrades.
 - A local task queue so long work can be requested from Telegram and processed

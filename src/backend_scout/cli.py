@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from backend_scout.agent_gateway import run_agent_chat
 from backend_scout.application_answers import load_application_form_answers
 from backend_scout.candidate_profile import (
     DEFAULT_PROFILE_PATH,
@@ -994,6 +995,18 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
                 send_digest=True,
                 chat_id=task.payload.get("chat_id"),
                 tracker=task.tracker,
+            )
+        elif task.kind == QueuedTaskKind.AGENT_CHAT:
+            settings = Settings()
+            if not settings.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is required for agent chat")
+            chat_id = _payload_int(task.payload, "chat_id")
+            completion_message = run_agent_chat(
+                _payload_string(task.payload, "prompt"),
+                f"telegram-{chat_id}",
+                queue_path,
+                settings.openai_api_key,
+                settings.openai_model_fast,
             )
         elif task.kind == QueuedTaskKind.CV_DRAFT:
             cv_draft(

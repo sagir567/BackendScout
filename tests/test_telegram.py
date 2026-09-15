@@ -618,7 +618,18 @@ def test_approve_tailoring_queues_cv_draft_when_handler_is_configured() -> None:
     )
 
     assert result == "approved_to_tailor"
-    assert queued == [(QueuedTaskKind.CV_DRAFT, TrackerName.TEST, {"page_id": "page-123", "chat_id": 12345})]
+    assert queued == [
+        (
+            QueuedTaskKind.CV_DRAFT,
+            TrackerName.TEST,
+            {
+                "page_id": "page-123",
+                "chat_id": 12345,
+                "company": "Example Cloud",
+                "title": "Backend Engineer",
+            },
+        )
+    ]
     assert "task-123" in sent_messages[0][1]
 
 
@@ -931,6 +942,38 @@ def test_process_telegram_message_rejects_truncated_portal_page_id() -> None:
     assert queued == []
     assert "nothing was queued" in sent_messages[0][1]
     assert "/submit_status" in sent_messages[0][1]
+
+
+def test_free_text_queues_persistent_agent_chat() -> None:
+    queued = []
+    messages = []
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None):
+            messages.append((chat_id, text, reply_markup))
+            return {"ok": True}
+
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        object(),
+        {
+            "message": {
+                "from": {"id": 12345},
+                "chat": {"id": 12345},
+                "text": "How should I improve this application?",
+            }
+        },
+        {12345},
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append(
+            (kind, tracker, payload)
+        )
+        or "agent-1",
+    )
+
+    assert result == "agent_chat_queued"
+    assert queued[0][0] == QueuedTaskKind.AGENT_CHAT
+    assert queued[0][2]["prompt"] == "How should I improve this application?"
+    assert "Thinking about that now" in messages[0][1]
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:

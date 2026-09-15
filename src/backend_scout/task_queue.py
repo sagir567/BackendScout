@@ -24,6 +24,7 @@ LEGACY_TASK_QUEUE_PATH = Path("data/tasks/tasks.json")
 class QueuedTaskKind(str, Enum):
     SCOUT_TODAY = "scout_today"
     MAILBOX_SCAN = "mailbox_scan"
+    AGENT_CHAT = "agent_chat"
     CV_DRAFT = "cv_draft"
     CONTACT_DISCOVERY = "contact_discovery"
     PORTAL_PREPARE = "portal_prepare"
@@ -158,6 +159,7 @@ def claim_next_task(
                 WHEN 'cv_draft' THEN 10
                 WHEN 'portal_prepare' THEN 20
                 WHEN 'contact_discovery' THEN 30
+                WHEN 'agent_chat' THEN 35
                 WHEN 'scout_today' THEN 40
                 WHEN 'mailbox_scan' THEN 50
                 ELSE 100
@@ -210,6 +212,7 @@ def next_queued_task(
         QueuedTaskKind.CV_DRAFT: 10,
         QueuedTaskKind.PORTAL_PREPARE: 20,
         QueuedTaskKind.CONTACT_DISCOVERY: 30,
+        QueuedTaskKind.AGENT_CHAT: 35,
         QueuedTaskKind.SCOUT_TODAY: 40,
         QueuedTaskKind.MAILBOX_SCAN: 50,
     }
