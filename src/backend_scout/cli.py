@@ -898,11 +898,12 @@ def tailscale_check() -> None:
 @tasks_app.command("list")
 def tasks_list(
     queue_path: Annotated[
-        Path,
+        Path | None,
         typer.Option("--queue-path", help="Ignored local task queue JSON path."),
-    ] = DEFAULT_TASK_QUEUE_PATH,
+    ] = None,
 ) -> None:
     """List queued and recently processed Telegram-first tasks."""
+    queue_path = queue_path or Settings().workflow_database_path
     tasks = list_tasks(queue_path)
     table = Table(title="BackendScout Tasks")
     table.add_column("ID")
@@ -924,12 +925,13 @@ def tasks_list(
 @tasks_app.command("worker-once")
 def tasks_worker_once(
     queue_path: Annotated[
-        Path,
+        Path | None,
         typer.Option("--queue-path", help="Ignored local task queue JSON path."),
-    ] = DEFAULT_TASK_QUEUE_PATH,
+    ] = None,
     lane: Annotated[str, typer.Option("--lane", help="Task lane: general, browser, or all.")] = "all",
 ) -> None:
     """Process one queued task and exit."""
+    queue_path = queue_path or Settings().workflow_database_path
     task = claim_next_task(queue_path, allowed_kinds=_worker_lane_kinds(lane))
     if task is None:
         console.print("[yellow]No queued tasks.[/yellow]")
@@ -950,7 +952,7 @@ def _worker_lane_kinds(lane: str) -> frozenset[QueuedTaskKind] | None:
 
 @tasks_app.command("worker")
 def tasks_worker(
-    queue_path: Annotated[Path, typer.Option("--queue-path")] = DEFAULT_TASK_QUEUE_PATH,
+    queue_path: Annotated[Path | None, typer.Option("--queue-path")] = None,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.1, max=60)] = 1.0,
     enable_schedules: Annotated[
         bool,
@@ -959,6 +961,7 @@ def tasks_worker(
     lane: Annotated[str, typer.Option("--lane", help="Task lane: general, browser, or all.")] = "all",
 ) -> None:
     """Continuously process durable tasks with lease-based crash recovery."""
+    queue_path = queue_path or Settings().workflow_database_path
     allowed_kinds = _worker_lane_kinds(lane)
     console.print(f"[green]Durable {lane} task worker listening on {queue_path}.[/green]")
     if enable_schedules:
@@ -1466,7 +1469,12 @@ def telegram_poll_once(
                 task_tracker: TrackerName,
                 payload: dict[str, object],
             ) -> str:
-                return enqueue_task(kind, task_tracker, payload).task_id
+                return enqueue_task(
+                    kind,
+                    task_tracker,
+                    payload,
+                    settings.workflow_database_path,
+                ).task_id
 
             updates = telegram_client.get_updates(offset=offset, timeout=timeout_seconds)
             processed_actions = []
