@@ -17,8 +17,6 @@ def test_selected_services_all_uses_runtime_order() -> None:
         LaunchdService.TELEGRAM,
         LaunchdService.WORKER,
         LaunchdService.BROWSER,
-        LaunchdService.MAILBOX,
-        LaunchdService.DAILY,
     ]
 
 

@@ -29,8 +29,6 @@ def selected_services(service: LaunchdService) -> list[LaunchdService]:
             LaunchdService.TELEGRAM,
             LaunchdService.WORKER,
             LaunchdService.BROWSER,
-            LaunchdService.MAILBOX,
-            LaunchdService.DAILY,
         ]
     return [service]
 

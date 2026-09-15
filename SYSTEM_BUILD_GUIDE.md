@@ -77,8 +77,9 @@ uv run --no-editable backend-scout tasks migrate-json
 uv run --no-editable backend-scout tasks worker --enable-schedules
 ```
 
-Do not disable the legacy daily and mailbox launchd services until a test run
-and production shadow run of the durable schedules have both succeeded.
+The legacy daily and mailbox LaunchAgents are retained as manual compatibility
+options but are no longer part of `launchd all`. DBOS owns both schedules in the
+normal runtime, preventing duplicate morning and inbox runs.
 
 The browser migration uses one profile directory per Notion page and records a
 prepared-page fingerprint, CV checksum, adapter name, and review screenshot.

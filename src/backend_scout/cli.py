@@ -800,7 +800,9 @@ def launchd_uninstall(
 @launchd_app.command("status")
 def launchd_status(agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR) -> None:
     """Show whether BackendScout launchd services are installed and loaded."""
-    for selected in selected_services(LaunchdService.ALL):
+    for selected in LaunchdService:
+        if selected == LaunchdService.ALL:
+            continue
         installed = launchd_service_installed(agent_dir, selected)
         loaded = launchd_service_loaded(selected)
         if installed and loaded:
