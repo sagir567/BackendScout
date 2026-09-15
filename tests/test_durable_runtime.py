@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import UTC, datetime
 
 from backend_scout import durable_runtime
@@ -35,3 +36,24 @@ def test_scheduled_mailbox_has_interval_idempotency_key(monkeypatch) -> None:
     )
 
     assert captured[0][-1] == "schedule:mailbox:2026-09-15T08:15:00+00:00"
+
+
+def test_durable_schedule_statuses_reads_persisted_states(tmp_path) -> None:
+    database_path = tmp_path / "runtime.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE workflow_schedules (schedule_name TEXT, status TEXT)"
+        )
+        connection.executemany(
+            "INSERT INTO workflow_schedules VALUES (?, ?)",
+            [("daily", "ACTIVE"), ("mailbox", "PAUSED")],
+        )
+
+    assert durable_runtime.durable_schedule_statuses(database_path) == {
+        "daily": "ACTIVE",
+        "mailbox": "PAUSED",
+    }
+
+
+def test_durable_schedule_statuses_handles_missing_database(tmp_path) -> None:
+    assert durable_runtime.durable_schedule_statuses(tmp_path / "missing.sqlite3") == {}

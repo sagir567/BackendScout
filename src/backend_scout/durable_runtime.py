@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -95,3 +96,18 @@ def launch_durable_schedules(database_path: Path, chat_id: int | None) -> None:
 
 def stop_durable_runtime() -> None:
     DBOS.destroy(workflow_completion_timeout_sec=10)
+
+
+def durable_schedule_statuses(database_path: Path) -> dict[str, str]:
+    """Read persisted DBOS schedule states without starting another scheduler."""
+    path = database_path.expanduser().resolve()
+    if not path.is_file():
+        return {}
+    try:
+        with sqlite3.connect(path) as connection:
+            rows = connection.execute(
+                "SELECT schedule_name, status FROM workflow_schedules"
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {str(name): str(status) for name, status in rows}

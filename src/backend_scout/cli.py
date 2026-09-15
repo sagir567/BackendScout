@@ -44,7 +44,13 @@ from backend_scout.cv_tailoring import (
     generate_tailored_cv,
     validate_tailored_cv_against_evidence,
 )
-from backend_scout.durable_runtime import launch_durable_schedules, stop_durable_runtime
+from backend_scout.durable_runtime import (
+    DAILY_SCHEDULE_NAME,
+    MAILBOX_SCHEDULE_NAME,
+    durable_schedule_statuses,
+    launch_durable_schedules,
+    stop_durable_runtime,
+)
 from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
 from backend_scout.guided_submission import generate_guided_form_plan
 from backend_scout.inbox_store import begin_inbox_event, finish_inbox_event
@@ -933,6 +939,11 @@ def runtime_doctor(
         elif not launchd_service_loaded(service):
             problems.append(f"{service.value} LaunchAgent is not loaded")
 
+    schedule_statuses = durable_schedule_statuses(configured_paths["WORKFLOW_DATABASE_PATH"])
+    for schedule_name in (DAILY_SCHEDULE_NAME, MAILBOX_SCHEDULE_NAME):
+        if schedule_statuses.get(schedule_name) != "ACTIVE":
+            problems.append(f"DBOS schedule {schedule_name} is not active")
+
     if problems:
         console.print("[red]Runtime health check failed[/red]")
         for problem in problems:
@@ -942,6 +953,7 @@ def runtime_doctor(
     console.print("[green]Runtime health check OK[/green]")
     console.print(f"Canonical CV archive: {configured_paths['CV_ARCHIVE_ROOT']}")
     console.print("Telegram, task worker, and browser worker are installed and loaded.")
+    console.print("Daily production scout and mailbox schedules are active.")
 
 
 @tailscale_app.command("check")
