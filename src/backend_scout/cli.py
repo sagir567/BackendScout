@@ -1514,15 +1514,23 @@ def telegram_poll_once(
                     httpx.HTTPError,
                 ) as exc:
                     failed_updates += 1
+                    failure_message = _task_failure_message(exc)
                     finish_inbox_event(
                         settings.workflow_database_path,
                         "telegram",
                         event_id,
-                        error=_task_failure_message(exc),
+                        error=failure_message,
+                    )
+                    _send_telegram_update_failure(
+                        telegram_client,
+                        update,
+                        settings.telegram_allowed_user_id_set,
+                        event_id,
+                        failure_message,
                     )
                     console.print(
                         f"[red]Telegram update {event_id} failed:[/red] "
-                        f"{_task_failure_message(exc)}"
+                        f"{failure_message}"
                     )
     except Exception as exc:
         console.print("[red]Telegram polling failed[/red]")
@@ -2442,6 +2450,32 @@ def _send_task_telegram_message(task: QueuedTask, message: str) -> None:
             telegram_client.send_message(chat_id, message)
     except (httpx.HTTPError, OSError, ValueError):
         console.print(f"[yellow]Could not send Telegram result for task {task.task_id}.[/yellow]")
+
+
+def _send_telegram_update_failure(
+    telegram_client: TelegramClient,
+    update: dict[str, object],
+    allowed_user_ids: set[int],
+    event_id: str,
+    failure_message: str,
+) -> None:
+    message = update.get("callback_query") or update.get("message")
+    if not isinstance(message, dict):
+        return
+    sender = message.get("from")
+    callback_message = message.get("message")
+    chat = callback_message.get("chat") if isinstance(callback_message, dict) else message.get("chat")
+    user_id = sender.get("id") if isinstance(sender, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not isinstance(user_id, int) or user_id not in allowed_user_ids or not isinstance(chat_id, int):
+        return
+    try:
+        telegram_client.send_message(
+            chat_id,
+            f"I could not process Telegram update {event_id}: {failure_message}",
+        )
+    except (httpx.HTTPError, OSError, ValueError):
+        console.print(f"[yellow]Could not report failed Telegram update {event_id}.[/yellow]")
 
 
 def _resolve_daily_chat_id(settings: Settings, explicit_chat_id: int | None) -> int:
