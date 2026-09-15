@@ -71,21 +71,25 @@ def launch_durable_schedules(database_path: Path, chat_id: int | None) -> None:
     )
     DBOS.launch()
     context = {"database_path": str(database_path), "chat_id": chat_id}
-    DBOS.create_schedule(
-        schedule_name=DAILY_SCHEDULE_NAME,
-        workflow_fn=scheduled_production_scout,
-        schedule="0 8 * * *",
-        context=context,
-        automatic_backfill=True,
-        cron_timezone="Asia/Hebron",
-    )
-    DBOS.create_schedule(
-        schedule_name=MAILBOX_SCHEDULE_NAME,
-        workflow_fn=scheduled_production_mailbox,
-        schedule="*/15 * * * *",
-        context=context,
-        automatic_backfill=False,
-        cron_timezone="Asia/Hebron",
+    DBOS.apply_schedules(
+        [
+            {
+                "schedule_name": DAILY_SCHEDULE_NAME,
+                "workflow_fn": scheduled_production_scout,
+                "schedule": "0 8 * * *",
+                "context": context,
+                "automatic_backfill": True,
+                "cron_timezone": "Asia/Hebron",
+            },
+            {
+                "schedule_name": MAILBOX_SCHEDULE_NAME,
+                "workflow_fn": scheduled_production_mailbox,
+                "schedule": "*/15 * * * *",
+                "context": context,
+                "automatic_backfill": False,
+                "cron_timezone": "Asia/Hebron",
+            },
+        ]
     )
 
 
