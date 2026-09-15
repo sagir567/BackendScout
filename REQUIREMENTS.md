@@ -221,12 +221,15 @@ and loads all four services from there:
 ```bash
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime deploy --load
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime status
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime doctor
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 ```
 
-The status command distinguishes an installed plist from a service that is
-actually loaded. The manual steps below remain useful for troubleshooting one
-service in isolation.
+The doctor command verifies that interactive commands and background services
+share the same private CV archive, browser profile, proof directory, and SQLite
+database. The launchd status command distinguishes an installed plist from a
+service that is actually loaded. The manual steps below remain useful for
+troubleshooting one service in isolation.
 
 The runtime directory and its `.env` are restricted to the current user. Code
 and private config are refreshed on each deploy; runtime `data/` is preserved

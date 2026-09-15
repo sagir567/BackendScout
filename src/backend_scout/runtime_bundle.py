@@ -110,6 +110,25 @@ def runtime_private_path(runtime_root: Path, relative_path: str) -> Path:
     return runtime_root.expanduser().absolute() / relative_path
 
 
+def source_runtime_env_overrides(
+    source_root: Path,
+    runtime_root: Path = DEFAULT_RUNTIME_ROOT,
+) -> dict[str, str]:
+    """Return canonical private-state paths for a deployed source checkout."""
+    manifest = runtime_manifest(runtime_root)
+    if manifest is None:
+        return {}
+    deployed_source = manifest.get("source_root")
+    if not isinstance(deployed_source, str):
+        return {}
+    if Path(deployed_source).expanduser().resolve() != source_root.expanduser().resolve():
+        return {}
+    return {
+        key: str(runtime_private_path(runtime_root, relative_path))
+        for key, relative_path in RUNTIME_ENV_OVERRIDES.items()
+    }
+
+
 def _rewrite_runtime_env(path: Path, runtime_root: Path) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     overrides = {

@@ -102,6 +102,12 @@ release, and atomically moves the `current` symlink only after the files are
 complete. LaunchAgents execute through `current`, eliminating source/runtime
 drift while preserving rollback-ready older releases.
 
+When the source checkout has an active deployment, the CLI activates the same
+canonical `private/` paths before loading settings. This prevents a CV created
+interactively from being invisible to the Telegram callback worker. Run
+`backend-scout system runtime doctor` after deployment; it verifies all four
+state paths plus the loaded Telegram, general-task, and browser workers.
+
 ## Repo Files To Keep Updated
 
 - `README.md`: current setup, commands, and project state.

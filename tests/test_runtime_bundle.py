@@ -4,6 +4,7 @@ from backend_scout.runtime_bundle import (
     active_runtime_path,
     deploy_runtime_files,
     runtime_manifest,
+    source_runtime_env_overrides,
 )
 
 
@@ -44,3 +45,19 @@ def test_deploy_runtime_rewrites_private_paths_and_preserves_state(tmp_path: Pat
     assert second_release != first_release
     assert first_release.is_dir()
     assert runtime_manifest(runtime)["active_path"] == str(second_release)
+
+
+def test_source_runtime_env_overrides_only_matches_deployed_source(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source.mkdir()
+    _source_tree(source)
+    deploy_runtime_files(source, runtime)
+
+    overrides = source_runtime_env_overrides(source, runtime)
+
+    assert overrides["CV_ARCHIVE_ROOT"] == str(runtime / "private" / "cv_archive")
+    assert overrides["WORKFLOW_DATABASE_PATH"] == str(
+        runtime / "private" / "backendscout.sqlite3"
+    )
+    assert source_runtime_env_overrides(tmp_path / "other", runtime) == {}

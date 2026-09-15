@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -118,6 +119,7 @@ from backend_scout.runtime_bundle import (
     deploy_runtime_files,
     runtime_manifest,
     runtime_private_path,
+    source_runtime_env_overrides,
 )
 from backend_scout.scouting_preferences import (
     DEFAULT_SCOUTING_PREFERENCES_PATH,
@@ -185,6 +187,13 @@ tailscale_app = typer.Typer(help="Inspect the private Tailscale verification han
 console = Console()
 TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
 DEFAULT_LAUNCHD_AGENT_DIR = Path.home() / "Library" / "LaunchAgents"
+
+
+@app.callback()
+def activate_canonical_runtime_state() -> None:
+    """Use one private state root from both the source CLI and background agents."""
+    for key, value in source_runtime_env_overrides(Path.cwd()).items():
+        os.environ[key] = value
 
 ProfilePathOption = Annotated[
     Path,
@@ -880,6 +889,59 @@ def runtime_status(
     console.print(f"[green]Private runtime is deployed:[/green] {runtime_root}")
     console.print(f"Source: {manifest.get('source_root', 'unknown')}")
     console.print(f"Deployed at: {manifest.get('deployed_at', 'unknown')}")
+
+
+@runtime_app.command("doctor")
+def runtime_doctor(
+    runtime_root: Annotated[
+        Path,
+        typer.Option("--runtime-root", help="Private runtime outside protected Documents folders."),
+    ] = DEFAULT_RUNTIME_ROOT,
+    agent_dir: LaunchdAgentDirOption = DEFAULT_LAUNCHD_AGENT_DIR,
+) -> None:
+    """Verify canonical state paths and services required for unattended runs."""
+    manifest = runtime_manifest(runtime_root)
+    if manifest is None:
+        console.print(f"[red]Runtime is not deployed:[/red] {runtime_root}")
+        raise typer.Exit(1)
+
+    problems: list[str] = []
+    expected_source = Path.cwd().resolve()
+    deployed_source = Path(str(manifest.get("source_root", ""))).expanduser().resolve()
+    if deployed_source != expected_source:
+        problems.append(f"runtime source is {deployed_source}, expected {expected_source}")
+
+    settings = Settings()
+    expected_paths = {
+        key: Path(value).resolve()
+        for key, value in source_runtime_env_overrides(expected_source, runtime_root).items()
+    }
+    configured_paths = {
+        "CV_ARCHIVE_ROOT": settings.cv_archive_root.expanduser().resolve(),
+        "BROWSER_PROFILE_ROOT": settings.browser_profile_root.expanduser().resolve(),
+        "SUBMISSION_PROOF_ROOT": settings.submission_proof_root.expanduser().resolve(),
+        "WORKFLOW_DATABASE_PATH": settings.workflow_database_path.expanduser().resolve(),
+    }
+    for key, expected in expected_paths.items():
+        configured = configured_paths[key]
+        if configured != expected:
+            problems.append(f"{key} is {configured}, expected {expected}")
+
+    for service in (LaunchdService.TELEGRAM, LaunchdService.WORKER, LaunchdService.BROWSER):
+        if not launchd_service_installed(agent_dir, service):
+            problems.append(f"{service.value} LaunchAgent is not installed")
+        elif not launchd_service_loaded(service):
+            problems.append(f"{service.value} LaunchAgent is not loaded")
+
+    if problems:
+        console.print("[red]Runtime health check failed[/red]")
+        for problem in problems:
+            console.print(f"- {problem}")
+        raise typer.Exit(1)
+
+    console.print("[green]Runtime health check OK[/green]")
+    console.print(f"Canonical CV archive: {configured_paths['CV_ARCHIVE_ROOT']}")
+    console.print("Telegram, task worker, and browser worker are installed and loaded.")
 
 
 @tailscale_app.command("check")

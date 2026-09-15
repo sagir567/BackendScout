@@ -212,12 +212,18 @@ paths, preserves operational state across redeployments, and loads all agents:
 ```bash
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime deploy --load
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime status
+uv --cache-dir .uv-cache run --no-editable backend-scout system runtime doctor
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 ```
 
 Every service runs through the same project-local `.venv` and `uv` cache.
 This Git repository remains the development source of truth; rerun the deploy
 command after a tested code or private-config change.
+
+Once a checkout is deployed, commands run from that checkout adopt the same
+canonical private archive, browser profile, proof directory, and SQLite database
+as the background agents. `runtime doctor` checks this path contract and confirms
+that the Telegram, task, and browser workers are installed and loaded.
 
 ## Repository Evidence Scanner
 
