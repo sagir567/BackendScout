@@ -178,6 +178,16 @@ def test_linkedin_sign_in_wall_is_not_treated_as_application_form() -> None:
     assert portal_authentication_required(Page())
 
 
+def test_linkedin_signup_redirect_is_an_authentication_gate() -> None:
+    class Page:
+        url = "https://www.linkedin.com/signup/cold-join?session_redirect=/jobs/view/123"
+
+        def locator(self, _selector: str):
+            raise AssertionError("URL detection should happen before DOM inspection")
+
+    assert portal_authentication_required(Page())
+
+
 def test_human_verification_wait_keeps_polling_until_challenge_clears() -> None:
     checks = iter([True, True, False])
     delays: list[float] = []

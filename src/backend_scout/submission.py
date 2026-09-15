@@ -259,9 +259,13 @@ def prepare_visible_submission(
 
 
 def portal_authentication_required(page) -> bool:
-    host = (urlparse(page.url).hostname or "").casefold()
+    parsed = urlparse(page.url)
+    host = (parsed.hostname or "").casefold()
     if "linkedin.com" not in host:
         return False
+    path = parsed.path.casefold()
+    if any(marker in path for marker in ("/login", "/signup", "/uas/", "/checkpoint/")):
+        return True
     selectors = (
         "#base-contextual-sign-in-modal",
         ".contextual-sign-in-modal",
