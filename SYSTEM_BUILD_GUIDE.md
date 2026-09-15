@@ -19,8 +19,10 @@ BackendScout is a job-search agent for backend engineering roles. It should:
 ## Core Design Principles
 
 - Human approval is part of the architecture, not an afterthought.
-- SQLite is the operational source of truth for workflow execution. Notion is
-  the human-facing dashboard and synchronized projection.
+- SQLite is the operational source of truth for task execution, schedules,
+  inbox idempotency, and agent sessions. During the staged migration, Notion
+  remains the business-status tracker; an outbox-driven projection is the next
+  storage migration, not a capability claimed by the current release.
 - The CV archive stays outside this repo and is configured locally through
   `CV_ARCHIVE_ROOT`.
 - The system must be truthful and interview-explainable.
