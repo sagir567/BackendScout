@@ -90,6 +90,12 @@ unknown portal can be prepared for review but must not use a generic submit
 button. A click without verified confirmation enters `submission_unknown` and
 is never retried automatically.
 
+LinkedIn public job pages use an explicit authentication checkpoint. A visible
+sign-in wall is reported as `linkedin_authentication`; hidden login controls
+are never treated as application fields. Once the candidate has signed in
+within the per-job browser profile, the adapter recognizes only an exact final
+`Submit application` control and a visible delivery confirmation.
+
 Runtime deployment creates an immutable directory under `releases/`, links its
 `data` and `private` paths to shared state, installs dependencies inside that
 release, and atomically moves the `current` symlink only after the files are

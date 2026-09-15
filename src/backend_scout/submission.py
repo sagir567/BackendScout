@@ -230,6 +230,20 @@ def prepare_visible_submission(
                 "awaiting_human_verification", (), "Human verification detected; complete it through Chrome Remote Desktop."
             )
 
+        if portal_authentication_required(page):
+            result = BrowserPreparationResult(
+                "submission_prepared",
+                (),
+                "The application portal requires a one-time LinkedIn sign-in before the form can be prepared.",
+                ("linkedin_authentication",),
+                page.url,
+            )
+            result = _save_prepared_checkpoint(
+                profile_root, application_url, page, approved_attachment, result
+            )
+            context.close()
+            return result
+
         result = _fill_safe_fields(
             page,
             evidence,
@@ -242,6 +256,26 @@ def prepare_visible_submission(
         )
         context.close()
     return result
+
+
+def portal_authentication_required(page) -> bool:
+    host = (urlparse(page.url).hostname or "").casefold()
+    if "linkedin.com" not in host:
+        return False
+    selectors = (
+        "#base-contextual-sign-in-modal",
+        ".contextual-sign-in-modal",
+        '[data-test-modal-id="public_jobs_contextual-sign-in-modal"]',
+        "form.sign-in-form",
+    )
+    for selector in selectors:
+        try:
+            locator = page.locator(selector).first
+            if locator.count() and locator.is_visible():
+                return True
+        except PlaywrightError:
+            continue
+    return False
 
 
 def _fill_safe_fields(

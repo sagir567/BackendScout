@@ -25,6 +25,7 @@ from backend_scout.submission import (
     contains_human_verification,
     is_explicit_apply_now_label,
     is_submission_confirmation,
+    portal_authentication_required,
     redirected_from_job_to_home,
     resolve_apply_now_url,
     wait_for_human_verification_clear,
@@ -153,6 +154,28 @@ def test_submission_detects_captcha_without_attempting_to_solve_it() -> None:
     assert not contains_human_verification("", ["https://www.google.com/recaptcha/api2/anchor"])
     assert contains_human_verification("", ["https://captcha.example/challenge"])
     assert not contains_human_verification("Application form")
+
+
+def test_linkedin_sign_in_wall_is_not_treated_as_application_form() -> None:
+    class Locator:
+        @property
+        def first(self):
+            return self
+
+        def count(self) -> int:
+            return 1
+
+        def is_visible(self) -> bool:
+            return True
+
+    class Page:
+        url = "https://il.linkedin.com/jobs/view/123"
+
+        def locator(self, selector: str):
+            assert selector
+            return Locator()
+
+    assert portal_authentication_required(Page())
 
 
 def test_human_verification_wait_keeps_polling_until_challenge_clears() -> None:

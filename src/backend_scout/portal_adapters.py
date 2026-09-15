@@ -38,6 +38,20 @@ ADAPTERS = (
         ("application submitted", "thanks for applying", "thank you for applying"),
     ),
     PortalAdapter(
+        "linkedin-easy-apply",
+        ("linkedin.com",),
+        (
+            'button[aria-label="Submit application"]',
+            'button[aria-label="שליחת הבקשה"]',
+        ),
+        (
+            "application was sent",
+            "application submitted",
+            "your application was sent",
+            "הבקשה נשלחה",
+        ),
+    ),
+    PortalAdapter(
         "test-fixture",
         ("example.com", "127.0.0.1", "localhost"),
         ('button[type="submit"]', 'input[type="submit"]'),
