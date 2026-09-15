@@ -271,6 +271,7 @@ def portal_authentication_required(page) -> bool:
         ".contextual-sign-in-modal",
         '[data-test-modal-id="public_jobs_contextual-sign-in-modal"]',
         "form.sign-in-form",
+        'input[type="password"]',
     )
     for selector in selectors:
         try:

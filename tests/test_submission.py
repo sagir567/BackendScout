@@ -188,6 +188,30 @@ def test_linkedin_signup_redirect_is_an_authentication_gate() -> None:
     assert portal_authentication_required(Page())
 
 
+def test_linkedin_visible_password_field_is_an_authentication_gate() -> None:
+    class Locator:
+        def __init__(self, present: bool) -> None:
+            self.present = present
+
+        @property
+        def first(self):
+            return self
+
+        def count(self) -> int:
+            return int(self.present)
+
+        def is_visible(self) -> bool:
+            return self.present
+
+    class Page:
+        url = "https://il.linkedin.com/jobs/view/123"
+
+        def locator(self, selector: str):
+            return Locator(selector == 'input[type="password"]')
+
+    assert portal_authentication_required(Page())
+
+
 def test_human_verification_wait_keeps_polling_until_challenge_clears() -> None:
     checks = iter([True, True, False])
     delays: list[float] = []
