@@ -8,6 +8,7 @@ from backend_scout.gmail import (
     GMAIL_READONLY_SCOPE,
     GMAIL_SCOPES,
     GMAIL_SEND_SCOPE,
+    gmail_reauthorization_required,
     list_recent_messages,
     send_email,
 )
@@ -63,6 +64,13 @@ def test_gmail_send_uses_reviewed_recipient_body_and_attachment(
 def test_gmail_scopes_include_send_and_readonly() -> None:
     assert GMAIL_SEND_SCOPE in GMAIL_SCOPES
     assert GMAIL_READONLY_SCOPE in GMAIL_SCOPES
+
+
+def test_gmail_reauthorization_required_detects_revoked_refresh_token() -> None:
+    error = RuntimeError("invalid_grant: Token has been expired or revoked.")
+
+    assert gmail_reauthorization_required(error)
+    assert not gmail_reauthorization_required(RuntimeError("network timeout"))
 
 
 def test_list_recent_messages_reads_safe_metadata(monkeypatch) -> None:

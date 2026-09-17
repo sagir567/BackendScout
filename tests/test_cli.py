@@ -753,6 +753,81 @@ def test_gmail_watch_once_prints_preview(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert "assessment" in result.output
 
 
+def test_gmail_watch_once_ignores_commercial_offer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "backend_scout.cli.list_recent_messages",
+        lambda query, max_results: [
+            GmailMessageSummary(
+                message_id="commercial-1",
+                thread_id="thread-1",
+                from_header="offers@visa.com",
+                subject="A special Visa offer",
+                date_header="Wed, 9 Sep 2026 08:00:00 +0300",
+                snippet="Save on your next card purchase.",
+            )
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["gmail", "watch-once", "--state-path", str(tmp_path / "mailbox.json")],
+    )
+
+    assert result.exit_code == 0
+    assert "no relevant application messages" in result.output
+    assert "Mailbox Application Updates" not in result.output
+
+
+def test_gmail_watch_once_reports_expired_oauth_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sent_messages: list[str] = []
+
+    class FakeSettings:
+        telegram_bot_token = "telegram-token"
+        telegram_default_chat_id = 12345
+
+    class FakeTelegramClient:
+        def __init__(self, _token: str) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def send_message(self, _chat_id: int, message: str) -> dict[str, object]:
+            sent_messages.append(message)
+            return {"ok": True}
+
+    def fail_fetch(_query: str, _max_results: int) -> list[GmailMessageSummary]:
+        raise RuntimeError("invalid_grant: Token has been expired or revoked.")
+
+    monkeypatch.setattr("backend_scout.cli.Settings", FakeSettings)
+    monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+    monkeypatch.setattr("backend_scout.cli.list_recent_messages", fail_fetch)
+    command = [
+        "gmail",
+        "watch-once",
+        "--send-digest",
+        "--state-path",
+        str(tmp_path / "mailbox.json"),
+    ]
+
+    first = runner.invoke(app, command)
+    second = runner.invoke(app, command)
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    assert len(sent_messages) == 1
+    assert "authorization expired" in sent_messages[0]
+
+
 def test_gmail_watch_once_writeback_updates_status_and_audit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

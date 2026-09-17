@@ -39,6 +39,14 @@ def gmail_connected() -> bool:
     return keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT) is not None
 
 
+def gmail_reauthorization_required(exc: Exception) -> bool:
+    """Return whether Google rejected the stored refresh credentials."""
+    message = str(exc).casefold()
+    return "invalid_grant" in message and (
+        "expired" in message or "revoked" in message or "bad request" in message
+    )
+
+
 def send_email(recipient: str, subject: str, body: str, attachment_path: Path) -> str:
     service = _authorized_gmail_service()
     message = EmailMessage()

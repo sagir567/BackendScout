@@ -12,7 +12,44 @@ from backend_scout.models import ApplicationDigestItem, ApplicationStatus
 
 DEFAULT_MAILBOX_QUERY = (
     'newer_than:30d (subject:(application OR applied OR interview OR assessment OR "coding challenge" '
-    'OR offer OR rejection) OR from:(greenhouse.io OR lever.co OR comeet.com OR ashbyhq.com))'
+    'OR "job offer" OR "offer letter" OR rejection OR recruiter OR hiring OR candidate) '
+    'OR from:(greenhouse.io OR lever.co OR comeet.com OR ashbyhq.com OR workday.com '
+    'OR smartrecruiters.com))'
+)
+
+_RECRUITMENT_CONTEXT_TERMS = (
+    "application received",
+    "application status",
+    "application for",
+    "your application",
+    "thank you for applying",
+    "thanks for applying",
+    "applicant",
+    "candidate",
+    "career",
+    "hiring",
+    "interview",
+    "job",
+    "position",
+    "recruit",
+    "resume",
+    "your cv",
+    "talent acquisition",
+    "coding challenge",
+    "take-home",
+    "take home",
+)
+_RECRUITMENT_SENDER_TERMS = (
+    "careers@",
+    "jobs@",
+    "recruit",
+    "talent",
+    "greenhouse.io",
+    "lever.co",
+    "comeet.com",
+    "ashbyhq.com",
+    "workday.com",
+    "smartrecruiters.com",
 )
 
 
@@ -28,7 +65,11 @@ class MailClassification(BaseModel):
 
 def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
     haystack = _message_search_text(message)
-    if _contains_any(haystack, ("offer", "employment agreement", "contract offer")):
+    recruitment_context = is_recruitment_related_message(message)
+    if _contains_any(
+        haystack,
+        ("job offer", "employment offer", "offer letter", "employment agreement", "contract offer"),
+    ) or (recruitment_context and "offer" in haystack):
         return MailClassification(
             message_id=message.message_id,
             status=ApplicationStatus.OFFER,
@@ -36,7 +77,7 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             reason="Offer-like language detected.",
             needs_immediate_attention=True,
         )
-    if _contains_any(
+    if recruitment_context and _contains_any(
         haystack,
         ("interview", "schedule a call", "schedule an interview", "calendly", "meet with"),
     ):
@@ -47,7 +88,7 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             reason="Interview scheduling language detected.",
             needs_immediate_attention=True,
         )
-    if _contains_any(
+    if recruitment_context and _contains_any(
         haystack,
         ("assessment", "coding challenge", "home assignment", "take home", "hackerrank", "codility"),
     ):
@@ -58,7 +99,7 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             reason="Assessment or coding-challenge language detected.",
             needs_immediate_attention=True,
         )
-    if _contains_any(
+    if recruitment_context and _contains_any(
         haystack,
         ("not moving forward", "decided not to proceed", "unfortunately", "not selected", "rejection"),
     ):
@@ -78,7 +119,7 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             confidence="clear",
             reason="Application confirmation language detected.",
         )
-    if _contains_any(haystack, ("application", "candidate", "recruit", "talent")):
+    if recruitment_context:
         return MailClassification(
             message_id=message.message_id,
             status=None,
@@ -90,6 +131,24 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
         status=None,
         confidence="ambiguous",
         reason="No application-status signal detected.",
+    )
+
+
+def is_recruitment_related_message(message: GmailMessageSummary) -> bool:
+    """Require concrete hiring context before surfacing an inbox message."""
+    haystack = _message_search_text(message)
+    sender = message.from_header.casefold()
+    return _contains_any(haystack, _RECRUITMENT_CONTEXT_TERMS) or _contains_any(
+        sender, _RECRUITMENT_SENDER_TERMS
+    )
+
+
+def is_relevant_mailbox_update(
+    message: GmailMessageSummary,
+    classification: MailClassification,
+) -> bool:
+    return is_recruitment_related_message(message) and (
+        classification.status is not None or classification.reason != "No application-status signal detected."
     )
 
 

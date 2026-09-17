@@ -401,10 +401,19 @@ user:
 
 ```bash
 uv run --no-editable backend-scout gmail connect
+uv run --no-editable backend-scout gmail check
 uv run --no-editable backend-scout contacts review-email NOTION_PAGE_ID \
   --recipient hiring@company.example --chat-id TELEGRAM_CHAT_ID
 uv run --no-editable backend-scout telegram poll-once
 ```
+
+`gmail check` performs a real readonly API request, so it detects an expired or
+revoked refresh token instead of only checking whether Keychain contains a
+token. The recurring inbox watcher requires recruitment context before it
+notifies Telegram; generic commercial uses of words such as "offer" are
+ignored and checkpointed. If Google rejects the stored authorization, inbox
+tracking pauses and sends at most one reconnect notice per 24 hours. Daily
+job-board scouting continues while Gmail is paused.
 
 For portal applications, the agent opens a visible persistent browser profile,
 fills clear evidence-backed fields, and attaches the approved CV. Deterministic

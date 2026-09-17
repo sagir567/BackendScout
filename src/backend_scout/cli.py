@@ -51,7 +51,13 @@ from backend_scout.durable_runtime import (
     launch_durable_schedules,
     stop_durable_runtime,
 )
-from backend_scout.gmail import connect_gmail, gmail_connected, list_recent_messages, send_email
+from backend_scout.gmail import (
+    connect_gmail,
+    gmail_connected,
+    gmail_reauthorization_required,
+    list_recent_messages,
+    send_email,
+)
 from backend_scout.guided_submission import generate_guided_form_plan
 from backend_scout.inbox_store import begin_inbox_event, finish_inbox_event
 from backend_scout.indeed_email import (
@@ -78,10 +84,15 @@ from backend_scout.mailbox import (
     classify_gmail_message,
     format_mailbox_audit_record,
     format_mailbox_digest,
+    is_relevant_mailbox_update,
     match_message_to_application,
 )
 from backend_scout.mailbox_state import (
     DEFAULT_MAILBOX_STATE_PATH,
+    clear_gmail_auth_alert,
+    gmail_auth_alert_due,
+    gmail_auth_alert_path,
+    mark_gmail_auth_alert_sent,
     mark_messages_processed,
     unseen_messages,
 )
@@ -1850,11 +1861,20 @@ def gmail_connect() -> None:
 
 @gmail_app.command("check")
 def gmail_check() -> None:
-    """Check whether a local Gmail OAuth refresh token exists in macOS Keychain."""
-    if gmail_connected():
-        console.print("[green]Gmail is connected.[/green]")
-    else:
+    """Verify that the local Gmail OAuth credentials can access Gmail."""
+    if not gmail_connected():
         console.print("[yellow]Gmail is not connected.[/yellow]")
+        raise typer.Exit(1)
+    try:
+        list_recent_messages("newer_than:1d", 1)
+    except Exception as exc:
+        if gmail_reauthorization_required(exc):
+            console.print("[yellow]Gmail authorization expired or was revoked.[/yellow]")
+            console.print("Run: uv run --no-editable backend-scout gmail connect")
+        else:
+            console.print(f"[red]Gmail check failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print("[green]Gmail send/read connection is healthy.[/green]")
 
 
 @gmail_app.command("watch-once")
@@ -1890,21 +1910,42 @@ def gmail_watch_once(
     ] = False,
 ) -> None:
     """Inspect Gmail for employer replies and optionally update the tracker."""
+    settings = Settings()
+    auth_alert_path = gmail_auth_alert_path(state_path)
     try:
         fetched_messages = list_recent_messages(query, max_results)
     except Exception as exc:
+        if gmail_reauthorization_required(exc) and send_digest:
+            if gmail_auth_alert_due(auth_alert_path) and settings.telegram_bot_token:
+                resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+                with TelegramClient(settings.telegram_bot_token) as telegram_client:
+                    telegram_client.send_message(
+                        resolved_chat_id,
+                        "Gmail authorization expired or was revoked. Inbox tracking is paused "
+                        "to avoid repeated errors. On the Mac run:\n"
+                        "uv run --no-editable backend-scout gmail connect\n\n"
+                        "Morning job-board scouting will continue; Indeed email ingestion is "
+                        "temporarily unavailable.",
+                    )
+                mark_gmail_auth_alert_sent(auth_alert_path)
+            console.print("[yellow]Gmail inbox tracking is paused pending reauthorization.[/yellow]")
+            return
         console.print("[red]Gmail mailbox scan failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
+    clear_gmail_auth_alert(auth_alert_path)
     messages = fetched_messages if reprocess else unseen_messages(fetched_messages, state_path)
     if not messages:
         console.print("[green]Mailbox scan complete: no new matching messages.[/green]")
         return
     updates = [(message, classify_gmail_message(message), None) for message in messages]
-    updates = [item for item in updates if item[1].status is not None or item[1].confidence == "ambiguous"]
+    updates = [item for item in updates if is_relevant_mailbox_update(item[0], item[1])]
+    if not updates:
+        mark_messages_processed(messages, state_path)
+        console.print("[green]Mailbox scan complete: no relevant application messages.[/green]")
+        return
     matched_updates = updates
 
-    settings = Settings()
     if write_notion or send_digest:
         if not settings.notion_api_key:
             console.print("[red]Missing NOTION_API_KEY in .env[/red]")
@@ -1949,8 +1990,7 @@ def gmail_watch_once(
         with TelegramClient(settings.telegram_bot_token) as telegram_client:
             telegram_client.send_message(resolved_chat_id, format_mailbox_digest(matched_updates))
         console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
-    if write_notion or send_digest:
-        mark_messages_processed(messages, state_path)
+    mark_messages_processed(messages, state_path)
 
 
 @contacts_app.command("discover")

@@ -556,6 +556,15 @@ Current implementation:
   outreach, and readonly is used for inbox status tracking. Telegram shows the
   recipient, source, exact body, and approved attachment before the delivery
   button becomes available.
+- Inbox classification requires recruiting context from the sender or message,
+  then applies deterministic status phrases. A standalone commercial word such
+  as `offer` is never enough to create an application update. Every inspected
+  message, including an ignored one, is checkpointed after a successful scan.
+- An expired or revoked Gmail refresh token is a paused integration rather than
+  a retrying workflow failure. The watcher sends one actionable Telegram alert
+  per 24 hours, completes its scheduled task without retry spam, and clears the
+  alert checkpoint after the next successful Gmail request. Job-board scouting
+  remains independent and continues while Gmail needs reconnection.
 - A Gmail success writes `submitted`, `email`, contact source, Gmail message ID,
   timestamp context, and exact CV draft ID to Notion.
 - Portal preparation uses a dedicated visible Playwright profile. It fills only
@@ -742,6 +751,8 @@ TODO:
 - [x] Resolve Indeed tracking links, support Hebrew locations, rank/cap the
   digest, and send a run summary even when no new jobs are found.
 - [x] Add a mailbox message checkpoint and overlap locks for scheduled jobs.
+- [x] Reject commercial inbox false positives and suppress repeated OAuth
+  failure notifications while Gmail awaits reauthorization.
 - [x] Make every LaunchAgent use the stable project-local uv environment.
 - [x] Add a private Application Support runtime deployment for macOS TCC,
   keeping API secrets and state permission-restricted and outside Documents.

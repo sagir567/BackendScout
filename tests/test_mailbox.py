@@ -3,6 +3,7 @@ from backend_scout.mailbox import (
     classify_gmail_message,
     format_mailbox_audit_record,
     format_mailbox_digest,
+    is_relevant_mailbox_update,
     match_message_to_application,
 )
 from backend_scout.models import ApplicationDigestItem, ApplicationStatus
@@ -54,6 +55,45 @@ def test_classify_gmail_message_leaves_ambiguous_mail_for_review() -> None:
 
     assert classification.status is None
     assert classification.confidence == "ambiguous"
+
+
+def test_commercial_offer_is_not_a_job_offer() -> None:
+    message = _message(
+        "Update to the Apple Arcade offer included with your device",
+        "Enjoy three months free with your recent purchase.",
+        "no_reply@apple.com",
+    )
+
+    classification = classify_gmail_message(message)
+
+    assert classification.status is None
+    assert not is_relevant_mailbox_update(message, classification)
+
+
+def test_visa_marketing_offer_is_not_a_job_offer() -> None:
+    message = _message(
+        "A special Visa offer",
+        "Save on your next card purchase with this limited promotion.",
+        "offers@visa.com",
+    )
+
+    classification = classify_gmail_message(message)
+
+    assert classification.status is None
+    assert not is_relevant_mailbox_update(message, classification)
+
+
+def test_employment_offer_remains_relevant() -> None:
+    message = _message(
+        "Employment offer for Backend Engineer",
+        "We are pleased to send your offer letter.",
+        "careers@example.com",
+    )
+
+    classification = classify_gmail_message(message)
+
+    assert classification.status == ApplicationStatus.OFFER
+    assert is_relevant_mailbox_update(message, classification)
 
 
 def test_match_message_to_application_uses_company_or_role_words() -> None:
