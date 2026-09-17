@@ -771,14 +771,16 @@ def test_gmail_watch_once_ignores_commercial_offer(
         ],
     )
 
+    state_path = tmp_path / "mailbox.json"
     result = runner.invoke(
         app,
-        ["gmail", "watch-once", "--state-path", str(tmp_path / "mailbox.json")],
+        ["gmail", "watch-once", "--state-path", str(state_path)],
     )
 
     assert result.exit_code == 0
     assert "no relevant application messages" in result.output
     assert "Mailbox Application Updates" not in result.output
+    assert not state_path.exists()
 
 
 def test_gmail_watch_once_reports_expired_oauth_only_once(

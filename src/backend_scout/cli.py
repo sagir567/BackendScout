@@ -1941,7 +1941,8 @@ def gmail_watch_once(
     updates = [(message, classify_gmail_message(message), None) for message in messages]
     updates = [item for item in updates if is_relevant_mailbox_update(item[0], item[1])]
     if not updates:
-        mark_messages_processed(messages, state_path)
+        if write_notion or send_digest:
+            mark_messages_processed(messages, state_path)
         console.print("[green]Mailbox scan complete: no relevant application messages.[/green]")
         return
     matched_updates = updates
@@ -1990,7 +1991,8 @@ def gmail_watch_once(
         with TelegramClient(settings.telegram_bot_token) as telegram_client:
             telegram_client.send_message(resolved_chat_id, format_mailbox_digest(matched_updates))
         console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
-    mark_messages_processed(messages, state_path)
+    if write_notion or send_digest:
+        mark_messages_processed(messages, state_path)
 
 
 @contacts_app.command("discover")
