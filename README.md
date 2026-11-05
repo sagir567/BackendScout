@@ -516,9 +516,11 @@ GitHub, LinkedIn, and project URLs into labeled clickable links instead of visib
 raw URLs.
 
 Experience headings keep the role title on its own line and the organization
-and dates together below it, so long titles cannot collide with dates. AI-assisted
-project work retains its ownership qualifiers rather than implying unaided
-implementation or professional experience in every tool used.
+and dates together below it, so long titles cannot collide with dates. Project
+descriptions focus on functionality and actual contributions, not AI-authorship
+labels. Verified AI and agent tooling is presented as a separate competency.
+Ownership scope remains truthful without implying unaided implementation or
+professional experience in every tool used.
 
 Each project has explicit `selection_keywords`. Before the OpenAI request,
 BackendScout removes projects whose keywords do not appear in the target job.

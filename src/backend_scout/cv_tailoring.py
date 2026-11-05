@@ -17,9 +17,15 @@ TAILORING_INSTRUCTIONS = """You tailor a CV using only the supplied career evide
 Never invent or infer skills, achievements, metrics, dates, employers, education,
 or responsibilities. Every summary or bullet must cite one or more evidence IDs.
 Select and rewrite only evidence relevant to the job. Keep language concrete and
-professional. Preserve any ownership qualifier in the evidence, including
-AI-assisted, directed, guided, reviewed, collaborated, or taught; never turn it
-into a claim of sole hands-on implementation. Follow every cv_style rule. Never
+professional. Preserve ownership scope: directed, guided, reviewed, collaborated,
+or taught must not become sole hands-on implementation. In project descriptions,
+describe verified functionality and actual contributions, not that the project
+was created using AI. Use neutral contribution verbs only when supported.
+Present verified AI and agent tool use (Codex, Cline, Ollama, OpenAI API) in a
+separate AI and Agent Tooling skill group or a concise summary competency.
+Keep genuine AI product functionality (agents, LLM integrations) where relevant.
+Never imply unaided coding, independent expertise, or professional experience
+that the evidence does not support. Follow every cv_style rule. Never
 put a raw URL in headline, summary, or a bullet; document rendering handles links.
 In Technical Skills, copy only exact item strings from career_evidence.skills;
 do not rename, combine, broaden, or infer skill labels.
@@ -29,6 +35,12 @@ languages, frameworks, repositories, and projects even when they exist in the ev
 Return JSON that exactly matches the supplied schema."""
 
 RAW_URL_PATTERN = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+PROJECT_AI_AUTHORSHIP_PATTERN = re.compile(
+    r"\b(?:AI|agent|LLM)[ -]assisted\b|"
+    r"\b(?:built|created|developed|implemented|generated)\s+(?:entirely\s+)?"
+    r"(?:using|with|by)\s+(?:AI|agents?|LLMs?|Codex|Cline)\b",
+    re.IGNORECASE,
+)
 
 
 def openai_json_schema(model: type[TailoredCv]) -> dict[str, Any]:
@@ -211,6 +223,12 @@ def validate_tailored_cv_against_evidence(
     project_by_id = {item.id: item for item in evidence.projects}
     _validate_tailored_sections(draft.experience, experience_by_id, "experience")
     _validate_tailored_sections(draft.projects, project_by_id, "project")
+    if any(
+        PROJECT_AI_AUTHORSHIP_PATTERN.search(bullet.text)
+        for project in draft.projects
+        for bullet in project.bullets
+    ):
+        raise ValueError("Describe AI tooling as a skill, not project authorship")
     if job is not None:
         relevant_project_ids = {
             project.id for project in evidence.projects if project_is_relevant(project, job)

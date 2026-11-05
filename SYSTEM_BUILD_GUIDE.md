@@ -3,6 +3,14 @@
 This guide explains how to build BackendScout as a complex local-first agent
 system. Keep it updated as the project evolves.
 
+CV presentation checkpoint (2026-11-05): keep private authorship evidence intact,
+but describe projects through functionality and supported contribution verbs.
+Present verified AI and agent tooling in Skills or the summary, not repeated
+AI-authorship disclaimers in project descriptions. The tailoring prompt and
+project-text validator enforce this boundary; genuine AI product functionality
+remains allowed. Previously generated immutable CVs are not silently rewritten
+or reapproved when presentation rules change.
+
 ## Working from the Frozen Baseline
 
 Read `ARCHITECTURE.md` for the agreed boundaries, interfaces, data ownership and

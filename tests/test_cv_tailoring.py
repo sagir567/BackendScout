@@ -95,6 +95,28 @@ def test_evidence_only_draft_is_valid_and_cited() -> None:
     assert draft.experience[0].bullets[0].evidence_ids == ["exp_1_bullet_1"]
 
 
+@pytest.mark.parametrize("text", [
+    "Directed AI-assisted development of the workflow.",
+    "Created entirely using AI tools.",
+    "Developed with Cline.",
+])
+def test_project_ai_authorship_is_not_cv_presentation(text: str) -> None:
+    evidence = make_project_evidence()
+    draft = build_evidence_only_draft(evidence)
+    draft.projects[1].bullets[0].text = text
+    with pytest.raises(ValueError, match="AI tooling as a skill"):
+        validate_tailored_cv_against_evidence(draft, evidence)
+
+
+def test_ai_product_functionality_and_reviewed_contribution_are_allowed() -> None:
+    evidence = make_project_evidence()
+    draft = build_evidence_only_draft(evidence)
+    draft.projects[1].bullets[0].text = (
+        "Directed and reviewed an AI agent workflow with OpenAI API integration."
+    )
+    validate_tailored_cv_against_evidence(draft, evidence)
+
+
 def test_python_agent_job_uses_agent_project_and_excludes_cpp_repository() -> None:
     evidence = make_project_evidence()
     job = make_job(

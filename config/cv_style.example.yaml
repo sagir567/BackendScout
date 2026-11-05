@@ -9,7 +9,8 @@ link_labels:
   https://linkedin.com/in/username: LinkedIn
 writing_rules:
   - Use concise, professional language.
-  - Preserve ownership qualifiers such as AI-assisted, directed, reviewed, or collaborated when evidence contains them.
+  - Describe project functionality and actual contributions without AI-authorship labels. Present verified AI and agent tool use as a separate skill or summary competency.
+  - Preserve ownership scope with supported verbs such as directed, reviewed, or collaborated; never imply unaided implementation or unsupported expertise.
   - Never include raw URLs in visible CV text. Render known links as meaningful hyperlink labels.
   - Keep technical skills in the Technical Skills section and weave only relevant skills naturally into the summary and evidence-backed bullets.
   - Include a project or its repository link only when its selection keywords are explicitly relevant to the target job.
