@@ -1415,3 +1415,23 @@ passed. Ruff, offline lock validation, architecture/evidence validation and
 `git diff --check` passed. All five full synthetic service flows reached saved
 proof, mocked Telegram acknowledgement and browser cleanup. No real employer,
 paid model call, production migration, deployment, commit or push was performed.
+
+### Operations Follow-Up (2026-11-05)
+
+The owner subsequently authorized regular milestone commits and pushes to the
+existing repository. The tested recovery and employer-first work is checkpointed
+on `codex/employer-first-delivery`; this is not a production deployment or a
+blanket employer-submission approval. Check staged content for credentials,
+private evidence and CVs before each push; keep docs/ ignored and never force-push.
+
+The Codex heartbeat `backendscout-daily-oversight` is active at 08:30 Asia/Hebron.
+It independently checks morning scout/worker outcomes, researches live official
+postings, deduplicates additions using the existing production services, and
+reports useful new roles or actionable failures to the private owner chat.
+Unchanged states remain quiet. The Mac must be awake and Codex running; this is
+an extra local supervisor, not cloud hosting or guaranteed always-on coverage.
+
+The current production scout and mailbox outcomes were checked healthy. Hybrid
+delivery is still not globally enabled: verified pricing and three newly approved
+application packages remain required before general rollout. Do not bypass those
+gates merely because a development push succeeded.
