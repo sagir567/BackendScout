@@ -1435,3 +1435,25 @@ The current production scout and mailbox outcomes were checked healthy. Hybrid
 delivery is still not globally enabled: verified pricing and three newly approved
 application packages remain required before general rollout. Do not bypass those
 gates merely because a development push succeeded.
+
+### Initial Canary Preparation (2026-11-05)
+
+The owner authorized selecting three new roles and preparing their exact CVs for
+review, not submitting them. Official postings were verified, deduplicated and
+imported into the production tracker. Three private DOCX/PDF drafts passed the
+one-page 90-percent-fill rule and visual checks. Evidence added for BackendScout
+describes AI-assisted project work explicitly, not independent SQL expertise.
+
+Real preflight found a legitimate brand/domain mismatch, an "Apply today" label,
+a cookie-gated form and an email-only application route. Exact company-scoped
+host aliases, controlled final labels and authenticated review deep links now
+cover the first two cases. The latter cases remain owner-input/delivery-route
+work rather than falsely reported ready portal submissions. Never opt into new
+marketing cookies or send an email on the strength of a CV-preparation request.
+
+The private runtime was backed up and upgraded locally to schema 5; worker,
+Telegram, web and existing daily schedules were checked healthy afterwards.
+Existing models and budget ceilings were preserved. Private conservative pricing
+uses a planning valuation rather than pretending to be an actual FX quote; Sol
+is valued above its current promotional rates. No approval or submission was
+created for the three new applications during preparation.

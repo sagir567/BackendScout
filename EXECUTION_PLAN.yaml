@@ -88,7 +88,7 @@ tasks:
   - id: P19
     track: personal
     title: Three newly approved live application canaries
-    status: pending
+    status: in_progress
     execution: owner
     owner: integration
     depends_on: [P18]
@@ -97,7 +97,9 @@ tasks:
       - Three new jobs and exact application packages receive owner approval individually.
       - Every live canary has actual receipt proof and no duplicate transmission.
       - General hybrid enablement follows recorded canary acceptance only.
-    evidence: []
+    evidence:
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Owner approved preparation of three fresh roles; private CV drafts and real preflight completed. No submission approval or live canary receipt yet. Cookie and email routes remain explicit review steps.
   - id: A00
     track: personal
     title: Freeze architecture and executable development ledger

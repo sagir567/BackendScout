@@ -237,6 +237,15 @@ def test_official_employer_form_and_contract():
     }
 
 
+def test_operator_verified_brand_alias_is_exact_host_scoped_and_still_checks_identity():
+    url = "https://acmesecurity.test/jobs/backend"
+    assert resolve_application_route(job(url), FakePage({url: html(FORM)})).status == "needs_input"
+    assert resolve_application_route(job(url), FakePage({url: html(FORM)}),
+                                     verified_employer_hosts=("acmesecurity.test",)).status == "verified"
+    assert resolve_application_route(job(url), FakePage({url: html(FORM, company="Another")} ),
+                                     verified_employer_hosts=("acmesecurity.test",)).status == "needs_input"
+
+
 def test_observed_employer_apply_anchor_to_known_ats():
     page = FakePage({EMPLOYER: html(f'<a href="{ATS}">Apply now</a>'), ATS: html(FORM + posting())})
     route = resolve_application_route(job(), page)

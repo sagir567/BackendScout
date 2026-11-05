@@ -251,6 +251,7 @@ async function start() {
     if (!session?.authenticated) { showPairing('', session?.csrf_token); return; }
     showWorkspace(session);
     await loadOverview();
+    await openRequestedApplication();
   } catch (error) {
     if (error.status === 401) return;
     $('#boot').innerHTML = `<span class="brand-word">BackendScout</span><p class="muted">${escapeHTML(error.message)}</p><button id="retry-session" class="button" type="button">Retry connection</button>`;
@@ -262,13 +263,18 @@ function items() {
   return Array.isArray(state.overview?.items) ? state.overview.items.filter((item) => item && present(item.id)) : [];
 }
 
+async function openRequestedApplication() {
+  const id = new URLSearchParams(window.location.search).get('application');
+  if (id && items().some((item) => String(item.id) === id)) await openDetail(id);
+}
+
 function requiresInput(item) {
   return inputStages.has(normalizedStage(item)) || present(item.needs_input_code) || present(item.needs_input_message);
 }
 
 function tabItems() {
   if (state.tab === 'agent') return items().filter((item) =>
-    ['ashby', 'comeet', 'greenhouse', 'lever'].includes(item.delivery_readiness?.adapter)
+    ['ashby', 'comeet', 'greenhouse', 'lever', 'employer-form'].includes(item.delivery_readiness?.adapter)
     && !['unavailable', 'manual_or_unsupported'].includes(item.delivery_readiness?.state));
   if (state.tab === 'input') return items().filter(requiresInput);
   if (state.tab === 'today') return items().filter((item) => !finishedStages.has(normalizedStage(item)));
@@ -1030,6 +1036,7 @@ $('#pair-form').addEventListener('submit', async (event) => {
     state.epoch += 1;
     showWorkspace(session);
     await loadOverview();
+    await openRequestedApplication();
     $('#main-content').focus();
   } catch (error) {
     $('#pair-error').textContent = error.message;

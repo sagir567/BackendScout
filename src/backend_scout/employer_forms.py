@@ -18,7 +18,7 @@ MARKETING = re.compile(
     r"שיווק|דיוור|עדכונים.*הטבות|משרות.*עתיד", re.IGNORECASE
 )
 LEGAL = re.compile(r"terms|agreement|privacy|consent|תנאי|פרטיות|הסכמה", re.IGNORECASE)
-FINAL = re.compile(r"^(submit(?: application)?|send(?: application)?|apply(?: now)?|"
+FINAL = re.compile(r"^(submit(?: application)?|send(?: application)?|apply(?: now| today)?|"
                    r"הגשת מועמדות|להגשת מועמדות|שליחת מועמדות|שליחת הבקשה|שלח(?:/י)?)$", re.IGNORECASE)
 IDENTITY = {
     "full name": "full_name", "name": "full_name", "שם מלא": "full_name",

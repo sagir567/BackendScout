@@ -1,0 +1,6 @@
+companies:
+  Example:
+    hosts: [www.examplesecurity.com, examplesecurity.com]
+    checked_on: TODO
+    evidence: [TODO_OFFICIAL_COMPANY_PAGE, TODO_OFFICIAL_ROLE_PAGE]
+    reason: TODO_Verify_the_company_brand_uses_this_exact_domain_before_enabling

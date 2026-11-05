@@ -149,7 +149,20 @@ class HybridPortalAdapter:
         session = self.manager.acquire(identifier, tracker, entry, "0" * 64,
                                        "public-read-only", navigate=False)
         try:
-            route = resolve_application_route(job, session.page, tracker=tracker)
+            from backend_scout.yaml_files import load_yaml_mapping
+
+            aliases = Path("config/employer_domains.private.yaml")
+            hosts = ()
+            if aliases.is_file():
+                data = load_yaml_mapping(aliases)
+                configured = data.get("companies", {}).get(job.company, {}).get("hosts", [])
+                if isinstance(configured, list) and all(
+                    isinstance(h, str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", h)
+                    for h in configured
+                ):
+                    hosts = tuple(configured)
+            route = resolve_application_route(job, session.page, tracker=tracker,
+                                              verified_employer_hosts=hosts)
             view = find_application_form(session.page, route) if route.status == "verified" else None
             questions, proposals, fields = [], {}, []
             if view:

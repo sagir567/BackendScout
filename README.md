@@ -732,6 +732,14 @@ the private Telegram chat. This local layer requires the Mac awake and Codex
 running; it is not a cloud availability guarantee. Employer delivery still
 requires exact-package approval.
 
+The first owner-approved preparation batch is now under limited canary review.
+Public forms with a company-brand/domain mismatch can use an operator-verified
+exact-host alias in ignored `config/employer_domains.private.yaml`; see the
+fictional example. A web page or model cannot add aliases or grant submission
+approval. Telegram review links open the specific application after owner login.
+Email-only roles and new cookie consents remain explicit separate review steps;
+three prepared CVs do not count as three successful portal canaries.
+
 I am testing a hybrid submission engine behind `PORTAL_DELIVERY_MODE=hybrid`.
 The default remains `legacy`, so installing this code does not enable new live
 submissions or change the morning scout. No extra dependency or service is needed.

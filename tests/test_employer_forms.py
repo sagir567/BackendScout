@@ -20,6 +20,16 @@ FIXTURES = Path(__file__).parent / "fixtures" / "employer_forms"
 URL = "https://example.test/jobs/1"
 
 
+@pytest.mark.parametrize("label", ["Apply today", "Apply now", "Submit application"])
+def test_known_final_application_labels_include_employer_apply_today(label):
+    assert forms.FINAL.fullmatch(label)
+
+
+@pytest.mark.parametrize("label", ["Subscribe", "Send message", "Contact us"])
+def test_unrelated_commands_are_never_final_application_labels(label):
+    assert not forms.FINAL.fullmatch(label)
+
+
 def fixture_text(name):
     return (FIXTURES / (name + ".html")).read_text(encoding="utf-8")
 

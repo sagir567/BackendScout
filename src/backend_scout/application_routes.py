@@ -429,7 +429,7 @@ def route_allows_url(route: ApplicationRoute, url: str, *, confirmation: bool = 
     )
 
 
-def resolve_application_route(job: Job, page, *, tracker="test") -> ApplicationRoute:
+def resolve_application_route(job: Job, page, *, tracker="test", verified_employer_hosts=()) -> ApplicationRoute:
     """Inspect at most four pages (three observed-link hops); never click or fill."""
     tracker = str(getattr(tracker, "value", tracker))
     evidence: list[str] = []
@@ -437,6 +437,11 @@ def resolve_application_route(job: Job, page, *, tracker="test") -> ApplicationR
     employer = None
     expected = None
     posting_text = None
+    trusted_hosts = frozenset(verified_employer_hosts)
+
+    def official(url):
+        return (_official(url, job.company)
+                or (urlsplit(url).hostname or "") in trusted_hosts)
 
     def result(status, reason, message, application=None):
         route = ApplicationRoute(
@@ -580,16 +585,16 @@ def resolve_application_route(job: Job, page, *, tracker="test") -> ApplicationR
                     "vacancy_closed",
                     "The role page explicitly says applications are closed.",
                 )
-            official = _official(current, job.company)
-            if official and not _ATS.get(urlsplit(current).hostname or "") and employer is None:
+            is_official = official(current)
+            if is_official and not _ATS.get(urlsplit(current).hostname or "") and employer is None:
                 employer = current
-            if not official and not _board(current):
+            if not is_official and not _board(current):
                 return result(
                     "needs_input",
                     "untrusted_employer",
                     "Employer authority could not be established.",
                 )
-            if official:
+            if is_official:
                 text = _posting_text(view, job)
                 if text and len(text) > len(posting_text or ""):
                     posting_text = text
@@ -613,7 +618,7 @@ def resolve_application_route(job: Job, page, *, tracker="test") -> ApplicationR
                 if not _safe(target, tracker, widget=widget):
                     unsafe_link = True
                     continue
-                if _board(target) or not _official(target, job.company):
+                if _board(target) or not official(target):
                     unsafe_link = True
                     continue
                 if target.split("#", 1)[0] == current.split("#", 1)[0]:
