@@ -740,6 +740,13 @@ approval. Telegram review links open the specific application after owner login.
 Email-only roles and new cookie consents remain explicit separate review steps;
 three prepared CVs do not count as three successful portal canaries.
 
+On 2026-11-05 the owner opted into local canary preparation. The running release
+uses hybrid/canary mode with three explicit private record IDs, not general
+enablement. Their PDFs/Word files are reviewable in the private workspace and
+were sent only to the owner's Telegram chat. One public form is verified; one
+requires new cookie consent, and one employer's route is email-only. No employer
+delivery or package approval is implied by this preparation checkpoint.
+
 I am testing a hybrid submission engine behind `PORTAL_DELIVERY_MODE=hybrid`.
 The default remains `legacy`, so installing this code does not enable new live
 submissions or change the morning scout. No extra dependency or service is needed.

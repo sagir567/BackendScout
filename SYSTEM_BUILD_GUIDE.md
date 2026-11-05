@@ -1457,3 +1457,16 @@ Existing models and budget ceilings were preserved. Private conservative pricing
 uses a planning valuation rather than pretending to be an actual FX quote; Sol
 is valued above its current promotional rates. No approval or submission was
 created for the three new applications during preparation.
+
+Completion checkpoint: a tested local hybrid/canary release was activated with
+only the three selected private record IDs. All four services and daily schedules
+passed the runtime doctor. The live site serves authenticated per-application
+deep links; every selected role exposes its final PDF. All six final PDF/Word
+files and the unsent email text received Telegram message acknowledgements in
+the allowlisted owner chat. The ledger still records zero approvals and zero
+delivery attempts for this batch. General rollout remains disabled.
+
+Verification: 1,913 regular tests passed (38 optional-browser skips), 68 tests
+passed in the selected isolated browser suite, and authenticated deep-link
+pairing/unknown-record checks passed after the last UI change. Private pricing,
+source captures, CVs, email drafts and evidence changes remain ignored by Git.
