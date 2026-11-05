@@ -892,9 +892,20 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
     assert "Gmail message ID: msg-1" in appended_records[0][1]
 
 
+@pytest.mark.parametrize("existing_status,resend_pending,delivered", [
+    (None, False, True),
+    (ApplicationStatus.DIGEST_SENT, False, False),
+    (ApplicationStatus.DIGEST_SENT, True, True),
+    (ApplicationStatus.APPROVED_TO_SUBMIT, True, False),
+    (ApplicationStatus.CV_DRAFTED, True, False),
+    (ApplicationStatus.SUBMITTED, True, False),
+])
 def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    existing_status,
+    resend_pending,
+    delivered,
 ) -> None:
     profile_path = tmp_path / "candidate_profile.yaml"
     write_profile(profile_path)
@@ -909,6 +920,9 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
     )
     sent_messages: list[str] = []
     digest_pages: list[str] = []
+    existing_page = {
+        "id": "page-indeed", "properties": build_job_page_properties(job, existing_status),
+    } if existing_status else None
 
     monkeypatch.setattr("backend_scout.cli.collect_public_jobs", lambda _target: [])
     monkeypatch.setattr("backend_scout.cli.list_recent_messages", lambda *_args: [])
@@ -946,8 +960,11 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
         def retrieve_data_source(self, _data_source_id: str) -> dict[str, object]:
             return {}
 
-        def find_job_page(self, _data_source_id: str, _job: Job) -> None:
-            return None
+        def find_job_page(self, _data_source_id: str, _job: Job):
+            return existing_page
+
+        def query_data_source(self, _data_source_id, _payload):
+            return {"results": [existing_page] if existing_page else [], "has_more": False}
 
         def create_job_page(
             self,
@@ -990,19 +1007,23 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
         [
             "collect",
             "run",
+            "--targets-path",
+            "config/target_companies.example.yaml",
             "--profile-path",
             str(profile_path),
             "--tracker",
             "production",
             "--write-notion",
             "--send-digest",
-        ],
+        ] + (["--resend-pending"] if resend_pending else []),
     )
 
     assert result.exit_code == 0, result.output
-    assert digest_pages == ["page-indeed"]
-    assert "New matching jobs: 1" in sent_messages[0]
+    assert digest_pages == (["page-indeed"] if delivered else [])
+    assert f"New matching jobs: {0 if existing_page else 1}" in sent_messages[0]
     assert "Indeed email: 1 messages, 1 jobs parsed" in sent_messages[0]
+    if existing_page:
+        assert existing_page["properties"]["Status"]["status"]["name"] == existing_status.value
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:

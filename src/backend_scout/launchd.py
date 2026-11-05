@@ -11,6 +11,7 @@ class LaunchdService(str, Enum):
     MAILBOX = "mailbox"
     WORKER = "worker"
     BROWSER = "browser"
+    WEB = "web"
     ALL = "all"
 
 
@@ -20,6 +21,7 @@ SERVICE_LABELS = {
     LaunchdService.MAILBOX: "com.backendscout.mailbox",
     LaunchdService.WORKER: "com.backendscout.worker",
     LaunchdService.BROWSER: "com.backendscout.browser",
+    LaunchdService.WEB: "com.backendscout.web",
 }
 
 

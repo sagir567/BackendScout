@@ -48,21 +48,26 @@ def load_scouting_preferences(path: Path = DEFAULT_SCOUTING_PREFERENCES_PATH) ->
 
 
 def public_collection_digest_candidate(scored_job: ScoredJob, preferences: ScoutingPreferences) -> bool:
+    return public_collection_rejection_reason(scored_job, preferences) is None
+
+
+def public_collection_rejection_reason(scored_job: ScoredJob, preferences: ScoutingPreferences) -> str | None:
+    """Explain the first filter that excluded a job, without changing its match score."""
     if scored_job.result.recommended_action.value not in {"apply", "maybe"}:
-        return False
+        return "match_blocker_or_low_score"
     if scored_job.result.match_score < preferences.minimum_match_score:
-        return False
+        return "below_minimum_score"
     if _role_relevance_points(scored_job) < preferences.minimum_role_relevance_points:
-        return False
+        return "below_role_relevance"
 
     title = _normalize(scored_job.job.title)
     if _contains_any(title, preferences.excluded_title_keywords):
-        return False
+        return "excluded_title"
     if _contains_any(title, preferences.preferred_title_keywords):
-        return True
+        return None
     if _contains_any(title, preferences.maybe_title_keywords):
-        return True
-    return _role_relevance_points(scored_job) >= 25
+        return None
+    return None if _role_relevance_points(scored_job) >= 25 else "title_not_targeted"
 
 
 def _role_relevance_points(scored_job: ScoredJob) -> int:
@@ -73,8 +78,14 @@ def _role_relevance_points(scored_job: ScoredJob) -> int:
 
 
 def _contains_any(normalized_text: str, keywords: list[str]) -> bool:
-    return any(_normalize(keyword) in normalized_text for keyword in keywords if keyword.strip())
+    return any(
+        f" {normalized} " in f" {normalized_text} "
+        for keyword in keywords
+        if (normalized := _normalize(keyword))
+    )
 
 
 def _normalize(value: str) -> str:
-    return " ".join(re.findall(r"[a-z0-9+#]+", value.casefold()))
+    value = re.sub(r"\bback[\s-]+end\b", "backend", value.casefold())
+    value = re.sub(r"(?<!\w)\.net\b", "dotnet", value)
+    return " ".join(re.findall(r"\w+(?:\+\+|#)?", value))

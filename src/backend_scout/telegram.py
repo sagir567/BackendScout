@@ -2,10 +2,12 @@ import json
 import re
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Self
 
+from backend_scout.application_urls import application_entry_url
 from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import load_manifest, verify_manifest
 from backend_scout.models import (
@@ -23,6 +25,18 @@ from backend_scout.tailoring_notes import save_tailoring_note
 from backend_scout.task_queue import QueuedTaskKind, enqueue_task
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
+
+
+@dataclass(frozen=True)
+class BrowserPairingMessage:
+    instructions: str
+    code: str = field(repr=False)
+
+
+def send_browser_pairing_message(client, chat_id: int, pairing: BrowserPairingMessage) -> None:
+    """Keep the owner code in its own copyable message, outside instructions."""
+    client.send_message(chat_id, pairing.instructions)
+    client.send_message(chat_id, pairing.code)
 
 
 class TelegramApprovalAction(str, Enum):
@@ -111,7 +125,9 @@ class TelegramClient:
         return self._parse_response(response, "sendPhoto")
 
     def answer_callback_query(self, callback_query_id: str, text: str) -> dict[str, Any]:
-        return self._post("answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text})
+        return self._post(
+            "answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text}
+        )
 
     def edit_message_reply_markup(
         self,
@@ -160,8 +176,9 @@ def format_digest_message(item: ApplicationDigestItem) -> str:
         f"{item.company} - {item.title}",
         f"Status: {item.status.value}",
         f"Score: {item.match_score if item.match_score is not None else 'unknown'}",
+        f"Experience required: {item.years_experience or 'not stated in available source; verify the full posting before tailoring'}",
         f"Location: {item.location or 'unknown'}",
-        f"Remote: {item.remote_policy or 'unknown'}",
+        f"Work mode: {item.remote_policy or 'unknown'}",
         f"Salary: {item.salary_text or 'unknown'}",
     ]
     if item.required_skills:
@@ -172,7 +189,9 @@ def format_digest_message(item: ApplicationDigestItem) -> str:
     return "\n".join(lines)
 
 
-def build_digest_reply_markup(page_id: str, tracker: TrackerName = TrackerName.TEST) -> dict[str, Any]:
+def build_digest_reply_markup(
+    page_id: str, tracker: TrackerName = TrackerName.TEST
+) -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
@@ -184,7 +203,9 @@ def build_digest_reply_markup(page_id: str, tracker: TrackerName = TrackerName.T
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
                 },
             ]
         ]
@@ -213,9 +234,11 @@ def build_cv_draft_reply_markup(
             [
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
                 },
-            ]
+            ],
         ]
     }
 
@@ -234,7 +257,9 @@ def build_email_review_reply_markup(
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
                 },
             ]
         ]
@@ -255,7 +280,9 @@ def build_whatsapp_handoff_reply_markup(
                 },
                 {
                     "text": "Close",
-                    "callback_data": encode_callback_data(TelegramApprovalAction.CLOSE, page_id, tracker=tracker),
+                    "callback_data": encode_callback_data(
+                        TelegramApprovalAction.CLOSE, page_id, tracker=tracker
+                    ),
                 },
             ]
         ]
@@ -329,7 +356,12 @@ def build_portal_progress_reply_markup(
                     item.notion_page_id,
                     tracker=tracker,
                 ),
-            }
+            },
+            *(
+                [{"text": "Open in browser", "url": url}]
+                if (url := application_entry_url(item.application_url, item.source_url))
+                else []
+            ),
         ]
         for item in items
         if item.status
@@ -368,7 +400,12 @@ def parse_callback_data(data: str) -> tuple[TelegramApprovalAction, str, str | N
         raise ValueError("Invalid callback payload")
     legacy_actions = {action.value for action in TelegramApprovalAction}
     if parts[0] in legacy_actions:
-        return TelegramApprovalAction(parts[0]), parts[1], parts[2] if len(parts) > 2 else None, TrackerName.TEST
+        return (
+            TelegramApprovalAction(parts[0]),
+            parts[1],
+            parts[2] if len(parts) > 2 else None,
+            TrackerName.TEST,
+        )
     action = {
         "t": TelegramApprovalAction.APPROVE_TO_TAILOR,
         "s": TelegramApprovalAction.APPROVE_TO_SUBMIT,
@@ -421,7 +458,10 @@ def process_telegram_update(
     tracker: TrackerName = TrackerName.TEST,
     data_source_id: str | None = None,
     portal_submission_authorization_handler: Callable[[str, str], None] | None = None,
-    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str] | None = None,
+    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str]
+    | None = None,
+    application_action_guard: Callable[[str, TrackerName], None] | None = None,
+    browser_pairing_handler: Callable[[int], BrowserPairingMessage] | None = None,
 ) -> str | None:
     callback_query = update.get("callback_query")
     if not isinstance(callback_query, dict):
@@ -433,6 +473,8 @@ def process_telegram_update(
             tracker,
             data_source_id,
             task_enqueue_handler,
+            application_action_guard,
+            browser_pairing_handler,
         )
 
     from_user = callback_query.get("from", {})
@@ -440,7 +482,9 @@ def process_telegram_update(
     if not isinstance(user_id, int) or user_id not in allowed_user_ids:
         return None
 
-    action, page_id, draft_id, callback_tracker = parse_callback_data(callback_query.get("data", ""))
+    action, page_id, draft_id, callback_tracker = parse_callback_data(
+        callback_query.get("data", "")
+    )
     if callback_tracker != tracker:
         raise ValueError("Telegram action belongs to a different tracker")
     callback_query_id = callback_query.get("id")
@@ -449,6 +493,8 @@ def process_telegram_update(
             telegram_client.answer_callback_query(callback_query_id, "Received. Processing...")
         except ValueError:
             pass
+    if application_action_guard:
+        application_action_guard(page_id, tracker)
     page = notion_client.retrieve_page(page_id)
     _assert_page_tracker(page, data_source_id)
     application = application_digest_item_from_page(page)
@@ -550,7 +596,9 @@ def process_telegram_update(
     if isinstance(chat_id, int) and isinstance(message_id, int):
         try:
             telegram_client.edit_message_reply_markup(chat_id, message_id, {"inline_keyboard": []})
-            message_text = f"Updated {application.company} - {application.title} to {next_status.value}."
+            message_text = (
+                f"Updated {application.company} - {application.title} to {next_status.value}."
+            )
             if queued_task_id:
                 task_label = {
                     TelegramApprovalAction.APPROVE_TO_TAILOR: "CV draft",
@@ -621,7 +669,10 @@ def _process_message(
     allowed_user_ids: set[int],
     tracker: TrackerName,
     data_source_id: str | None,
-    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str] | None = None,
+    task_enqueue_handler: Callable[[QueuedTaskKind, TrackerName, dict[str, Any]], str]
+    | None = None,
+    application_action_guard: Callable[[str, TrackerName], None] | None = None,
+    browser_pairing_handler: Callable[[int], BrowserPairingMessage] | None = None,
 ) -> str | None:
     message = update.get("message")
     if not isinstance(message, dict):
@@ -636,7 +687,16 @@ def _process_message(
     chat = message.get("chat", {})
     chat_id = chat.get("id")
     reply_markup = None
-    if command.casefold() in {"/status", "status"}:
+    if command.casefold() in {"/web", "/app"}:
+        if chat_id != user_id:
+            confirmation = "Request browser pairing in your private chat with this bot."
+        elif browser_pairing_handler is None:
+            confirmation = "The private web interface is not configured on this runtime yet."
+        else:
+            send_browser_pairing_message(telegram_client, user_id, browser_pairing_handler(user_id))
+            return "web_pairing_sent"
+        result = "web_pairing_sent"
+    elif command.casefold() in {"/status", "status"}:
         counts = _application_status_counts(notion_client, data_source_id)
         confirmation = _format_status_counts(counts, tracker)
         result = "status_sent"
@@ -658,7 +718,9 @@ def _process_message(
         result = "jobs_sent"
     elif command.casefold() in {"/today", "today"}:
         applications = _application_summaries(notion_client, data_source_id, None, limit=10)
-        confirmation = _format_application_list(f"Latest {tracker.value} tracked jobs", applications)
+        confirmation = _format_application_list(
+            f"Latest {tracker.value} tracked jobs", applications
+        )
         result = "today_sent"
     elif command.casefold() in {"/submit_status", "/submit-status", "submit status"}:
         applications = _application_summaries(
@@ -667,7 +729,9 @@ def _process_message(
             {ApplicationStatus.APPROVED_TO_SUBMIT, ApplicationStatus.SUBMISSION_PREPARED},
             limit=10,
         )
-        confirmation = _format_application_list(f"{tracker.value.title()} jobs ready for portal progress", applications)
+        confirmation = _format_application_list(
+            f"{tracker.value.title()} jobs ready for portal progress", applications
+        )
         reply_markup = build_portal_progress_reply_markup(applications, tracker)
         result = "submit_status_sent"
     elif command.casefold() in {"/scout", "/scout_today", "scout"} or text.strip().casefold() in {
@@ -681,8 +745,33 @@ def _process_message(
         task_id = _enqueue_task(task_enqueue_handler, QueuedTaskKind.SCOUT_TODAY, tracker, payload)
         confirmation = f"Queued today's {tracker.value} scout. Task: {task_id}."
         result = "scout_queued"
+    elif command.startswith("/open_"):
+        page_id = command.removeprefix("/open_")
+        if not _is_complete_notion_page_id(page_id):
+            confirmation = "That application ID is incomplete. Send /submit_status to find the full application."
+            result = "invalid_application_open_command"
+        else:
+            page = notion_client.retrieve_page(page_id)
+            _assert_page_tracker(page, data_source_id)
+            application = application_digest_item_from_page(page)
+            url = application_entry_url(application.application_url, application.source_url)
+            if url is None:
+                raise ValueError(
+                    "No reusable application link is available; a sign-in URL is not an application entry link"
+                )
+            confirmation = (
+                f"Return to {application.company} - {application.title}\n"
+                f"Tracker status: {application.status.value}\n"
+                "Open this in your own browser to continue. Opening it does not submit anything "
+                "or restore unsaved form fields. CV versions and approvals are not changed. "
+                "If the portal already shows a receipt, do not submit again."
+            )
+            reply_markup = {"inline_keyboard": [[{"text": "Open application", "url": url}]]}
+            result = "application_link_sent"
     elif command.startswith("/draft_"):
         page_id = command.removeprefix("/draft_")
+        if application_action_guard:
+            application_action_guard(page_id, tracker)
         if not isinstance(chat_id, int):
             return None
         task_id = _enqueue_task(
@@ -695,6 +784,8 @@ def _process_message(
         result = "cv_draft_queued"
     elif command.startswith("/prepare_"):
         page_id = command.removeprefix("/prepare_")
+        if application_action_guard:
+            application_action_guard(page_id, tracker)
         if not isinstance(chat_id, int):
             return None
         if not _is_complete_notion_page_id(page_id):
@@ -716,6 +807,8 @@ def _process_message(
         if not feedback:
             raise ValueError("Revision feedback cannot be empty")
         page_id = command.removeprefix("/revise_")
+        if application_action_guard:
+            application_action_guard(page_id, tracker)
         page = notion_client.retrieve_page(page_id)
         _assert_page_tracker(page, data_source_id)
         application = application_digest_item_from_page(page)
@@ -728,10 +821,15 @@ def _process_message(
         if not feedback:
             raise ValueError("Tailoring note cannot be empty")
         page_id = command.removeprefix("/tailor_")
+        if application_action_guard:
+            application_action_guard(page_id, tracker)
         page = notion_client.retrieve_page(page_id)
         _assert_page_tracker(page, data_source_id)
         application = application_digest_item_from_page(page)
-        if application.status not in {ApplicationStatus.DIGEST_SENT, ApplicationStatus.APPROVED_TO_TAILOR}:
+        if application.status not in {
+            ApplicationStatus.DIGEST_SENT,
+            ApplicationStatus.APPROVED_TO_TAILOR,
+        }:
             raise ValueError("Tailoring notes are accepted only before a CV draft is created")
         save_tailoring_note(page_id, tracker.value, feedback)
         confirmation = f"Saved tailoring note for {application.company}. It will guide the next evidence-only CV draft."
@@ -786,7 +884,9 @@ def _assert_page_tracker(page: dict[str, Any], data_source_id: str | None) -> No
         raise ValueError("Notion page belongs to a different tracker")
 
 
-def _application_status_counts(notion_client: NotionClient, data_source_id: str | None) -> Counter[str]:
+def _application_status_counts(
+    notion_client: NotionClient, data_source_id: str | None
+) -> Counter[str]:
     if data_source_id is None:
         return Counter()
     result = notion_client.query_data_source(data_source_id, {"page_size": 100})
@@ -826,7 +926,10 @@ def _format_application_list(title: str, applications: list[ApplicationDigestIte
     lines = [title]
     for item in applications:
         score = item.match_score if item.match_score is not None else "?"
-        lines.append(f"- {item.company} - {item.title} | {item.status.value} | score {score} | id {item.notion_page_id}")
+        years = item.years_experience or "not stated; needs verification"
+        lines.append(
+            f"- {item.company} - {item.title} | {item.status.value} | score {score} | experience {years} | id {item.notion_page_id}"
+        )
     return "\n".join(lines)
 
 

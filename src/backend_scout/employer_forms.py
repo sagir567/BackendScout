@@ -1,0 +1,301 @@
+"""Scoped application forms and reviewed values; no model or submission authority."""
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+
+from playwright.sync_api import Error as PlaywrightError
+
+from backend_scout.guided_submission import GuidedControlKind, is_sensitive_form_field
+from backend_scout.package_portal import _identifier, _normal
+from backend_scout.submission import capture_guided_form
+
+RESUME = re.compile(r"\b(cv|resume|curriculum vitae)\b|קורות\s*חיים", re.IGNORECASE)
+OTHER_FILE = re.compile(r"cover|portfolio|transcript|מכתב|גיליון", re.IGNORECASE)
+MARKETING = re.compile(
+    r"marketing|newsletter|promotional|future opportunit|extended time|"
+    r"שיווק|דיוור|עדכונים.*הטבות|משרות.*עתיד", re.IGNORECASE
+)
+LEGAL = re.compile(r"terms|agreement|privacy|consent|תנאי|פרטיות|הסכמה", re.IGNORECASE)
+FINAL = re.compile(r"^(submit(?: application)?|send(?: application)?|apply(?: now)?|"
+                   r"הגשת מועמדות|להגשת מועמדות|שליחת מועמדות|שליחת הבקשה|שלח(?:/י)?)$", re.IGNORECASE)
+IDENTITY = {
+    "full name": "full_name", "name": "full_name", "שם מלא": "full_name",
+    "first name": "first_name", "given name": "first_name", "שם פרטי": "first_name",
+    "last name": "last_name", "family name": "last_name", "surname": "last_name",
+    "שם משפחה": "last_name", "email": "email", "email address": "email",
+    "e mail": "email", "כתובת אימייל": "email", 'כתובת דוא"ל': "email",
+    "אימייל": "email", 'דוא"ל': "email", "phone": "phone", "mobile": "phone",
+    "phone number": "phone", "טלפון": "phone", "טלפון נייד": "phone",
+    "linkedin": "linkedin", "linkedin url": "linkedin", "linkedin profile": "linkedin",
+    "city": "city", "residence city": "city", "עיר מגורים": "city",
+    "country": "country", "country of residence": "country", "מדינה": "country",
+    "location": "location", "current location": "location",
+}
+
+
+@dataclass
+class ApplicationFormView:
+    page: object
+    frame: object
+    container: object
+    file_control: object
+    url: str
+    frames: tuple = ()
+    main_frame: object = None
+
+    def locator(self, *args, **kwargs):
+        return self.container.locator(*args, **kwargs)
+
+
+def field_keys(field, control):
+    return list(dict.fromkeys([field.label, *[
+        value for key in ("name", "id", "aria-label")
+        if (value := control.get_attribute(key))
+    ]]))
+
+
+def question_key(field, control):
+    for key in ("name", "id"):
+        value = control.get_attribute(key)
+        if value and len(value) <= 200:
+            return value
+    if len(field.label) <= 200:
+        return field.label
+    return "field:" + hashlib.sha256(field.label.encode()).hexdigest()[:24]
+
+
+def question(field, control):
+    label = field.label
+    if (field.sensitive or LEGAL.search(label)) and callable(getattr(control, "evaluate", None)):
+        links = control.evaluate("""el => Array.from(el.labels || []).flatMap(label =>
+            Array.from(label.querySelectorAll('a[href]')).map(a=>a.href))""")
+        if links:
+            label += " (" + ", ".join(links) + ")"
+    return {
+        "key": question_key(field, control), "label": label[:2000],
+        "required": field.required, "sensitive": field.sensitive or bool(LEGAL.search(field.label)),
+        "options": (["yes", "no"] if field.kind == GuidedControlKind.CHECKBOX
+                    else field.options[:100]),
+    }
+
+
+def form_review_signature(view):
+    """Bind question meaning and consent links, excluding changing field values."""
+    captured = capture_guided_form(view)
+    fields = []
+    for field in captured.snapshot.fields:
+        control = captured.controls[field.field_id]
+        fields.append({
+            "key": question_key(field, control), "label": field.label,
+            "kind": field.kind.value, "required": field.required,
+            "options": field.options, "sensitive": field.sensitive,
+        })
+    links = view.locator("a[href]").evaluate_all("els=>els.map(e=>({text:e.innerText,url:e.href}))")
+    form = view.file_control.evaluate("""el => {
+        const f=el.form;
+        return f ? {action:f.action,method:f.method,target:f.target,enctype:f.enctype,
+            controls:Array.from(f.querySelectorAll('button,input[type=submit]')).map(b=>({
+                action:b.getAttribute('formaction'),target:b.getAttribute('formtarget'),
+                text:b.innerText||b.value||''}))} : null;
+    }""")
+    payload = {"fields": fields, "links": links, "form": form}
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":")).encode()).hexdigest()
+
+
+def find_application_form(page, route):
+    """Choose a unique CV-associated form, never an unrelated footer widget."""
+    from backend_scout.application_routes import route_allows_url
+
+    candidates = []
+    scopes = [page] + [f for f in page.frames if f != page.main_frame]
+    for scope in scopes:
+        if not route_allows_url(route, scope.url):
+            continue
+        files = scope.locator('input[type="file"]')
+        for index in range(min(files.count(), 30)):
+            upload = files.nth(index)
+            meta = upload.evaluate("""el => ({label:Array.from(el.labels || [])
+                .map(l=>l.innerText).join(' ')+' '+(el.getAttribute('aria-label') || '')
+                +' '+el.name+' '+el.id, disabled:el.disabled})""")
+            if meta["disabled"] or OTHER_FILE.search(meta["label"]):
+                continue
+            container = upload.locator('xpath=ancestor::form[1]')
+            if not container.count():
+                container = upload.locator('xpath=ancestor::fieldset[1]')
+            if not container.count() or not container.is_visible():
+                continue
+            context = container.inner_text(timeout=2000)
+            if not RESUME.search(meta["label"]) and not RESUME.search(context):
+                continue
+            if (container.locator('input[type="email"], input[name*="email" i]').count() == 0
+                and not re.search(r"email|אימייל|דוא", context, re.IGNORECASE)):
+                continue
+            candidates.append(ApplicationFormView(page, scope, container, upload, scope.url))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _checked(control, desired, action):
+    if control.is_checked() == desired:
+        return
+    action()
+    try:
+        control.set_checked(desired, timeout=1500)
+    except PlaywrightError:
+        if control.is_checked() == desired:
+            return
+        action()
+        # Click the label's non-link text, not a privacy-policy hyperlink.
+        label = control.locator('xpath=ancestor::label[1]')
+        if label.count():
+            label.click(position={"x": 4, "y": 4}, timeout=1500)
+        else:
+            element_id = control.get_attribute("id")
+            if not element_id or not re.fullmatch(r"[A-Za-z0-9_.:-]+", element_id):
+                raise ValueError("Custom choice needs a verified visible label") from None
+            control.page.locator(f'label[for="{element_id}"]').last.click(timeout=1500)
+    if control.is_checked() != desired:
+        raise ValueError("Choice did not retain the reviewed value")
+
+
+def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
+    captured = capture_guided_form(view)
+    supplied = {_normal(answer.key): answer.value for answer in package.answers}
+    identity = {answer.key: answer.value for answer in package.answers
+                if answer.key.startswith("identity.")}
+    pending = []
+    radio_groups = {}
+    by_key = {}
+    for field in captured.snapshot.fields:
+        if field.kind not in {GuidedControlKind.RADIO, GuidedControlKind.FILE}:
+            control = captured.controls[field.field_id]
+            by_key.setdefault(question_key(field, control), []).append((field, control))
+    duplicates = [pair for pairs in by_key.values() if len(pairs) > 1 for pair in pairs]
+    if duplicates:
+        return captured, [question(field, control) | {"key": "ambiguous:" + field.field_id}
+                          for field, control in duplicates]
+    for field in captured.snapshot.fields:
+        control = captured.controls[field.field_id]
+        if field.kind == GuidedControlKind.FILE:
+            continue
+        keys = field_keys(field, control)
+        expected = supplied.get(_normal(question_key(field, control)))
+        values = {supplied[_normal(k)] for k in keys if _normal(k) in supplied}
+        if len(values) > 1:
+            pending.append(question(field, control))
+            continue
+        if expected is None and values:
+            expected = next(iter(values))
+        sensitive = field.sensitive or any(is_sensitive_form_field(_identifier(k)) for k in keys)
+        if expected is None and not sensitive:
+            matches = {IDENTITY[_identifier(k)] for k in keys if _identifier(k) in IDENTITY}
+            if len(matches) == 1:
+                expected = identity.get("identity." + next(iter(matches)))
+        if field.kind == GuidedControlKind.RADIO:
+            group = control.get_attribute("name") or question_key(field, control)
+            radio_groups.setdefault(group, []).append((field, control, expected))
+            continue
+        if field.kind == GuidedControlKind.CHECKBOX:
+            if MARKETING.search(" ".join(keys)):
+                if fill:
+                    _checked(control, False, action)
+                if control.is_checked():
+                    pending.append(question(field, control))
+                continue
+            if expected is None:
+                if fill and control.is_checked():
+                    _checked(control, False, action)
+                if field.required:
+                    pending.append(question(field, control))
+                continue
+            desired = _normal(expected) in {"yes", "true", _normal(field.label)}
+            if _normal(expected) not in {"yes", "true", "no", "false", _normal(field.label)}:
+                pending.append(question(field, control))
+                continue
+            if fill:
+                _checked(control, desired, action)
+            if control.is_checked() != desired or (field.required and not desired):
+                pending.append(question(field, control))
+            continue
+        if expected is None:
+            if field.required or field.current_value_present:
+                pending.append(question(field, control))
+            continue
+        if field.kind == GuidedControlKind.COMBOBOX:
+            pending.append(question(field, control))
+        elif field.kind == GuidedControlKind.SELECT:
+            if fill and not field.current_value_present and expected in field.options:
+                action()
+                control.select_option(label=expected, timeout=3000)
+            selected = control.evaluate("el => el.selectedOptions?.[0]?.label || ''")
+            if selected != expected:
+                pending.append(question(field, control))
+        else:
+            current = control.input_value(timeout=2000)
+            if fill and not current:
+                action()
+                control.fill(expected, timeout=3000)
+                current = control.input_value(timeout=2000)
+            if current != expected:
+                pending.append(question(field, control))
+    for choices in radio_groups.values():
+        values = {expected for _, _, expected in choices if expected is not None}
+        if len(values) != 1:
+            if any(f.required or f.current_value_present for f, _, _ in choices):
+                pending.append(question(choices[0][0], choices[0][1]))
+            continue
+        expected = next(iter(values))
+        targets = [c for f, c, _ in choices if expected in {f.label, c.get_attribute("value")}]
+        if len(targets) != 1:
+            pending.append(question(choices[0][0], choices[0][1]))
+            continue
+        if fill:
+            _checked(targets[0], True, action)
+        if not targets[0].is_checked():
+            pending.append(question(choices[0][0], choices[0][1]))
+    # A rerender may introduce new required controls after the captured snapshot.
+    if not pending:
+        invalid = view.locator('input:invalid:not([type="file"]),textarea:invalid,select:invalid')
+        if any(invalid.nth(i).is_visible() for i in range(invalid.count())):
+            pending.append({"key": "form_changed", "label": "Required fields changed; inspect the current form.",
+                            "required": True, "options": [], "sensitive": False})
+    unique = {item["key"]: item for item in pending}
+    return captured, list(unique.values())
+
+
+def unique_submit(view):
+    controls = view.locator('button, input[type="submit"]')
+    eligible = []
+    for i in range(controls.count()):
+        control = controls.nth(i)
+        if not control.is_visible() or not control.is_enabled():
+            continue
+        label = control.inner_text() if control.evaluate("el=>el.tagName") == "BUTTON" else control.get_attribute("value")
+        label = re.sub(r"[^\w\s/]+", "", label or "", flags=re.UNICODE).strip()
+        if FINAL.fullmatch(label):
+            eligible.append(control)
+    return eligible[0] if len(eligible) == 1 else None
+
+
+def proposed_notes(evidence, job, view):
+    """Evidence-only draft text enters package review, never consent or eligibility."""
+    selected = []
+    for experience in evidence.experience:
+        for item in experience.bullets:
+            if any(word in item.text.casefold() for word in ("api", "backend", "pipeline")):
+                selected.append(item.text)
+    selected = selected[:2]
+    if not selected:
+        return {}
+    note = (f"I would like to apply for the {job.title} position at {job.company}. "
+            + " ".join(selected) + " I would welcome the opportunity to discuss this experience.")
+    results = {}
+    captured = capture_guided_form(view)
+    for field in captured.snapshot.fields:
+        control = captured.controls[field.field_id]
+        if (field.kind == GuidedControlKind.TEXTAREA and not field.sensitive
+                and re.search(r"cover|personal note|מכתב נלווה|ספר.י.*עצמך|מתאים לתפקיד", field.label, re.IGNORECASE)):
+            results[question_key(field, control)] = note
+    return results

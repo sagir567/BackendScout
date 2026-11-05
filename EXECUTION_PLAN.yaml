@@ -1,0 +1,495 @@
+schema_version: 1
+updated_on: '2026-11-05'
+architecture:
+  path: ARCHITECTURE.md
+  version: '1.1'
+  sha256: 4888a2374355ae51c9d1e714d15fd3b07469cae4ced361f7521eb2b95c9db83e
+budget:
+  currency: NIS
+  total_monthly_ceiling: 100
+tracks:
+  personal:
+    root: .
+  commercial:
+    root: ../BackendScout-Skill
+tasks:
+  - id: P15
+    track: personal
+    title: Verify employer-first routes and inspect real forms before review
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: [P05, P06]
+    write_scope: [src/backend_scout/application_routes.py, src/backend_scout/application_store.py, src/backend_scout/application_service.py]
+    acceptance:
+      - Discovery employer posting and verified application entry retain separate provenance.
+      - Company role and observed ATS transitions are verified without candidate transmission.
+      - New form questions and exact reviewed notes precede approval.
+    evidence:
+      - path: tests/test_application_routes.py
+        result: Offline provenance identity spoofed-domain and both Comeet domain regressions pass.
+      - path: tests/test_form_inspection_flow.py
+        result: Preflight schema binding changed-consent invalidation and preserved CV approval regressions pass.
+  - id: P16
+    track: personal
+    title: Hybrid restricted browser execution and five employer form regressions
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: [P15]
+    write_scope: [src/backend_scout/hybrid_portal.py, src/backend_scout/package_portal.py, tests]
+    acceptance:
+      - Five synthetic forms receive the approved file once and show new visible receipt proof.
+      - Bounded AI fallback cannot invent values destinations or submission authorization.
+      - Uncertain attempts do not repeat across restart or duplicate clicks.
+    evidence:
+      - path: tests/test_hybrid_portal.py
+        result: All five synthetic employer formats pass canonical preflight exact approval one delivery saved proof mocked Telegram acknowledgement and session cleanup.
+      - path: tests/test_employer_forms.py
+        result: Whole-form scoping hidden labeled choices duplicate keys and wrong-job mutations covered.
+  - id: P17
+    track: personal
+    title: Durable browser budgets and acknowledged proof notifications
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: [P02]
+    write_scope: [src/backend_scout/browser_budget.py, src/backend_scout/submission_notifications.py, src/backend_scout/cli.py]
+    acceptance:
+      - Missing pricing and persistent spending action and time limits stop model execution.
+      - Proof notification retries never replay employer delivery.
+      - Successful contexts release only after proof notification acknowledgement.
+    evidence:
+      - path: tests/test_browser_budget.py
+        result: Persistent browser and project reservations caps active time concurrency and unknown usage tested.
+      - path: tests/test_submission_notifications.py
+        result: Verified proof notification leases retry isolation and acknowledgement tested without real messaging.
+      - path: tests/test_submission_notification_worker.py
+        result: Only acknowledged submitted exact-package sessions may close; paused contexts stay open.
+  - id: P18
+    track: personal
+    title: Hybrid acceptance and default-off local rollout
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: [P15, P16, P17]
+    write_scope: [tests, README.md, SYSTEM_BUILD_GUIDE.md]
+    acceptance:
+      - Unit browser restart and queue acceptance pass without employer contact.
+      - Existing morning routine and immutable approvals remain compatible.
+      - Hybrid production stays gated until approved fresh canaries.
+    evidence:
+      - path: tests/test_hybrid_portal.py
+        result: Feature defaults legacy with production canary gating and no unpriced paid calls; five submitted jobs are not live test targets.
+      - path: tests/test_web_browser.py
+        result: Synthetic phone and desktop UI acceptance verified at 360 390 and 1280 pixel widths.
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Implementation runbook budget configuration and separately approved live rollout documented; running release and schema 4 were not changed.
+  - id: P19
+    track: personal
+    title: Three newly approved live application canaries
+    status: pending
+    execution: owner
+    owner: integration
+    depends_on: [P18]
+    write_scope: []
+    acceptance:
+      - Three new jobs and exact application packages receive owner approval individually.
+      - Every live canary has actual receipt proof and no duplicate transmission.
+      - General hybrid enablement follows recorded canary acceptance only.
+    evidence: []
+  - id: A00
+    track: personal
+    title: Freeze architecture and executable development ledger
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: []
+    write_scope: [ARCHITECTURE.md, EXECUTION_PLAN.yaml, scripts/project_status.py, AGENTS.md]
+    acceptance:
+      - Baseline decisions and complete release outcomes are documented.
+      - Ledger rejects invalid dependencies and detects baseline drift.
+      - Status reports ready independent tasks without executing side effects.
+    evidence:
+      - path: tests/test_execution_plan.py
+        result: Seven plan validation tests passed; baseline hash and evidence paths checked on 2026-11-01.
+      - path: ARCHITECTURE.md
+        result: Baseline 1.0 documents both products dependencies interfaces budget and completion criteria.
+  - id: P00
+    track: personal
+    title: Recover local discovery and outcome health
+    status: done
+    execution: autonomous
+    owner: integration
+    depends_on: []
+    write_scope: [src/backend_scout/runtime_health.py, src/backend_scout/scout_selection.py, src/backend_scout/collectors.py, src/backend_scout/scouting_preferences.py, src/backend_scout/matcher.py, src/backend_scout/cli.py]
+    acceptance:
+      - Workers and production morning routine are active.
+      - Gmail and scouting report real successful outcomes.
+    evidence:
+      - path: tests/test_recovery_integration.py
+        result: Recovery suite passed; deployed routine and mailbox showed fresh success on 2026-11-01.
+      - path: tests/test_collectors.py
+        result: Follow-up scouting audit found page-one-only collection; full pagination and explicit incomplete-page failures tested on 2026-11-01.
+      - path: tests/test_scouting_preferences.py
+        result: Unicode whole-word exclusions and truthful backlog summary covered; full local suite passed 750 tests on 2026-11-01.
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Deployed release 20261101T124357736350Z; live production scout read 895 records, created five new rows and sent five Telegram reviews; runtime doctor and mailbox health passed.
+      - path: tests/test_matcher.py
+        result: Owner-approved onsite inclusion deployed in release 20261101T130542716070Z; live profile readback confirmed all three work modes enabled, explicit Telegram labels tested, full suite passed 754 tests.
+      - path: tests/test_telegram.py
+        result: Onsite-inclusive production scan found 53 eligible listings and created/sent 15 new reviews on 2026-11-01; all delivery approvals remain required.
+      - path: tests/test_application_urls.py
+        result: Closed-window recovery adds authorized read-only links, rejects temporary sign-in and credential URLs, and preserves application states; 773 tests passed. Palo Alto official Workday entry and unchanged PDF were returned to the owner without submitting.
+      - path: tests/test_notion.py
+        result: Required years now flow from Notion into every Telegram job card and status list, with explicit unknown warnings; 781 tests passed. Moon Active's verified six-year requirement and official application link were returned to the owner with Safari left open, without submitting.
+  - id: P01
+    track: personal
+    title: Immutable application package and fingerprint
+    status: done
+    execution: autonomous
+    owner: backend-core
+    depends_on: [P00]
+    write_scope: [src/backend_scout/application_package.py, tests/test_application_package.py]
+    acceptance:
+      - Fingerprint binds job tracker route CV and exact reviewed contents.
+      - Answer order is stable and nested mutation cannot alter a snapshot.
+      - Malformed or incomplete route data is rejected.
+    evidence:
+      - path: tests/test_application_package.py
+        result: All 243 contract cases passed; full project suite passed 527 tests on 2026-11-01.
+      - path: src/backend_scout/application_package.py
+        result: Reviewed immutable snapshots deterministic hashing route validation and defensive copies; live wiring remains P02-P05.
+  - id: P02
+    track: personal
+    title: SQLite application ledger and migrations
+    status: done
+    execution: autonomous
+    owner: backend-core
+    depends_on: [A00, P01]
+    write_scope: [src/backend_scout/application_store.py, tests/test_application_store.py]
+    acceptance:
+      - Versioned migrations share the existing operational database.
+      - Applications packages approvals attempts and artifacts persist atomically.
+      - Migration-copy reconciliation and restart tests pass.
+    evidence:
+      - path: tests/test_application_store.py
+        result: Seventeen ledger tests passed, including discovery snapshots, artifact checksums, concurrent attempt claims, restart and backup-copy reconciliation.
+      - path: src/backend_scout/application_store.py
+        result: Reviewed atomic versioned records and audit/outbox intent; legacy production remains outside the new service until P03-P05 cutover.
+  - id: P03
+    track: personal
+    title: Shared typed application services
+    status: done
+    execution: autonomous
+    owner: backend-core
+    depends_on: [P02]
+    write_scope: [src/backend_scout/application_service.py, src/backend_scout/cli.py]
+    acceptance:
+      - Workers and CLI invoke typed operations rather than infer CLI success.
+      - Old production path stays available until explicit cutover.
+    evidence:
+      - path: tests/test_application_service.py
+        result: Typed drafting and exact-package queue operations, owner checks, attachment checksums and uncertain-attempt blocking verified on 2026-11-02. Legacy applications remain unclaimed until explicit web action.
+      - path: tests/test_web_bridge.py
+        result: Shared worker outcomes distinguish blocked from done; stale legacy callbacks and CLI mutation commands cannot override a ledger-owned application.
+  - id: P04
+    track: personal
+    title: Transactional Notion and notification outbox
+    status: in_progress
+    execution: autonomous
+    owner: connectors
+    depends_on: [P03]
+    write_scope: [src/backend_scout/outbox.py, src/backend_scout/notion.py]
+    acceptance:
+      - Local operation remains available during a Notion outage.
+      - Projection replay cannot cause duplicate delivery or notification.
+      - Remote status alone cannot authorize submission.
+    evidence:
+      - path: tests/test_application_outbox.py
+        result: Schema-v3 leased Notion projection coalesces snapshots, backs off failures and checks tracker parent and receipt artifacts. Durable notification delivery remains unfinished; current artifact notifications are best-effort after local task completion.
+  - id: P05
+    track: personal
+    title: One approval for the exact current application package
+    status: done
+    execution: autonomous
+    owner: backend-core
+    depends_on: [P03]
+    write_scope: [src/backend_scout/application_service.py, src/backend_scout/telegram.py]
+    acceptance:
+      - Authorized review binds current fingerprint and actual CV bytes.
+      - Revisions and new material questions invalidate old approval.
+      - Cross-tracker stale and duplicate callbacks fail correctly.
+    evidence:
+      - path: tests/test_application_service.py
+        result: Web review binds exact current PDF, official route, identity and reviewed answers. Changed CV or contact facts invalidate approval; unanswered material questions require a fresh review, while an unchanged pre-send pause can resume.
+      - path: tests/test_web_bridge.py
+        result: Authorized private pairing, immediate callback acknowledgement, cross-interface guard and normalized UUID ownership regression checks passed on 2026-11-02.
+  - id: P06
+    track: personal
+    title: Private mobile review interface and owner sessions
+    status: done
+    execution: autonomous
+    owner: web
+    depends_on: [P05]
+    write_scope: [src/backend_scout/web, tests/test_web.py, pyproject.toml, uv.lock]
+    acceptance:
+      - Today input review applications and health work on phone viewports.
+      - Owner pairing sessions CSRF and private artifacts are tested.
+      - One package review replaces repeated identical approvals.
+    evidence:
+      - path: tests/test_web_sessions.py
+        result: Hashed single-use owner pairing, twelve-hour sessions, CSRF, revocation and bounded brute-force attempts tested without real credentials.
+      - path: tests/test_web.py
+        result: Session-gated APIs, private PDFs and image previews, exact-origin checks and stale-approval rejection tested. Local production readback imported 69 jobs and verified 20 CVs without transferring any approval.
+      - path: tests/test_web_browser.py
+        result: Synthetic Chromium acceptance verified phone widths 360 and 390 and desktop width 1280, all four views, visible rendered PDF, logout and horizontal overflow. Private HTTPS phone access is an owner-setup gate, not public hosting.
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Local release 20261102T084955773936Z verified on 2026-11-02; four services loaded, automatic application sync done, 1086 standard tests and all 15 selected UI/portal cases passed. No employer application or public exposure occurred.
+      - path: tests/test_web.py
+        result: Owner-approved private HTTPS enabled on 2026-11-02 in release 20261102T092933530618Z; live Mac checks verified certificate validation, Secure cookies, exact-origin rejection, pairing and logout. Serve configuration has no public Funnel; iPhone Safari usability awaits owner confirmation. Full isolated suite passed 1088 tests.
+      - path: tests/test_web_browser.py
+        result: Usability follow-up exposes Create CV, View CV, Request changes and approval above collapsed manual details. Existing PDFs render without complete posting data; synthetic source-fetch to CV-ready flow refreshes automatically without allowing submission to an unverified route.
+      - path: tests/test_web_bridge.py
+        result: Pairing code sent alone in a separate Telegram message for both private owner command and CLI; group/unauthorized rejection, code redaction and unchanged session gates verified.
+      - path: tests/test_web_browser.py
+        result: Five-tab UI including Agent Apply passed isolated 360/390/1280 acceptance on 2026-11-04; supported-route labels do not promise autonomous readiness. Release 20261104T083136888970Z passed private HTTPS owner-session readback with 88 production records and four imported owner roles; four unsent cards delivered to Telegram. All 1530 standard tests and 15 selected browser/portal cases passed.
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Usability release 20261102T131632900088Z deployed on 2026-11-02; live private HTTPS verified PDF/PNG access for an incomplete posting while submission remained blocked, and a fresh code was sent separately. Runtime doctor, 1206 standard tests, all 15 selected synthetic browser cases, Ruff and offline lock validation passed; no employer contacted.
+  - id: P07
+    track: personal
+    title: Delivery adapters and uncertain-attempt reconciliation
+    status: in_progress
+    execution: autonomous
+    owner: delivery
+    depends_on: [P05]
+    write_scope: [src/backend_scout/submission.py, src/backend_scout/portal_adapters.py, src/backend_scout/outreach.py]
+    acceptance:
+      - One approved route and durable attempt guard each delivery.
+      - Portal success includes confirmation screenshot and email retains message ID.
+      - Missing attachments questions and uncertain transmission do not replay delivery.
+    evidence:
+      - path: tests/test_package_portal.py
+        result: Intercepted Ashby form tests verify exact CV upload, reviewed identity, missing questions, persistent unchanged forms, single submit, painted receipt PNG and uncertain-result blocking. Email route migration and broader live portal acceptance remain pending; no employer was contacted.
+      - path: tests/test_delivery_readiness.py
+        result: Conservative capability classification rejects registry-only readiness, LinkedIn, stale/malformed inspections and unresolved attempts; integration distinguishes supported destinations from a ready exact package. Full browser preflight producer and unified email delivery remain pending.
+      - path: tests/test_greenhouse_forms.py
+        result: Public Greenhouse GET identity, bounded reads, strict schema parsing, alternative fields and unsupported conditional/compliance handling covered; no credential, candidate data or submission interface.
+      - path: tests/test_form_inspection_flow.py
+        result: Schema-v4 observation persistence, destination binding, owner-only queued checks and unchanged approval/lifecycle tested. A public schema observation cannot make a role autonomous-ready.
+      - path: tests/test_unavailable_posting.py
+        result: Known missing/mismatched routes block approval, resume, queued delivery and paid drafting while keeping the exact PDF. Later timeouts cannot erase negative evidence; successful rechecks and explicitly reviewed replacement URLs recover without manufacturing approval. Regression for an owner-reported expired referral destination on 2026-11-04; no employer contacted.
+      - path: SYSTEM_BUILD_GUIDE.md
+        result: Fix deployed as 20261104T090623532998Z after backup and idle-work check. Live HTTPS approve/resume returned posting_unavailable with zero extra attempts while the exact approval and PDF remained intact. All 1549 standard tests, 15 selected UI/portal cases, Ruff and lock/evidence checks passed; no employer contacted.
+  - id: P08
+    track: personal
+    title: Discovery mailbox and evidence services on the shared ledger
+    status: in_progress
+    execution: autonomous
+    owner: connectors
+    depends_on: [P03]
+    write_scope: [src/backend_scout/collectors.py, src/backend_scout/mailbox.py, src/backend_scout/repo_scanner.py]
+    acceptance:
+      - Public Israel sources and Indeed email feed one deduplicated shortlist.
+      - Employer reply matching rejects unrelated and ambiguous email.
+      - Proposed repository skills still require factual confirmation.
+    evidence:
+      - path: src/backend_scout/durable_runtime.py
+        result: Existing 08:00 production scout and fifteen-minute mailbox routine preserved; five-minute typed snapshot sync feeds the local web workspace. Collectors and mailbox still use the legacy Notion path until their full shared-ledger cutover.
+      - path: tests/test_job_enrichment.py
+        result: Bounded read-only exact-posting retrieval and explicit gated/closed outcomes tested with public ATS and structured HTML fixtures. Create CV fetches missing facts first; fetch-only never invokes a model. One live public Lever EU example succeeded without writes or delivery; a LinkedIn gate was reported honestly. Full collector/mailbox cutover remains unfinished.
+      - path: tests/test_recovery.py
+        result: Exhausted current-day DNS/connectivity failure receives one additional recovery after thirty minutes; non-network failures, cancellations and successful work never replay. November 3 recovery and November 4 scheduled scout completed in production; mailbox healthy on November 4.
+  - id: P09
+    track: personal
+    title: Linux container portable secrets cost limits and restore
+    status: pending
+    execution: autonomous
+    owner: operations
+    depends_on: [P04, P06, P07, P08, P13, P14]
+    write_scope: [Dockerfile, compose.yaml, src/backend_scout/secrets.py, scripts]
+    acceptance:
+      - Containers restart with persistent database artifacts and separate worker lanes.
+      - Portable secret setup and fresh Gmail authorization are documented and tested.
+      - Budget enforcement backup restore and single scheduler ownership pass locally.
+    evidence: []
+  - id: P10
+    track: personal
+    title: Approve all-in OVHcloud quote and provision host
+    status: pending
+    execution: owner
+    owner: operations
+    depends_on: [P09]
+    write_scope: []
+    acceptance:
+      - Owner approves actual recurring cost within 100 NIS including model allowance.
+      - Host access domain and HTTPS ingress are available.
+    evidence: []
+  - id: P11
+    track: personal
+    title: Shadow run and cloud scheduler cutover
+    status: pending
+    execution: autonomous
+    owner: operations
+    depends_on: [P10]
+    write_scope: [compose.yaml, scripts]
+    acceptance:
+      - Shadow discovery matches expected state and restores on the target host.
+      - Mac scheduler is disabled before cloud becomes the sole owner.
+      - Phone interface and next morning digest work while the Mac is off.
+    evidence: []
+  - id: P12
+    track: personal
+    title: Owner-approved real delivery and release acceptance
+    status: pending
+    execution: owner
+    owner: integration
+    depends_on: [P11]
+    write_scope: []
+    acceptance:
+      - Owner approves a specific current package for one real application.
+      - Delivery receipt proof and subsequent mailbox status are verified.
+      - Release guide and rollback procedure match observed operation.
+    evidence: []
+  - id: P13
+    track: personal
+    title: Build isolated Linux container and cloud deployment foundation
+    status: done
+    execution: autonomous
+    owner: operations
+    depends_on: [A00, P00]
+    write_scope: [Dockerfile, compose.yaml, .dockerignore, deploy/cloud.env.example, CLOUD_DEPLOYMENT.md, tests/test_cloud_packaging.py]
+    acceptance:
+      - Image builds from allowlisted public source without private data.
+      - Linux Chromium and LibreOffice work as an unprivileged user.
+      - Automation startup requires explicit single-scheduler cutover acknowledgement.
+    evidence:
+      - path: Dockerfile
+        result: Built backendscout:cloud-foundation on Linux ARM64; heavy dependency layers reused after source update.
+      - path: scripts/cloud_smoke.py
+        result: Offline container passed PDF extraction, private credential roundtrip, ledger restart, headed browser pixels, saved receipt and replay prevention on 2026-11-01.
+      - path: tests/test_cloud_packaging.py
+        result: Sixty-nine packaging and guarded Compose tests passed; isolated check had no network or private mounts. Actual VPS architecture remains a target-host acceptance check.
+  - id: P14
+    track: personal
+    title: Portable Gmail credentials and headless OAuth authorization
+    status: done
+    execution: autonomous
+    owner: connectors
+    depends_on: [A00, P00]
+    write_scope: [src/backend_scout/secrets.py, src/backend_scout/gmail.py, src/backend_scout/config.py, tests/test_portable_secrets.py]
+    acceptance:
+      - Linux file backend persists refreshed credentials atomically with owner-only permissions.
+      - Existing macOS Keychain remains the default backend.
+      - Cloud OAuth can be authorized through a local SSH tunnel with no token transfer in chat.
+    evidence:
+      - path: tests/test_portable_secrets.py
+        result: File ownership, atomic saves, symlink rejection and mocked OAuth refresh tests passed; default Keychain unchanged.
+      - path: tests/test_cloud_cli.py
+        result: Fixed port and no-browser forwarding tested; native Linux file-provider roundtrip passed. Actual Google consent over SSH awaits a host and the owner.
+  - id: S00
+    track: commercial
+    title: Portable evidence-first application drafting skill
+    status: done
+    execution: autonomous
+    owner: commercial
+    depends_on: []
+    write_scope: [SKILL.md, references, scripts/validate_evidence.py, build_package.py]
+    acceptance:
+      - Package contains only allowlisted distributable files and synthetic examples.
+      - Structural limitations are disclosed and an independent trial is reviewed.
+    evidence:
+      - path: tests/test_validator.py
+        result: Sixteen validator and packaging tests plus an independent raw-input trial passed on 2026-10-31.
+  - id: S01
+    track: commercial
+    title: Verify Agensi publication requirements and readiness gate
+    status: done
+    execution: autonomous
+    owner: commercial-research
+    depends_on: [S00]
+    write_scope: [MARKETPLACE_READINESS.md, RELEASE_CHECKLIST.yaml, tools/check_release.py, tests/test_release_gate.py]
+    acceptance:
+      - Official sources distinguish requirements recommendations and unknowns.
+      - Actual package gaps and seller payout constraints are recorded.
+      - Release checker fails until all evidenced gates are complete.
+    evidence:
+      - path: MARKETPLACE_READINESS.md
+        result: Official requirements and third-party signals reviewed on 2026-11-01; paid payout eligibility remains explicitly unverified.
+      - path: tests/test_release_gate.py
+        result: Thirty-seven commercial tests passed; submit and live phases correctly report eight and ten unmet gates.
+      - path: tools/check_release.py
+        result: Reviewed phase separation and mandatory gate registry; no account or publication actions performed.
+  - id: S02
+    track: commercial
+    title: Broader independent behavioral evaluations
+    status: pending
+    execution: autonomous
+    owner: commercial-evaluation
+    depends_on: [S01]
+    write_scope: [eval-output, tests]
+    acceptance:
+      - Conflicts missing inputs misleading instructions and Hebrew notes are evaluated.
+      - Findings are resolved without overstating automated truth verification.
+    evidence: []
+  - id: S03
+    track: commercial
+    title: Confirm seller payout price and license
+    status: pending
+    execution: owner
+    owner: commercial
+    depends_on: [S01]
+    write_scope: [RELEASE_CHECKLIST.yaml, MARKETPLACE_DRAFT.md]
+    acceptance:
+      - Seller account and available payout route are verified for the owner.
+      - Price license and platform terms are explicitly accepted.
+    evidence: []
+  - id: S04
+    track: commercial
+    title: Rehearse delivery locally and prepare the live smoke test
+    status: pending
+    execution: autonomous
+    owner: commercial
+    depends_on: [S02, S03]
+    write_scope: [tests, SYSTEM_BUILD_GUIDE.md]
+    acceptance:
+      - Exact ZIP passes an isolated text delivery and temporary script rehearsal.
+      - Live test procedure names only clients whose behavior will be verified after approval.
+    evidence: []
+  - id: S05
+    track: commercial
+    title: Final release package listing and approval bundle
+    status: pending
+    execution: autonomous
+    owner: commercial
+    depends_on: [S02, S03]
+    write_scope: [build_package.py, MARKETPLACE_DRAFT.md, RELEASE_CHECKLIST.yaml]
+    acceptance:
+      - Exact package hash supported claims metadata and listing are reviewable.
+      - Readiness checker and all applicable tests pass apart from external publication.
+    evidence: []
+  - id: S06
+    track: commercial
+    title: Submit approved listing and complete platform review
+    status: pending
+    execution: owner
+    owner: commercial
+    depends_on: [S04, S05]
+    write_scope: [RELEASE_CHECKLIST.yaml]
+    acceptance:
+      - Owner approves the exact release and publication action.
+      - Submission moderation result and public listing URL are verified.
+    evidence: []
+  - id: S07
+    track: commercial
+    title: Verify live MCP delivery and complete commercial acceptance
+    status: pending
+    execution: external
+    owner: commercial
+    depends_on: [S06]
+    write_scope: [RELEASE_CHECKLIST.yaml]
+    acceptance:
+      - Creator loads the actual live version and verifies the complete synthetic workflow.
+      - Advertised client compatibility reference retrieval and temporary script cleanup are observed.
+      - Full release gate passes with live evidence after marketplace approval.
+    evidence: []

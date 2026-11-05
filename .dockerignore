@@ -1,0 +1,20 @@
+# Deny by default. New distributable paths need an explicit review here.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+src/**
+!src/backend_scout/
+src/backend_scout/**
+!src/backend_scout/*.py
+!config/
+config/**
+!config/candidate_profile.example.yaml
+!config/career_evidence.example.yaml
+!config/cv_style.example.yaml
+!config/target_companies.example.yaml
+!config/scouting_preferences.example.yaml
+!config/repo_sources.example.yaml

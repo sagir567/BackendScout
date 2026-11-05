@@ -1,3 +1,5 @@
+import pytest
+
 from backend_scout.collectors import (
     collect_public_jobs,
     is_israel_or_remote,
@@ -220,3 +222,53 @@ def test_israel_filter_accepts_hebrew_indeed_locations() -> None:
     )
 
     assert is_israel_or_remote(job)
+
+
+def _lin_job(number: int) -> dict[str, str]:
+    return {"title": "Backend Engineer", "company_name": "Example",
+            "job_url": f"https://www.linkedin.com/jobs/view/{number}", "location": "Israel"}
+
+
+def test_lin_collection_reads_every_declared_page_and_deduplicates_overlap():
+    target = _target(AtsProvider.LIN_SRAEL)
+    pages = []
+
+    def post(_url, payload):
+        pages.append(payload["page"])
+        return {"pages": 3, "jobs": [_lin_job(payload["page"]), _lin_job(99)]}
+
+    jobs = collect_public_jobs(target, post_json=post)
+    assert pages == [1, 2, 3]
+    assert len(jobs) == 4
+
+
+def test_lin_pagination_without_metadata_reads_until_short_page():
+    target = _target(AtsProvider.LIN_SRAEL).model_copy(update={"result_limit": 1})
+    pages = []
+
+    def post(_url, payload):
+        pages.append(payload["page"])
+        return {"jobs": [_lin_job(payload["page"])] if payload["page"] < 3 else []}
+
+    assert len(collect_public_jobs(target, post_json=post)) == 2
+    assert pages == [1, 2, 3]
+
+
+def test_lin_pagination_rejects_an_endpoint_that_repeats_pages():
+    with pytest.raises(ValueError, match="did not advance"):
+        collect_public_jobs(_target(AtsProvider.LIN_SRAEL),
+                            post_json=lambda *_: {"pages": 2, "jobs": [_lin_job(1)]})
+
+
+def test_lin_page_limit_is_reported_as_incomplete_not_silent_success():
+    target = _target(AtsProvider.LIN_SRAEL).model_copy(update={"max_pages": 1})
+    with pytest.raises(ValueError, match="collection is incomplete"):
+        collect_public_jobs(target, post_json=lambda *_: {"pages": 2, "jobs": [_lin_job(1)]})
+
+
+def test_lin_empty_results_do_not_request_extra_pages():
+    calls = []
+    jobs = collect_public_jobs(_target(AtsProvider.LIN_SRAEL),
+                              post_json=lambda *args: calls.append(args) or {"pages": 0, "jobs": []})
+    assert jobs == []
+    assert len(calls) == 1

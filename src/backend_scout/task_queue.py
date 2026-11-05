@@ -29,11 +29,17 @@ class QueuedTaskKind(str, Enum):
     CONTACT_DISCOVERY = "contact_discovery"
     PORTAL_PREPARE = "portal_prepare"
     PORTAL_SUBMIT = "portal_submit"
+    PACKAGE_CV_DRAFT = "package_cv_draft"
+    PACKAGE_DELIVER = "package_deliver"
+    APPLICATION_SYNC = "application_sync"
+    PACKAGE_ENRICH = "package_enrich"
+    PACKAGE_FORM_INSPECT = "package_form_inspect"
 
 
 class QueuedTaskStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
+    BLOCKED = "blocked"
     RETRYING = "retrying"
     DONE = "done"
     FAILED = "failed"
@@ -42,7 +48,8 @@ class QueuedTaskStatus(str, Enum):
 
 
 BROWSER_TASK_KINDS = frozenset(
-    {QueuedTaskKind.PORTAL_PREPARE, QueuedTaskKind.PORTAL_SUBMIT}
+    {QueuedTaskKind.PORTAL_PREPARE, QueuedTaskKind.PORTAL_SUBMIT,
+     QueuedTaskKind.PACKAGE_DELIVER, QueuedTaskKind.PACKAGE_FORM_INSPECT}
 )
 GENERAL_TASK_KINDS = frozenset(set(QueuedTaskKind) - BROWSER_TASK_KINDS)
 
@@ -88,10 +95,11 @@ def enqueue_task(
     key = idempotency_key or _task_key(kind, tracker, requested_payload)
     now = datetime.now(UTC)
     with _transaction(path) as connection:
+        active_only = "" if idempotency_key else " AND status IN ('queued', 'running', 'retrying')"
         existing = connection.execute(
-            """
+            f"""
             SELECT * FROM tasks
-            WHERE idempotency_key = ? AND status IN ('queued', 'running', 'retrying')
+            WHERE idempotency_key = ?{active_only}
             ORDER BY created_at DESC LIMIT 1
             """,
             (key,),
@@ -156,8 +164,13 @@ def claim_next_task(
             ORDER BY
               CASE kind
                 WHEN 'portal_submit' THEN 0
+                WHEN 'package_deliver' THEN 0
+                WHEN 'package_cv_draft' THEN 5
+                WHEN 'package_enrich' THEN 6
+                WHEN 'package_form_inspect' THEN 7
                 WHEN 'cv_draft' THEN 10
                 WHEN 'portal_prepare' THEN 20
+                WHEN 'application_sync' THEN 25
                 WHEN 'contact_discovery' THEN 30
                 WHEN 'agent_chat' THEN 35
                 WHEN 'scout_today' THEN 40

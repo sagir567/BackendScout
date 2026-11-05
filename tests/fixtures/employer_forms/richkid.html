@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+    <title>Example Richkid | Junior Backend Engineer</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Junior Backend Engineer",
+        "hiringOrganization": {"@type": "Organization", "name": "Example Richkid"}
+      }
+    </script>
+    <style>
+      body { max-width: 48rem; margin: 2rem auto; padding: 0 1rem; font-family: sans-serif; }
+      label { display: block; margin: 1rem 0; }
+      input, textarea { display: block; max-width: 100%; }
+      [hidden] { display: none !important; }
+      label[for="cv"] { cursor: pointer; text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Example Richkid</h1>
+      <h2 id="job-title" dir="ltr">Junior Backend Engineer</h2>
+      <form id="application-form" aria-labelledby="job-title" method="post">
+        <fieldset>
+          <legend>הגשת מועמדות</legend>
+          <label for="full-name">שם מלא
+            <input id="full-name" name="full_name" autocomplete="name" required>
+          </label>
+          <label for="email">דואר אלקטרוני
+            <input id="email" name="email" type="email" autocomplete="email" required>
+          </label>
+          <label for="phone">טלפון
+            <input id="phone" name="phone" type="tel" autocomplete="tel" required>
+          </label>
+          <input id="cv" name="cv" type="file" accept=".pdf,.doc,.docx" required hidden>
+          <label for="cv">לחצו כאן להעלאת קורות חיים</label>
+          <label for="about-you">ספרו לנו מעט על עצמכם
+            <textarea id="about-you" name="about_you" rows="3" required></textarea>
+          </label>
+          <label for="motivation">מדוע תרצו להצטרף לצוות שלנו?
+            <textarea id="motivation" name="motivation" rows="3" required></textarea>
+          </label>
+          <label for="project">איזה פרויקט תוכנה הייתם רוצים לתאר?
+            <textarea id="project" name="project" rows="3" required></textarea>
+          </label>
+          <button type="button" onclick="this.form.requestSubmit()">שליחת מועמדות</button>
+        </fieldset>
+      </form>
+      <p id="receipt" role="status" hidden>Your application has been submitted.</p>
+    </main>
+    <script>
+      window.sent = 0;
+      window.received = null;
+      const form = document.getElementById("application-form");
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        const file = form.querySelector('input[type="file"]').files[0];
+        window.sent += 1;
+        window.received = {
+          filename: file ? file.name : "",
+          size: file ? file.size : 0,
+          marketing: false,
+          answers: Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"))
+        };
+        window.setTimeout(() => {
+          document.getElementById("receipt").hidden = false;
+        }, 150);
+      };
+    </script>
+  </body>
+</html>

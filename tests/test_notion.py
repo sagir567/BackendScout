@@ -4,6 +4,7 @@ from backend_scout.models import ApplicationStatus, Job
 from backend_scout.notion import (
     APPLICATIONS_PROPERTY_NAMES,
     APPLICATIONS_PROPERTY_TYPES,
+    application_digest_item_from_page,
     build_job_page_properties,
     missing_submission_property_definitions,
     missing_workflow_status_property_definition,
@@ -36,6 +37,16 @@ def test_build_job_page_properties_uses_data_source_schema_names() -> None:
         {"name": "Python"},
         {"name": "PostgreSQL"},
     ]
+
+
+@pytest.mark.parametrize("years", ["6+ years", "1-3 years", None])
+def test_digest_preserves_notion_experience_requirement(years):
+    job = Job(
+        source="manual", source_url="https://example.com/jobs/1", company="Example",
+        title="Backend Developer", description="Build services.", years_experience=years,
+    )
+    item = application_digest_item_from_page({"id": "page", "properties": build_job_page_properties(job)})
+    assert item.years_experience == years
 
 
 def test_validate_applications_data_source_accepts_expected_schema() -> None:

@@ -27,6 +27,7 @@ class TargetCompany(BaseModel):
     notes: str | None = None
     search_terms: list[str] = Field(default_factory=list)
     result_limit: int = Field(default=50, ge=1, le=100)
+    max_pages: int = Field(default=20, ge=1, le=100)
 
     @field_validator("name", "board_token", mode="before")
     @classmethod

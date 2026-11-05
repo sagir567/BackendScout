@@ -1,0 +1,153 @@
+name: backendscout
+
+x-runtime: &runtime
+  image: backendscout:cloud-foundation
+  build:
+    context: .
+    dockerfile: Dockerfile
+  init: true
+  user: "10001:10001"
+  working_dir: /var/lib/backendscout
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,nosuid,size=256m,mode=1777
+  volumes:
+    - type: volume
+      source: state
+      target: /var/lib/backendscout
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-cloud-environment: &cloud-environment
+  BACKENDSCOUT_ENABLE_AUTOMATION: ${BACKENDSCOUT_ENABLE_AUTOMATION:-}
+  BACKENDSCOUT_SCHEDULER_OWNERSHIP: ${BACKENDSCOUT_SCHEDULER_OWNERSHIP:-}
+  BACKENDSCOUT_PRIVATE_DIR: ${BACKENDSCOUT_PRIVATE_DIR:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL_FAST: ${OPENAI_MODEL_FAST:-}
+  OPENAI_MODEL_BALANCED: ${OPENAI_MODEL_BALANCED:-}
+  OPENAI_MODEL_HIGH_QUALITY: ${OPENAI_MODEL_HIGH_QUALITY:-}
+  NOTION_API_KEY: ${NOTION_API_KEY:-}
+  NOTION_TEST_APPLICATIONS_DATA_SOURCE_ID: ${NOTION_TEST_APPLICATIONS_DATA_SOURCE_ID:-}
+  NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID: ${NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID:-}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+  TELEGRAM_DEFAULT_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
+  GMAIL_CREDENTIAL_STORE: file
+  GMAIL_CREDENTIAL_FILE: /var/lib/backendscout/secrets/gmail.json
+  GMAIL_OAUTH_CLIENT_SECRET_PATH: /run/backendscout/secrets/gmail-client.json
+  WORKFLOW_DATABASE_PATH: /var/lib/backendscout/data/runtime/backendscout.sqlite3
+  CV_ARCHIVE_ROOT: /var/lib/backendscout/applications
+  SUBMISSION_PROOF_ROOT: /var/lib/backendscout/data/submission_proofs
+  BROWSER_PROFILE_ROOT: /var/lib/backendscout/browser-profile
+  VERIFICATION_HANDOFF_ENABLED: "false"
+  LIBREOFFICE_EXECUTABLE: /usr/bin/soffice
+
+x-automation: &automation
+  <<: *runtime
+  profiles: [automation]
+  # Failures must be inspected, not retried indefinitely with live credentials.
+  restart: "no"
+  stop_grace_period: 60s
+  deploy:
+    replicas: 1
+  volumes:
+    - type: volume
+      source: state
+      target: /var/lib/backendscout
+    - type: bind
+      source: ${BACKENDSCOUT_PRIVATE_DIR:-/nonexistent/backendscout-private}/config
+      target: /var/lib/backendscout/config
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${BACKENDSCOUT_PRIVATE_DIR:-/nonexistent/backendscout-private}/secrets
+      target: /run/backendscout/secrets
+      read_only: true
+      bind:
+        create_host_path: false
+  entrypoint:
+    - /bin/sh
+    - -ec
+    - |
+      umask 077
+      if [ "$${BACKENDSCOUT_ENABLE_AUTOMATION:-}" != "yes-i-understand" ]; then
+        echo 'Automation disabled; explicit owner opt-in required.' >&2
+        exit 78
+      fi
+      if [ "$${BACKENDSCOUT_SCHEDULER_OWNERSHIP:-}" != "cloud-is-sole-scheduler" ]; then
+        echo 'Refusing automation without sole-scheduler ownership acknowledgement.' >&2
+        exit 78
+      fi
+      case "$${BACKENDSCOUT_PRIVATE_DIR:-}" in
+        /*) ;;
+        *) echo 'Set an absolute BACKENDSCOUT_PRIVATE_DIR outside the checkout.' >&2; exit 78 ;;
+      esac
+      : "$${OPENAI_API_KEY:?Set OPENAI_API_KEY externally}"
+      : "$${OPENAI_MODEL_FAST:?Set approved OPENAI_MODEL_FAST externally}"
+      : "$${OPENAI_MODEL_BALANCED:?Set approved OPENAI_MODEL_BALANCED externally}"
+      : "$${OPENAI_MODEL_HIGH_QUALITY:?Set approved OPENAI_MODEL_HIGH_QUALITY externally}"
+      : "$${NOTION_API_KEY:?Set NOTION_API_KEY externally}"
+      : "$${NOTION_PRODUCTION_APPLICATIONS_DATA_SOURCE_ID:?Set production tracker externally}"
+      : "$${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN externally}"
+      : "$${TELEGRAM_ALLOWED_USER_IDS:?Set authorized Telegram owner IDs externally}"
+      : "$${TELEGRAM_DEFAULT_CHAT_ID:?Set TELEGRAM_DEFAULT_CHAT_ID externally}"
+      [ "$${GMAIL_CREDENTIAL_STORE:-}" = file ] || exit 78
+      [ "$${GMAIL_CREDENTIAL_FILE:-}" = /var/lib/backendscout/secrets/gmail.json ] || exit 78
+      for file in candidate_profile career_evidence cv_style target_companies scouting_preferences repo_sources; do
+        test -r "config/$${file}.yaml" || { echo "Missing private config: $${file}.yaml" >&2; exit 78; }
+      done
+      test -r "$${GMAIL_OAUTH_CLIENT_SECRET_PATH}" || { echo 'Missing OAuth client file.' >&2; exit 78; }
+      test -r "$${GMAIL_CREDENTIAL_FILE}" || { echo 'Complete fresh cloud Gmail authorization first.' >&2; exit 78; }
+      case "$${BACKENDSCOUT_LANE:-}" in
+        general|browser|telegram) ;;
+        *) echo 'Unknown automation lane.' >&2; exit 78 ;;
+      esac
+      mkdir -p data/runtime
+      exec flock --no-fork --nonblock --conflict-exit-code 75 "data/runtime/$${BACKENDSCOUT_LANE}.lock" "$$@"
+    - --
+
+services:
+  check:
+    <<: *runtime
+    network_mode: none
+    shm_size: 1gb
+    restart: "no"
+  general:
+    <<: *automation
+    container_name: backendscout-general
+    environment:
+      <<: *cloud-environment
+      BACKENDSCOUT_LANE: general
+    command: [backend-scout, tasks, worker, --lane, general, --enable-schedules]
+  browser:
+    <<: *automation
+    container_name: backendscout-browser
+    shm_size: 1gb
+    environment:
+      <<: *cloud-environment
+      BACKENDSCOUT_LANE: browser
+    command:
+      - xvfb-run
+      - -a
+      - --server-args=-screen 0 1280x900x24 -nolisten tcp
+      - backend-scout
+      - tasks
+      - worker
+      - --lane
+      - browser
+  telegram:
+    <<: *automation
+    container_name: backendscout-telegram
+    environment:
+      <<: *cloud-environment
+      BACKENDSCOUT_LANE: telegram
+    command: [backend-scout, telegram, listen, --tracker, production, --timeout-seconds, "30"]
+
+volumes:
+  state:

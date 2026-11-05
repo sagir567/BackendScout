@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from backend_scout.runtime_bundle import (
     active_runtime_path,
     deploy_runtime_files,
@@ -20,6 +22,7 @@ def _source_tree(root: Path) -> None:
     )
     (root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (root / "uv.lock").write_text("lock", encoding="utf-8")
+    (root / "README.md").write_text("Runtime test fixture", encoding="utf-8")
 
 
 def test_deploy_runtime_rewrites_private_paths_and_preserves_state(tmp_path: Path) -> None:
@@ -61,3 +64,37 @@ def test_source_runtime_env_overrides_only_matches_deployed_source(tmp_path: Pat
         runtime / "private" / "backendscout.sqlite3"
     )
     assert source_runtime_env_overrides(tmp_path / "other", runtime) == {}
+
+
+def test_failed_build_preserves_active_release_and_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _source_tree(source)
+    runtime = tmp_path / "runtime"
+    manifest_path = deploy_runtime_files(source, runtime)
+    previous = active_runtime_path(runtime).resolve()
+    previous_manifest = manifest_path.read_bytes()
+
+    def failing_build(release):
+        assert release.is_dir()
+        assert active_runtime_path(runtime).resolve() == previous
+        raise RuntimeError("dependency installation failed")
+
+    with pytest.raises(RuntimeError, match="dependency installation failed"):
+        deploy_runtime_files(source, runtime, failing_build)
+    assert active_runtime_path(runtime).resolve() == previous
+    assert manifest_path.read_bytes() == previous_manifest
+
+
+def test_new_release_is_activated_only_after_preflight(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _source_tree(source)
+    runtime = tmp_path / "runtime"
+
+    def successful_build(release):
+        assert not (runtime / "current").exists()
+        (release / "preflight-passed").touch()
+
+    deploy_runtime_files(source, runtime, successful_build)
+    assert (active_runtime_path(runtime) / "preflight-passed").is_file()

@@ -334,15 +334,22 @@ class CandidateIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     full_name: str
+    given_name: str | None = None
+    family_name: str | None = None
     email: str
     phone: str | None = None
     location: str | None = None
+    city: str | None = None
+    country: str | None = None
     links: list[str] = Field(default_factory=list)
 
     _normalize_name = field_validator("full_name", mode="before")(_normalize_required_string)
     _normalize_email = field_validator("email", mode="before")(_normalize_required_string)
     _normalize_phone = field_validator("phone", mode="before")(_normalize_optional_string)
     _normalize_location = field_validator("location", mode="before")(_normalize_optional_string)
+    _normalize_identity_parts = field_validator(
+        "given_name", "family_name", "city", "country", mode="before"
+    )(_normalize_optional_string)
     _normalize_links = field_validator("links", mode="before")(_normalize_string_list)
 
 
@@ -673,6 +680,7 @@ class ApplicationDigestItem(BaseModel):
     remote_policy: str | None = None
     employment_type: str | None = None
     salary_text: str | None = None
+    years_experience: str | None = None
     match_score: int | None = Field(default=None, ge=0, le=100)
     match_reason: str | None = None
     required_skills: list[str] = Field(default_factory=list)

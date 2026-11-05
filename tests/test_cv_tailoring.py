@@ -212,3 +212,45 @@ def test_tailored_draft_rejects_headline_when_style_hides_it() -> None:
 
     with pytest.raises(ValueError, match="headline"):
         validate_tailored_cv_against_evidence(draft, evidence, CvStyle())
+
+
+def test_hybrid_cv_reserves_shared_budget_before_provider_and_records_usage(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from backend_scout.cv_tailoring import generate_tailored_cv
+
+    evidence = make_evidence()
+    job = make_job("Backend Engineer", "Build Python backend APIs.", ["Python"])
+    draft = build_evidence_only_draft(evidence)
+    events = []
+    budget = Mock()
+    budget.reserve_external.side_effect = lambda *args: events.append("reserved") or SimpleNamespace(reservation_id="external-1")
+
+    def respond(**kwargs):
+        assert events == ["reserved"]
+        assert kwargs["max_output_tokens"] == 6000
+        return SimpleNamespace(output_text=draft.model_dump_json(),
+                               usage=SimpleNamespace(input_tokens=1000, output_tokens=500))
+
+    provider = Mock()
+    provider.responses.create.side_effect = respond
+    monkeypatch.setattr("openai.OpenAI", lambda **kwargs: provider)
+    generate_tailored_cv(evidence, job, CvStyle(), "synthetic-key", "synthetic-model", usage_budget=budget)
+    budget.settle_external.assert_called_once_with("external-1", 1000, 500)
+
+
+def test_hybrid_cv_missing_pricing_cannot_make_a_paid_call(monkeypatch):
+    from unittest.mock import Mock
+
+    from backend_scout.browser_budget import BudgetExceeded
+    from backend_scout.cv_tailoring import generate_tailored_cv
+
+    provider = Mock()
+    monkeypatch.setattr("openai.OpenAI", provider)
+    budget = Mock()
+    budget.reserve_external.side_effect = BudgetExceeded("missing_pricing")
+    with pytest.raises(BudgetExceeded, match="missing_pricing"):
+        generate_tailored_cv(make_evidence(), make_job("Backend", "Python APIs", ["Python"]),
+                             CvStyle(), "synthetic-key", "synthetic-model", usage_budget=budget)
+    provider.assert_not_called()

@@ -8,6 +8,7 @@ config/cv_style.yaml
 config/repo_sources.yaml
 config/scouting_preferences.yaml
 config/target_companies.yaml
+config/*.private.yaml
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -31,6 +32,9 @@ data/mailbox/
 data/repo_scans/
 data/submission_proofs/
 data/tasks/
+data/runtime/
+data/secrets/
+deploy/*.env
 data/logs/
 data/scouting/
 browser-profile/

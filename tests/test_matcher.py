@@ -1,3 +1,5 @@
+import pytest
+
 from backend_scout.matcher import score_job
 from backend_scout.models import (
     CandidateProfile,
@@ -30,6 +32,31 @@ def make_profile() -> CandidateProfile:
             },
         }
     )
+
+
+@pytest.mark.parametrize("title,expected", [
+    ("AI Python Developer", 25),
+    ("C# Developer", 18),
+    (".NET Developer", 18),
+    ("Python QA Analyst", 10),
+])
+def test_language_developer_titles_are_recognized_without_promoting_qa(title, expected):
+    result = score_job(make_profile(), Job(
+        source="test", source_url="https://example.com/jobs/1", company="Example", title=title,
+        description="Build Python backend APIs and .NET services.", location="Israel",
+    ))
+    assert next(b.points_awarded for b in result.score_breakdown if b.component == "role_relevance") == expected
+
+
+def test_title_only_feed_is_a_preliminary_match_not_an_apply_recommendation():
+    result = score_job(make_profile(), Job(
+        source="lin_srael:Example", source_url="https://example.com/jobs/1", company="Example",
+        title="Backend Python Engineer", location="Israel", remote_policy="Hybrid",
+        description="Published Lin-Srael job listing.", required_skills=["Python"],
+    ))
+    assert result.match_score >= 75
+    assert result.recommended_action == MatchRecommendation.MAYBE
+    assert "did not provide detailed requirements" in result.reason_summary
 
 
 def test_score_job_returns_apply_for_strong_backend_match() -> None:
@@ -118,6 +145,29 @@ def test_score_job_skips_onsite_only_role_when_onsite_is_disallowed() -> None:
 
     assert result.location_assessment == LocationAssessment.MISMATCH
     assert result.recommended_action == MatchRecommendation.SKIP
+
+
+def test_onsite_allowed_profile_keeps_role_eligible_without_preferring_it_to_hybrid() -> None:
+    from backend_scout.matcher import ScoredJob
+    from backend_scout.scouting_preferences import (
+        ScoutingPreferences,
+        public_collection_digest_candidate,
+    )
+
+    profile = make_profile()
+    profile.work_preferences.onsite = True
+    job = Job(
+        source="manual", source_url="https://example.com/jobs/onsite", company="Example",
+        title="Backend Engineer", location="Haifa, Israel", remote_policy="On-site",
+        salary_text="18,000 NIS", description="Build backend APIs with Python.",
+        required_skills=["Python"], years_experience="2 years",
+    )
+    result = score_job(profile, job)
+    assert result.location_assessment == LocationAssessment.FIT
+    assert result.recommended_action != MatchRecommendation.SKIP
+    assert not any("disallows onsite" in concern for concern in result.concerns)
+    assert next(b.points_awarded for b in result.score_breakdown if b.component == "work_mode_location") == 6
+    assert public_collection_digest_candidate(ScoredJob(job, result), ScoutingPreferences(minimum_match_score=65))
 
 
 def test_score_job_handles_years_slightly_above_target_range() -> None:

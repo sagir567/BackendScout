@@ -87,6 +87,23 @@ WORKFLOW_STATUS_COLORS = {
 }
 
 
+def query_all_pages(client: "NotionClient", data_source_id: str) -> list[dict[str, Any]]:
+    """Read every tracker page without dropping applications after page 100."""
+    pages: list[dict[str, Any]] = []
+    payload: dict[str, Any] = {"page_size": 100}
+    seen: set[str] = set()
+    while True:
+        response = client.query_data_source(data_source_id, payload)
+        pages.extend(page for page in response.get("results", []) if isinstance(page, dict))
+        if not response.get("has_more"):
+            return pages
+        cursor = response.get("next_cursor")
+        if not isinstance(cursor, str) or not cursor or cursor in seen:
+            raise ValueError("Notion pagination did not advance")
+        seen.add(cursor)
+        payload = {"page_size": 100, "start_cursor": cursor}
+
+
 class NotionClient:
     def __init__(
         self,
@@ -341,6 +358,7 @@ def application_digest_item_from_page(page: dict[str, Any]) -> ApplicationDigest
         remote_policy=_extract_rich_text_value(properties, "remote_policy"),
         employment_type=_extract_rich_text_value(properties, "employment_type"),
         salary_text=_extract_rich_text_value(properties, "salary"),
+        years_experience=_extract_rich_text_value(properties, "years_experience"),
         match_score=_extract_number_value(properties, "match_score"),
         match_reason=_extract_rich_text_value(properties, "match_reason"),
         required_skills=_extract_multi_select_values(properties, "required_skills"),

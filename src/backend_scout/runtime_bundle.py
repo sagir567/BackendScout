@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_RUNTIME_ROOT = Path.home() / "Library" / "Application Support" / "BackendScout"
 RUNTIME_MANIFEST_NAME = "runtime-manifest.json"
 RUNTIME_DIRECTORIES = ("config", "launchd", "scripts", "src")
-RUNTIME_FILES = (".env", "pyproject.toml", "uv.lock")
+RUNTIME_FILES = (".env", "pyproject.toml", "uv.lock", "README.md")
 RUNTIME_ENV_OVERRIDES = {
     "CV_ARCHIVE_ROOT": "private/cv_archive",
     "BROWSER_PROFILE_ROOT": "private/browser_profile",
@@ -20,8 +21,12 @@ RUNTIME_ENV_OVERRIDES = {
 }
 
 
-def deploy_runtime_files(source_root: Path, runtime_root: Path) -> Path:
-    """Create an immutable release and atomically point ``current`` to it."""
+def deploy_runtime_files(
+    source_root: Path,
+    runtime_root: Path,
+    prepare_release: Callable[[Path], None] | None = None,
+) -> Path:
+    """Stage and validate a release before replacing the active runtime."""
     source = source_root.resolve()
     runtime = runtime_root.expanduser().absolute()
     _validate_source(source)
@@ -63,6 +68,8 @@ def deploy_runtime_files(source_root: Path, runtime_root: Path) -> Path:
         (staging / "data").symlink_to(shared_data, target_is_directory=True)
         (staging / "private").symlink_to(shared_private, target_is_directory=True)
         staging.rename(release)
+        if prepare_release is not None:
+            prepare_release(release)
     except BaseException:
         if staging.exists():
             shutil.rmtree(staging)

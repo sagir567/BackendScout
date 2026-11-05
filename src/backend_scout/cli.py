@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -18,6 +19,9 @@ from rich.table import Table
 
 from backend_scout.agent_gateway import run_agent_chat
 from backend_scout.application_answers import load_application_form_answers
+from backend_scout.application_service import OperationOutcome, build_application_service
+from backend_scout.application_store import ApplicationConflict, is_ledger_owned
+from backend_scout.application_urls import application_entry_url
 from backend_scout.candidate_profile import (
     DEFAULT_PROFILE_PATH,
     candidate_profile_warnings,
@@ -48,6 +52,8 @@ from backend_scout.durable_runtime import (
     DAILY_SCHEDULE_NAME,
     MAILBOX_SCHEDULE_NAME,
     durable_schedule_statuses,
+    ensure_application_sync,
+    ensure_today_scout,
     launch_durable_schedules,
     stop_durable_runtime,
 )
@@ -112,6 +118,7 @@ from backend_scout.notion import (
     missing_submission_property_definitions,
     missing_workflow_status_property_definition,
     missing_workflow_statuses,
+    query_all_pages,
     upsert_job_page,
     validate_applications_data_source,
     validate_submission_data_source,
@@ -138,11 +145,14 @@ from backend_scout.runtime_bundle import (
     runtime_private_path,
     source_runtime_env_overrides,
 )
+from backend_scout.runtime_health import workflow_health
+from backend_scout.scout_selection import select_reviewable_jobs
 from backend_scout.scouting_preferences import (
     DEFAULT_SCOUTING_PREFERENCES_PATH,
     ScoutingPreferences,
     load_scouting_preferences,
     public_collection_digest_candidate,
+    public_collection_rejection_reason,
 )
 from backend_scout.submission import (
     BrowserPreparationResult,
@@ -167,6 +177,7 @@ from backend_scout.task_queue import (
     retry_task,
 )
 from backend_scout.telegram import (
+    BrowserPairingMessage,
     TelegramClient,
     build_cv_draft_reply_markup,
     build_email_review_reply_markup,
@@ -174,9 +185,11 @@ from backend_scout.telegram import (
     build_portal_submit_reply_markup,
     build_whatsapp_handoff_reply_markup,
     process_telegram_update,
+    send_browser_pairing_message,
     send_digest_messages,
 )
 from backend_scout.verification_handoff import discover_tailscale_ipv4, find_tailscale_executable
+from backend_scout.web_sessions import OwnerSessionStore
 from backend_scout.whatsapp import (
     build_whatsapp_handoff,
     handoff_url,
@@ -201,9 +214,85 @@ system_app = typer.Typer(help="Manage local BackendScout runtime helpers.")
 runtime_app = typer.Typer(help="Deploy the private macOS background runtime.")
 launchd_app = typer.Typer(help="Install or inspect macOS launchd agents.")
 tailscale_app = typer.Typer(help="Inspect the private Tailscale verification handoff.")
+web_app = typer.Typer(help="Run the private phone interface locally.")
+applications_app = typer.Typer(help="Review exact packages through the shared application service.")
 console = Console()
 TELEGRAM_OFFSET_PATH = Path("data/telegram/last_update_id.txt")
 DEFAULT_LAUNCHD_AGENT_DIR = Path.home() / "Library" / "LaunchAgents"
+TrackerOption = Annotated[
+    TrackerName,
+    typer.Option("--tracker", help="Notion tracker to use. Defaults to the isolated test tracker."),
+]
+
+
+def _legacy_action_guard(settings: Settings, page_id: str, tracker: TrackerName) -> None:
+    if is_ledger_owned(settings.workflow_database_path, page_id, tracker):
+        raise ValueError("This application is managed in the private web review. Send /web; old approval buttons cannot change its exact package.")
+
+
+def _browser_pairing_message(settings: Settings, user_id: int) -> BrowserPairingMessage:
+    if user_id not in settings.telegram_allowed_user_id_set:
+        raise ValueError("Browser pairing is available only to the authorized owner")
+    sessions = OwnerSessionStore(settings.workflow_database_path, {str(i) for i in settings.telegram_allowed_user_id_set})
+    code = sessions.issue_pairing_code(str(user_id))
+    loopback_note = "\nThis local address opens on the Mac only; private phone access is not configured yet." if urlparse(settings.web_public_origin).hostname in {"127.0.0.1", "localhost", "::1"} else ""
+    return BrowserPairingMessage(
+        instructions=f"BackendScout\nPrivate workspace: {settings.web_public_origin}{loopback_note}\n\nThe next message contains only your sign-in code. It expires in five minutes and works once. Do not forward it.",
+        code=code,
+    )
+
+
+@web_app.command("serve")
+def web_serve(tracker: TrackerOption = TrackerName.TEST) -> None:
+    import uvicorn
+
+    from backend_scout.web.app import create_app
+
+    settings = Settings()
+    if settings.web_host not in {"127.0.0.1", "localhost", "::1"}:
+        raise typer.BadParameter("Bind the application to loopback; use a private HTTPS reverse proxy for phone access")
+    console.print(f"Private workspace: {settings.web_public_origin}")
+    uvicorn.run(create_app(settings, tracker=tracker), host=settings.web_host, port=settings.web_port, access_log=False)
+
+
+@web_app.command("pair")
+def web_pair() -> None:
+    settings = Settings()
+    chat_id = _resolve_daily_chat_id(settings, None)
+    if chat_id not in settings.telegram_allowed_user_id_set or not settings.telegram_bot_token:
+        raise typer.BadParameter("Configure the owner's private Telegram chat before pairing")
+    message = _browser_pairing_message(settings, chat_id)
+    with TelegramClient(settings.telegram_bot_token) as client:
+        send_browser_pairing_message(client, chat_id, message)
+    console.print("A single-use pairing code was sent to your private Telegram chat.")
+
+
+@applications_app.command("sync")
+def applications_sync(tracker: TrackerOption = TrackerName.TEST) -> None:
+    settings = Settings()
+    actors = settings.telegram_allowed_user_id_set
+    if len(actors) != 1:
+        raise typer.BadParameter("Configure exactly one owner for the private workspace")
+    outcome = build_application_service(settings).sync_projection(tracker, str(next(iter(actors))))
+    console.print_json(data=outcome.model_dump(mode="json"))
+
+
+@applications_app.command("review")
+def applications_review(page_id: str, tracker: TrackerOption = TrackerName.TEST) -> None:
+    service = build_application_service(Settings())
+    console.print_json(data=service.detail(page_id, tracker))
+
+
+@apply_app.command("inspect-form")
+def apply_inspect_form(page_id: str, tracker: TrackerOption = TrackerName.TEST) -> None:
+    """Queue a public Greenhouse form check without sending candidate data."""
+    settings = Settings()
+    actors = settings.telegram_allowed_user_id_set
+    if len(actors) != 1:
+        raise typer.BadParameter("Configure exactly one owner for the private workspace")
+    outcome = build_application_service(settings).request_form_inspection(
+        page_id, tracker, str(next(iter(actors))))
+    console.print_json(data=outcome.model_dump(mode="json"))
 
 
 @app.callback()
@@ -240,10 +329,6 @@ ScoutingPreferencesPathOption = Annotated[
 RepoSourcesPathOption = Annotated[
     Path,
     typer.Option("--path", help="Private repository-source YAML path."),
-]
-TrackerOption = Annotated[
-    TrackerName,
-    typer.Option("--tracker", help="Notion tracker to use. Defaults to the isolated test tracker."),
 ]
 LaunchdAgentDirOption = Annotated[
     Path,
@@ -569,6 +654,10 @@ def collect_run(
     send_digest: Annotated[
         bool, typer.Option("--send-digest", help="Send Telegram messages for newly created jobs after syncing.")
     ] = False,
+    resend_pending: Annotated[
+        bool,
+        typer.Option("--resend-pending", help="Also resend previously delivered jobs still awaiting tailoring approval."),
+    ] = False,
     chat_id: Annotated[
         int | None, typer.Option("--chat-id", help="Telegram chat ID; defaults to configured daily chat.")
     ] = None,
@@ -580,10 +669,12 @@ def collect_run(
             help="Include jobs discovered in recent Indeed recommendation emails.",
         ),
     ] = True,
-) -> None:
+) -> bool:
     """Collect, filter, score, and optionally sync Israel-relevant jobs."""
     if send_digest and not write_notion:
         raise typer.BadParameter("--send-digest requires --write-notion")
+    if resend_pending and not send_digest:
+        raise typer.BadParameter("--resend-pending requires --send-digest")
     try:
         targets = load_target_companies(targets_path)
         preferences = load_scouting_preferences(preferences_path)
@@ -593,18 +684,25 @@ def collect_run(
         raise typer.Exit(1) from exc
 
     collected: list[Job] = []
+    successful_sources = 0
+    source_counts: dict[str, int] = {}
     failures: list[str] = []
     indeed_report: IndeedEmailCollection | None = None
     for target in (item for item in targets.companies if item.enabled):
         try:
-            collected.extend(collect_public_jobs(target))
+            source_jobs = collect_public_jobs(target)
+            collected.extend(source_jobs)
+            source_counts[target.name] = len(source_jobs)
+            successful_sources += 1
         except (httpx.HTTPError, TypeError, ValueError) as exc:
             failures.append(f"{target.name}: {exc}")
     if include_indeed_email:
         try:
             indeed_messages = list_recent_messages(INDEED_JOB_EMAIL_QUERY, 50)
             indeed_report = collect_indeed_email_jobs(indeed_messages)
+            successful_sources += 1
             collected.extend(indeed_report.jobs)
+            source_counts["Indeed email"] = len(indeed_report.jobs)
             failures.extend(f"Indeed email: {warning}" for warning in indeed_report.warnings)
         except (GoogleAuthError, GoogleHttpError, httpx.HTTPError, OSError, TypeError, ValueError) as exc:
             failures.append(f"Indeed email: {exc}")
@@ -613,17 +711,25 @@ def collect_run(
     shortlist_candidates = [
         scored_job for scored_job in scored_jobs if _is_public_collection_shortlist(scored_job, preferences)
     ]
-    shortlist = sorted(
+    filter_counts = Counter(
+        public_collection_rejection_reason(item, preferences) or "other"
+        for item in scored_jobs
+        if item not in shortlist_candidates
+    )
+    ranked_candidates = sorted(
         shortlist_candidates,
         key=lambda item: item.result.match_score,
         reverse=True,
-    )[: preferences.maximum_digest_jobs]
+    )
+    shortlist = ranked_candidates[: preferences.maximum_digest_jobs]
     _print_scored_jobs_table(shortlist, title="Public ATS Collection Shortlist")
     console.print(
         f"Collected {len(collected)} job(s); Israel/remote filter kept {len(israel_relevant)}; "
         f"unique scored jobs: {len(scored_jobs)}; digest shortlist: {len(shortlist)} "
         f"of {len(shortlist_candidates)} eligible."
     )
+    console.print(f"Source counts: {source_counts}")
+    console.print(f"Excluded by filter (first reason per job): {dict(filter_counts)}")
     if indeed_report is not None:
         console.print(
             f"Indeed email: {indeed_report.inspected_messages} message(s), "
@@ -633,7 +739,7 @@ def collect_run(
         console.print(f"[yellow]Collector warning:[/yellow] {failure}")
     if not write_notion:
         console.print("[yellow]Preview only. Re-run with --write-notion to sync new jobs.[/yellow]")
-        return
+        return successful_sources > 0
 
     settings = Settings()
     if not settings.notion_api_key:
@@ -645,7 +751,10 @@ def collect_run(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     created_pages: list[dict[str, object]] = []
+    digest_pages: list[dict[str, object]] = []
     updated_pages = 0
+    pending_pages: list[dict[str, object]] = []
+    tracker_counts: Counter[str] = Counter()
     try:
         with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
             schema_problems = validate_applications_data_source(
@@ -653,23 +762,43 @@ def collect_run(
             )
             if schema_problems:
                 raise ValueError("; ".join(schema_problems))
-            for scored_job in shortlist:
-                action, page = upsert_job_page(
-                    notion_client,
-                    data_source_id,
-                    job_with_match_result(scored_job.job, scored_job),
-                )
-                if action == "created":
+            def lookup(scored_job: ScoredJob) -> dict[str, object] | None:
+                page = notion_client.find_job_page(data_source_id, scored_job.job)
+                if page is not None:
+                    status = page.get("properties", {}).get("Status", {}).get("status") or {}
+                    if status.get("name") == ApplicationStatus.DIGEST_SENT.value:
+                        pending_pages.append(page)
+                return page
+
+            selected, updated_pages = select_reviewable_jobs(
+                ranked_candidates,
+                lookup,
+                preferences.maximum_digest_jobs,
+            )
+            shortlist = [item for item, _page in selected]
+            for scored_job, existing_page in selected:
+                if existing_page is None:
+                    page = notion_client.create_job_page(
+                        data_source_id, job_with_match_result(scored_job.job, scored_job)
+                    )
                     created_pages.append(page)
                 else:
-                    updated_pages += 1
+                    page = existing_page
+                digest_pages.append(page)
             if send_digest:
+                tracker_counts.update(
+                    application_digest_item_from_page(page).status.value
+                    for page in query_all_pages(notion_client, data_source_id)
+                )
+                if resend_pending:
+                    remaining = max(0, preferences.maximum_digest_jobs - len(digest_pages))
+                    digest_pages.extend(pending_pages[:remaining])
                 resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
                 if not settings.telegram_bot_token:
                     raise ValueError("TELEGRAM_BOT_TOKEN is required for --send-digest")
                 with TelegramClient(settings.telegram_bot_token) as telegram_client:
-                    if created_pages:
-                        items = [application_digest_item_from_page(page) for page in created_pages]
+                    if digest_pages:
+                        items = [application_digest_item_from_page(page) for page in digest_pages]
                         send_digest_messages(telegram_client, notion_client, resolved_chat_id, items, tracker)
                     telegram_client.send_message(
                         resolved_chat_id,
@@ -682,6 +811,10 @@ def collect_run(
                             already_tracked=updated_pages,
                             failures=failures,
                             indeed_report=indeed_report,
+                            sources_available=successful_sources > 0,
+                            tracker_counts=tracker_counts,
+                            filter_counts=filter_counts,
+                            source_counts=source_counts,
                         ),
                     )
     except Exception as exc:
@@ -690,10 +823,11 @@ def collect_run(
         raise typer.Exit(1) from exc
     console.print(
         f"[green]Synced {len(shortlist)} shortlisted job(s); created {len(created_pages)} new "
-        f"Notion row(s), refreshed {updated_pages} existing row(s).[/green]"
+        f"Notion row(s), skipped {updated_pages} previously tracked row(s) (not necessarily submitted).[/green]"
     )
     if send_digest:
-        console.print(f"[green]Sent {len(created_pages)} new-job digest message(s).[/green]")
+        console.print(f"[green]Sent {len(digest_pages)} job review message(s).[/green]")
+    return successful_sources > 0
 
 
 def _is_public_collection_shortlist(scored_job: ScoredJob, preferences: ScoutingPreferences) -> bool:
@@ -710,13 +844,33 @@ def _format_scout_run_summary(
     already_tracked: int,
     failures: list[str],
     indeed_report: IndeedEmailCollection | None,
+    sources_available: bool = True,
+    tracker_counts: Counter[str] | None = None,
+    filter_counts: Counter[str] | None = None,
+    source_counts: dict[str, int] | None = None,
 ) -> str:
     lines = [
-        f"BackendScout {tracker.value} scout completed.",
+        f"BackendScout {tracker.value} scout {'completed' if sources_available else 'unavailable'}.",
         f"New matching jobs: {created}",
-        f"Already tracked and refreshed: {already_tracked}",
+        f"Previously tracked matches checked: {already_tracked} (not new records; not necessarily submitted)",
         f"Shortlisted: {shortlisted} of {israel_relevant} Israel/remote jobs ({collected} collected)",
     ]
+    if source_counts:
+        lines.append("Sources checked: " + ", ".join(f"{name}: {count}" for name, count in source_counts.items()))
+    if filter_counts:
+        lines.append("Excluded (first reason): " + ", ".join(f"{key}: {value}" for key, value in filter_counts.items()))
+    if tracker_counts is not None:
+        pending_statuses = {
+            "found", "digest_sent", "approved_to_tailor", "cv_drafted", "revision_requested",
+            "approved_to_submit", "submission_prepared", "awaiting_human_verification", "submission_unknown",
+        }
+        pending = sum(tracker_counts[status] for status in pending_statuses)
+        lines.extend([
+            f"Tracker backlog before submission: {pending}",
+            f"Awaiting tailoring approval: {tracker_counts['digest_sent'] + tracker_counts['found']}",
+            f"Submitted status: {tracker_counts['submitted']}; closed: {tracker_counts['closed']}",
+            "Tracked does not mean applied. Send /jobs or /submit_status to continue pending jobs.",
+        ])
     if indeed_report is not None:
         lines.append(
             "Indeed email: "
@@ -725,8 +879,10 @@ def _format_scout_run_summary(
         )
     if failures:
         lines.append(f"Collector warnings: {len(failures)} (see local log)")
-    if created == 0:
-        lines.append("No new matching job needs review this morning.")
+    if not sources_available:
+        lines.append("No source could be checked. This is not a no-jobs result.")
+    elif shortlisted == 0:
+        lines.append("No new matching record in this scan. Pending applications are separate; this is not a market-wide no-jobs result.")
     return "\n".join(lines)
 
 
@@ -804,8 +960,12 @@ def launchd_install(
     ] = False,
 ) -> None:
     """Render BackendScout launchd templates into the user's LaunchAgents directory."""
+    project_root = Path.cwd()
+    manifest = runtime_manifest(DEFAULT_RUNTIME_ROOT)
+    if manifest and Path(str(manifest.get("source_root", ""))).resolve() == project_root.resolve():
+        project_root = active_runtime_path(DEFAULT_RUNTIME_ROOT)
     for selected in selected_services(service):
-        path = install_launchd_service(Path.cwd(), agent_dir, selected, load=load, replace=replace)
+        path = install_launchd_service(project_root, agent_dir, selected, load=load, replace=replace)
         console.print(f"[green]Installed {selected.value}:[/green] {path}")
     if not load:
         console.print("[yellow]Plists were written but not loaded. Re-run with --load to start them.[/yellow]")
@@ -854,25 +1014,41 @@ def runtime_deploy(
     ] = False,
 ) -> None:
     """Copy code/config privately, build its venv, and optionally activate launchd."""
-    try:
-        manifest_path = deploy_runtime_files(Path.cwd(), runtime_root)
-        active_runtime = active_runtime_path(runtime_root)
+    def prepare_release(release: Path) -> None:
         uv_path = shutil.which("uv") or "/opt/homebrew/bin/uv"
+        build_environment = dict(os.environ)
+        build_environment["UV_PROJECT_ENVIRONMENT"] = str(release / ".venv")
         subprocess.run(
             [
                 uv_path,
                 "--cache-dir",
                 str(runtime_root / ".uv-cache"),
                 "sync",
+                "--locked",
                 "--no-editable",
                 "--reinstall-package",
                 "backend-scout",
             ],
-            cwd=active_runtime,
+            cwd=release,
+            env=build_environment,
             check=True,
         )
+        subprocess.run(
+            [str(release / ".venv" / "bin" / "backend-scout"), "--help"],
+            cwd=release,
+            env=build_environment,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+    try:
+        manifest_path = deploy_runtime_files(Path.cwd(), runtime_root, prepare_release)
+        active_runtime = active_runtime_path(runtime_root)
         if load:
-            for service in selected_services(LaunchdService.ALL):
+            services = selected_services(LaunchdService.ALL)
+            if launchd_service_installed(DEFAULT_LAUNCHD_AGENT_DIR, LaunchdService.WEB):
+                services.append(LaunchdService.WEB)
+            for service in services:
                 install_launchd_service(
                     active_runtime,
                     DEFAULT_LAUNCHD_AGENT_DIR,
@@ -944,7 +1120,10 @@ def runtime_doctor(
         if configured != expected:
             problems.append(f"{key} is {configured}, expected {expected}")
 
-    for service in (LaunchdService.TELEGRAM, LaunchdService.WORKER, LaunchdService.BROWSER):
+    services = [LaunchdService.TELEGRAM, LaunchdService.WORKER, LaunchdService.BROWSER]
+    if launchd_service_installed(agent_dir, LaunchdService.WEB):
+        services.append(LaunchdService.WEB)
+    for service in services:
         if not launchd_service_installed(agent_dir, service):
             problems.append(f"{service.value} LaunchAgent is not installed")
         elif not launchd_service_loaded(service):
@@ -964,7 +1143,20 @@ def runtime_doctor(
     console.print("[green]Runtime health check OK[/green]")
     console.print(f"Canonical CV archive: {configured_paths['CV_ARCHIVE_ROOT']}")
     console.print("Telegram, task worker, and browser worker are installed and loaded.")
+    if LaunchdService.WEB in services:
+        console.print("Private web service is installed and loaded.")
     console.print("Daily production scout and mailbox schedules are active.")
+
+
+@runtime_app.command("health")
+def runtime_health(
+    database_path: Annotated[Path | None, typer.Option("--database-path")] = None,
+) -> None:
+    """Report fresh production outcomes without touching APIs or changing state."""
+    report = workflow_health(database_path or Settings().workflow_database_path)
+    console.print_json(data=report)
+    if not report["healthy"]:
+        raise typer.Exit(1)
 
 
 @tailscale_app.command("check")
@@ -1054,38 +1246,138 @@ def tasks_worker(
     if enable_schedules:
         settings = Settings()
         launch_durable_schedules(queue_path, settings.telegram_default_chat_id)
+    next_schedule_check = 0.0
+    next_notification_check = 0.0
+    from backend_scout.portal_sessions import PortalSessionManager
+    portal_sessions = PortalSessionManager(Settings().browser_profile_root / "owned-packages") if lane in {"browser", "all"} else None
     try:
         while True:
+            if time.monotonic() >= next_notification_check:
+                _service_submission_notifications(queue_path, portal_sessions=portal_sessions,
+                                                  send=lane in {"general", "all"})
+                next_notification_check = time.monotonic() + 5
+            if enable_schedules and time.monotonic() >= next_schedule_check:
+                ensure_today_scout(queue_path, settings.telegram_default_chat_id)
+                ensure_application_sync(queue_path)
+                next_schedule_check = time.monotonic() + 60
             task = claim_next_task(queue_path, allowed_kinds=allowed_kinds)
             if task is None:
                 time.sleep(poll_seconds)
                 continue
             try:
-                _process_claimed_task(task, queue_path)
+                if task.kind in {QueuedTaskKind.PACKAGE_DELIVER, QueuedTaskKind.PACKAGE_FORM_INSPECT}:
+                    _process_claimed_task(task, queue_path, portal_sessions=portal_sessions)
+                else:
+                    _process_claimed_task(task, queue_path)
             except typer.Exit:
                 continue
     finally:
+        if portal_sessions is not None:
+            portal_sessions.close()
         if enable_schedules:
             stop_durable_runtime()
 
 
-def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
-    completion_message: str | None = None
+def _service_submission_notifications(queue_path, *, portal_sessions=None, send=True):
+    """Retry notifications independently; only their acknowledgement frees a browser."""
+    from backend_scout.application_store import ApplicationStore
+    from backend_scout.submission_notifications import (
+        acknowledged_submission_sessions,
+        dispatch_submission_notifications,
+    )
+
+    settings = Settings().model_copy(update={"workflow_database_path": queue_path})
+    store = ApplicationStore(queue_path, settings.cv_archive_root.resolve().parent)
     try:
-        if task.kind == QueuedTaskKind.SCOUT_TODAY:
-            collect_run(
+        if send:
+            dispatch_submission_notifications(store, settings)
+        if portal_sessions is not None:
+            for application_id, tracker, fingerprint in acknowledged_submission_sessions(queue_path):
+                current = store.get_current(application_id, tracker)
+                if (store.get_application(application_id, tracker).status == "submitted"
+                    and current.package.fingerprint() == fingerprint):
+                    portal_sessions.close_session(application_id, tracker)
+    except (httpx.HTTPError, OSError, ValueError):
+        console.print("[yellow]Receipt notification pending; saved delivery will not be replayed.[/yellow]")
+
+
+def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions=None) -> None:
+    completion_message: str | None = None
+    blocked_reason: str | None = None
+    try:
+        if task.kind in {QueuedTaskKind.PACKAGE_CV_DRAFT, QueuedTaskKind.PACKAGE_DELIVER, QueuedTaskKind.PACKAGE_ENRICH, QueuedTaskKind.PACKAGE_FORM_INSPECT}:
+            settings = Settings().model_copy(update={"workflow_database_path": queue_path})
+            try:
+                if task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT:
+                    from backend_scout.hybrid_portal import HybridPortalAdapter
+                    from backend_scout.portal_sessions import PortalSessionManager
+                    manager = portal_sessions or PortalSessionManager(settings.browser_profile_root / "owned-packages")
+                    try:
+                        inspector = HybridPortalAdapter(manager, settings).inspect if settings.portal_delivery_mode == "hybrid" else None
+                        outcome = build_application_service(settings, browser_inspector=inspector).inspect_form(
+                            _payload_string(task.payload, "page_id"), task.tracker,
+                            _payload_string(task.payload, "actor_id"),
+                            tailor_after=task.payload.get("tailor_after") is True)
+                    finally:
+                        if portal_sessions is None:
+                            manager.close()
+                elif task.kind == QueuedTaskKind.PACKAGE_ENRICH:
+                    outcome = build_application_service(settings).refresh_details(
+                        _payload_string(task.payload, "page_id"), task.tracker,
+                        _payload_string(task.payload, "actor_id"),
+                        tailor_after=task.payload.get("tailor_after") is True)
+                elif task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT:
+                    outcome = build_application_service(settings).draft(_payload_string(task.payload, "page_id"), task.tracker)
+                else:
+                    from backend_scout.package_portal import PackagePortalAdapter
+                    from backend_scout.portal_sessions import PortalSessionManager
+                    manager = portal_sessions or PortalSessionManager(settings.browser_profile_root / "owned-packages")
+                    try:
+                        service = build_application_service(settings, delivery_adapter=PackagePortalAdapter(manager, settings))
+                        outcome = service.deliver(_payload_string(task.payload, "page_id"), task.tracker,
+                                                  _payload_string(task.payload, "fingerprint"), _payload_string(task.payload, "request_key"))
+                    finally:
+                        if portal_sessions is None:
+                            manager.close()
+            except ApplicationConflict:
+                outcome = OperationOutcome(status="blocked", reason_code="review_conflict",
+                                           message="Refresh the application review; no delivery was replayed.",
+                                           application_id=_payload_string(task.payload, "page_id"), correlation_id=task.correlation_id or task.task_id)
+            if outcome.status != "succeeded":
+                blocked_reason = outcome.message
+            if outcome.status == "retryable_failure":
+                raise ValueError(outcome.reason_code)
+            completion_message = f"{_task_label(task)}: {outcome.message}\nWorkspace: {settings.web_public_origin}"
+            console.print_json(data=outcome.model_dump(mode="json"))
+        elif task.kind == QueuedTaskKind.APPLICATION_SYNC:
+            settings = Settings().model_copy(update={"workflow_database_path": queue_path})
+            actors = settings.telegram_allowed_user_id_set
+            if len(actors) != 1:
+                raise ValueError("Configure exactly one workspace owner")
+            outcome = build_application_service(settings).sync_projection(task.tracker, str(next(iter(actors))))
+            if outcome.status != "succeeded":
+                blocked_reason = outcome.message
+            console.print_json(data=outcome.model_dump(mode="json"))
+            from backend_scout.application_outbox import dispatch_projection
+            console.print(dispatch_projection(settings, task.tracker))
+        elif task.kind == QueuedTaskKind.SCOUT_TODAY:
+            scout_result = collect_run(
                 write_notion=True,
                 send_digest=True,
                 chat_id=task.payload.get("chat_id"),
                 tracker=task.tracker,
             )
+            if scout_result is False:
+                blocked_reason = "No job source could be checked; scouting is unavailable."
         elif task.kind == QueuedTaskKind.MAILBOX_SCAN:
-            gmail_watch_once(
+            mailbox_result = gmail_watch_once(
                 write_notion=True,
                 send_digest=True,
                 chat_id=task.payload.get("chat_id"),
                 tracker=task.tracker,
             )
+            if mailbox_result is False:
+                blocked_reason = "Gmail reauthorization required; inbox was not scanned."
         elif task.kind == QueuedTaskKind.AGENT_CHAT:
             settings = Settings()
             if not settings.openai_api_key:
@@ -1125,6 +1417,11 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
                         preparation,
                         task,
                     )
+                if preparation.unresolved_required_fields or preparation.state in {
+                    ApplicationStatus.AWAITING_HUMAN_VERIFICATION.value,
+                    ApplicationStatus.SUBMISSION_UNKNOWN.value,
+                }:
+                    blocked_reason = preparation.message
         elif task.kind == QueuedTaskKind.PORTAL_SUBMIT:
             submission = apply_resume(
                 _payload_string(task.payload, "page_id"),
@@ -1143,6 +1440,10 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
                     submission,
                     task,
                 )
+            if isinstance(submission, BrowserPreparationResult) and (
+                submission.state != ApplicationStatus.SUBMITTED.value
+            ):
+                blocked_reason = submission.message
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
@@ -1160,10 +1461,18 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path) -> None:
         )
         console.print(f"[red]Task {task.task_id} failed:[/red] {failure_message}")
         raise typer.Exit(1) from exc
-    mark_task_status(task.task_id, QueuedTaskStatus.DONE, path=queue_path)
+    status = QueuedTaskStatus.BLOCKED if blocked_reason else QueuedTaskStatus.DONE
+    mark_task_status(task.task_id, status, last_error=blocked_reason, path=queue_path)
     if completion_message:
         _send_task_telegram_message(task, completion_message)
-    console.print(f"[green]Task {task.task_id} completed.[/green]")
+    if task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT and not blocked_reason:
+        _send_package_artifact(task)
+    if task.kind == QueuedTaskKind.PACKAGE_DELIVER:
+        _service_submission_notifications(queue_path, portal_sessions=portal_sessions)
+    if blocked_reason:
+        console.print(f"[yellow]Task {task.task_id} blocked: {blocked_reason}[/yellow]")
+    else:
+        console.print(f"[green]Task {task.task_id} completed.[/green]")
 
 
 @tasks_app.command("migrate-json")
@@ -1585,6 +1894,8 @@ def telegram_poll_once(
                         data_source_id,
                         portal_submission_authorization_handler=authorize_portal_submission,
                         task_enqueue_handler=enqueue_long_task,
+                        application_action_guard=lambda page_id, selected_tracker: _legacy_action_guard(settings, page_id, selected_tracker),
+                        browser_pairing_handler=lambda user_id: _browser_pairing_message(settings, user_id),
                     )
                     finish_inbox_event(
                         settings.workflow_database_path, "telegram", event_id
@@ -1671,6 +1982,7 @@ def cv_draft(
 ) -> None:
     """Create a CV draft only for a job approved for tailoring."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     try:
         evidence = load_career_evidence(evidence_path)
         style = load_cv_style(style_path)
@@ -1735,6 +2047,11 @@ def cv_draft(
             if not settings.telegram_bot_token:
                 raise ValueError("Missing TELEGRAM_BOT_TOKEN in .env")
 
+            generation_options = {}
+            if settings.portal_delivery_mode == "hybrid":
+                from backend_scout.budget_config import configured_budget
+
+                generation_options["usage_budget"] = configured_budget(settings)
             draft = generate_tailored_cv(
                 evidence,
                 job,
@@ -1743,6 +2060,7 @@ def cv_draft(
                 settings.openai_model_high_quality,
                 revision_feedback,
                 (note.text if (note := load_tailoring_note(page_id, tracker.value)) else None),
+                **generation_options,
             )
             if application.status == ApplicationStatus.REVISION_REQUESTED:
                 notion_client.update_application_status(page_id, ApplicationStatus.APPROVED_TO_TAILOR)
@@ -1840,7 +2158,10 @@ def cv_revise(
 
 
 @gmail_app.command("connect")
-def gmail_connect() -> None:
+def gmail_connect(
+    port: Annotated[int, typer.Option("--port", min=0, max=65535)] = 0,
+    no_browser: Annotated[bool, typer.Option("--no-browser", help="Print the URL for a browser over an SSH tunnel.")] = False,
+) -> None:
     """Authorize Gmail once with send and readonly mailbox permissions."""
     settings = Settings()
     path = settings.gmail_oauth_client_secret_path
@@ -1851,12 +2172,13 @@ def gmail_connect() -> None:
         console.print(f"[red]Gmail OAuth client-secret file not found:[/red] {path}")
         raise typer.Exit(1)
     try:
-        connect_gmail(path)
+        connect_gmail(path, port=port, open_browser=not no_browser)
     except Exception as exc:
         console.print("[red]Gmail connection failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
-    console.print("[green]Gmail send/read permissions are connected in macOS Keychain.[/green]")
+    destination = "macOS Keychain" if settings.gmail_credential_store == "keyring" else "the private credential file"
+    console.print(f"[green]Gmail send/read permissions are connected in {destination}.[/green]")
 
 
 @gmail_app.command("check")
@@ -1908,7 +2230,7 @@ def gmail_watch_once(
         bool,
         typer.Option("--reprocess", help="Ignore the checkpoint and inspect matching messages again."),
     ] = False,
-) -> None:
+) -> bool | None:
     """Inspect Gmail for employer replies and optionally update the tracker."""
     settings = Settings()
     auth_alert_path = gmail_auth_alert_path(state_path)
@@ -1929,7 +2251,7 @@ def gmail_watch_once(
                     )
                 mark_gmail_auth_alert_sent(auth_alert_path)
             console.print("[yellow]Gmail inbox tracking is paused pending reauthorization.[/yellow]")
-            return
+            return False
         console.print("[red]Gmail mailbox scan failed[/red]")
         console.print(str(exc))
         raise typer.Exit(1) from exc
@@ -1954,7 +2276,7 @@ def gmail_watch_once(
         try:
             data_source_id = _require_tracker_data_source_id(settings, tracker)
             with NotionClient(settings.notion_api_key, settings.notion_api_version) as notion_client:
-                pages = notion_client.query_data_source(data_source_id, {"page_size": 100}).get("results", [])
+                pages = query_all_pages(notion_client, data_source_id)
                 applications = [
                     application_digest_item_from_page(page)
                     for page in pages
@@ -2044,6 +2366,7 @@ def contacts_review_email(
 ) -> None:
     """Send a Telegram card showing the exact email and approved CV before delivery."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     if not all((settings.notion_api_key, settings.telegram_bot_token)):
         console.print("[red]Notion and Telegram configuration are required.[/red]")
         raise typer.Exit(1)
@@ -2096,6 +2419,7 @@ def contacts_whatsapp_handoff(
 ) -> None:
     """Open a prepared WhatsApp Web chat; only the user can attach and send the CV."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     if not all((settings.notion_api_key, settings.telegram_bot_token)):
         console.print("[red]Notion and Telegram configuration are required.[/red]")
         raise typer.Exit(1)
@@ -2159,6 +2483,7 @@ def apply_prepare(
 ) -> BrowserPreparationResult:
     """Fill a visible portal form with safe fields and the exact approved CV; do not submit."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
@@ -2205,7 +2530,11 @@ def apply_prepare(
                 verification_handoff_port=settings.verification_handoff_port,
                 guided_plan_builder=_build_guided_plan_builder(settings, guided),
             )
-            if result.resolved_application_url and result.resolved_application_url != job.application_url:
+            if (
+                result.resolved_application_url
+                and application_entry_url(result.resolved_application_url)
+                and result.resolved_application_url != job.application_url
+            ):
                 job = job.model_copy(update={"application_url": result.resolved_application_url})
                 notion_client.update_job_page(page_id, job)
             notion_client.update_application_status(page_id, ApplicationStatus(result.state))
@@ -2235,6 +2564,7 @@ def apply_request_submit(
 ) -> None:
     """Send a short-lived Telegram approval for one exact portal submit click."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     if not settings.notion_api_key or not settings.telegram_bot_token:
         console.print("[red]Notion and Telegram configuration are required.[/red]")
         raise typer.Exit(1)
@@ -2311,6 +2641,7 @@ def apply_resume(
 ) -> BrowserPreparationResult:
     """Resume a human-check pause or submit once with a Telegram authorization."""
     settings = Settings()
+    _legacy_action_guard(settings, page_id, tracker)
     if not settings.notion_api_key:
         console.print("[red]Missing NOTION_API_KEY in .env[/red]")
         raise typer.Exit(1)
@@ -2543,6 +2874,8 @@ def _format_portal_task_result(
     message = f"{title}.\nJob: {job_label}\nState: {result.state}.\n{result.message}"
     if result.unresolved_required_fields:
         message += "\nNeeds input: " + ", ".join(result.unresolved_required_fields)
+    if task.kind == QueuedTaskKind.PORTAL_PREPARE and result.state != ApplicationStatus.SUBMITTED.value:
+        message += "\nIf the automation window closed, send /submit_status and press Open in browser. Opening the link does not submit."
     return message
 
 
@@ -2568,6 +2901,25 @@ def _send_task_telegram_message(task: QueuedTask, message: str) -> None:
             telegram_client.send_message(chat_id, message)
     except (httpx.HTTPError, OSError, ValueError):
         console.print(f"[yellow]Could not send Telegram result for task {task.task_id}.[/yellow]")
+
+
+def _send_package_artifact(task: QueuedTask) -> None:
+    settings = Settings()
+    chat_id = task.payload.get("chat_id")
+    if not isinstance(chat_id, int) or chat_id not in settings.telegram_allowed_user_id_set or not settings.telegram_bot_token:
+        return
+    try:
+        service = build_application_service(settings)
+        page_id = _payload_string(task.payload, "page_id")
+        with TelegramClient(settings.telegram_bot_token) as client:
+            if task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT:
+                client.send_document(chat_id, service.cv_artifact(page_id, task.tracker),
+                                     f"{_task_label(task)}: review this exact PDF in the private workspace.")
+            else:
+                client.send_photo(chat_id, service.submission_proof(page_id, task.tracker),
+                                  f"{_task_label(task)}: confirmed portal receipt.")
+    except (httpx.HTTPError, OSError, ValueError):
+        console.print(f"[yellow]Artifact notification unavailable for task {task.task_id}; local review remains available.[/yellow]")
 
 
 def _send_telegram_update_failure(
@@ -2771,6 +3123,8 @@ app.add_typer(apply_app, name="apply")
 app.add_typer(collect_app, name="collect")
 app.add_typer(repos_app, name="repos")
 app.add_typer(tasks_app, name="tasks")
+app.add_typer(web_app, name="web")
+app.add_typer(applications_app, name="applications")
 system_app.add_typer(launchd_app, name="launchd")
 system_app.add_typer(tailscale_app, name="tailscale")
 system_app.add_typer(runtime_app, name="runtime")

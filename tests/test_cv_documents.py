@@ -66,6 +66,21 @@ def test_create_cv_docx_writes_a_readable_word_document(tmp_path: Path) -> None:
     assert output_path.stat().st_size > 0
 
 
+def test_long_role_heading_separates_title_from_organization_and_dates(tmp_path: Path) -> None:
+    evidence = make_evidence()
+    role = evidence.experience[0]
+    role.title = "Research Infrastructure and Backend Software Development Engineer"
+    role.organization = "Example Institute of Advanced Research and Computing"
+    output_path = tmp_path / "long_role.docx"
+
+    create_cv_docx(evidence, build_evidence_only_draft(evidence), output_path)
+
+    heading = next(p for p in Document(output_path).paragraphs if p.text.startswith(role.title))
+    assert heading.text == f"{role.title}\n{role.organization} | 2024-01 - Present"
+    assert "\t" not in heading.text
+    assert heading.paragraph_format.keep_with_next
+
+
 def test_create_cv_docx_uses_labeled_hyperlinks_and_hides_headline(tmp_path: Path) -> None:
     evidence = make_evidence()
     output_path = tmp_path / "cv_draft.docx"

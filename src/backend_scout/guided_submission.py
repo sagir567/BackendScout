@@ -36,6 +36,8 @@ HUMAN_VERIFICATION_FIELD_MARKERS = (
     "otp",
 )
 SENSITIVE_FIELD_MARKERS = (
+    "terms", "agreement", "תנאי", "פרטיות", "הסכמה", "שכר", "אזרחות",
+    "אשרת", "זכאות", "מגדר", "מוגבלות", "אישור עבודה",
     "salary",
     "compensation",
     "sponsorship",
@@ -63,7 +65,9 @@ IDENTITY_FIELD_MARKERS = {
     "identity.last_name": ("last name", "family name", "surname"),
     "identity.email": ("email", "e-mail", "inbox"),
     "identity.phone": ("phone", "mobile", "telephone", "contact number"),
-    "identity.location": ("location", "city", "residence", "address"),
+    "identity.location": ("location",),
+    "identity.city": ("city", "residence city"),
+    "identity.country": ("country", "country of residence"),
     "identity.linkedin": ("linkedin",),
 }
 
@@ -162,21 +166,29 @@ def build_guided_candidate_facts(
     form_answers: ApplicationFormAnswers | None,
 ) -> dict[str, GuidedCandidateFact]:
     """Build the only local values a guided mapping is allowed to select."""
-    name_parts = evidence.identity.full_name.split(maxsplit=1)
+    # Two-part names retain legacy support; compound names need explicit parts.
+    name_parts = evidence.identity.full_name.split()
+    given_name = evidence.identity.given_name
+    family_name = evidence.identity.family_name
+    if len(name_parts) == 2:
+        given_name = given_name or name_parts[0]
+        family_name = family_name or name_parts[1]
     linkedin = next(
         (link for link in evidence.identity.links if "linkedin.com" in link.casefold()),
         "",
     )
     identity_values = {
         "identity.full_name": (evidence.identity.full_name, "candidate's full name"),
-        "identity.first_name": (name_parts[0], "candidate's first name"),
+        "identity.first_name": (given_name or "", "candidate's confirmed given name"),
         "identity.last_name": (
-            name_parts[1] if len(name_parts) > 1 else "",
+            family_name or "",
             "candidate's last name",
         ),
         "identity.email": (evidence.identity.email, "candidate's email address"),
         "identity.phone": (evidence.identity.phone or "", "candidate's phone number"),
         "identity.location": (evidence.identity.location or "", "candidate's location"),
+        "identity.city": (evidence.identity.city or "", "candidate's confirmed residence city"),
+        "identity.country": (evidence.identity.country or "", "candidate's confirmed country"),
         "identity.linkedin": (linkedin, "candidate's LinkedIn profile URL"),
     }
     facts = {

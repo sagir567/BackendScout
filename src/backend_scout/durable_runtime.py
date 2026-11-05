@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from dbos import DBOS
 
 from backend_scout.config import TrackerName
-from backend_scout.task_queue import QueuedTaskKind, enqueue_task
+from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_task
 
 DAILY_SCHEDULE_NAME = "backendscout-daily-production-scout"
 MAILBOX_SCHEDULE_NAME = "backendscout-production-mailbox"
@@ -79,7 +80,7 @@ def launch_durable_schedules(database_path: Path, chat_id: int | None) -> None:
                 "workflow_fn": scheduled_production_scout,
                 "schedule": "0 8 * * *",
                 "context": context,
-                "automatic_backfill": True,
+                "automatic_backfill": False,
                 "cron_timezone": "Asia/Hebron",
             },
             {
@@ -96,6 +97,56 @@ def launch_durable_schedules(database_path: Path, chat_id: int | None) -> None:
 
 def stop_durable_runtime() -> None:
     DBOS.destroy(workflow_completion_timeout_sec=10)
+
+
+def ensure_today_scout(
+    database_path: Path, chat_id: int | None, now: datetime | None = None
+) -> None:
+    """Recover today's missing trigger, not weeks of stale morning digests."""
+    local_now = (now or datetime.now(UTC)).astimezone(ZoneInfo("Asia/Hebron"))
+    if local_now.hour < 8:
+        return
+    task = enqueue_task(
+        QueuedTaskKind.SCOUT_TODAY,
+        TrackerName.PRODUCTION,
+        {
+            "chat_id": chat_id,
+            "scheduled_for": local_now.replace(
+                hour=8, minute=0, second=0, microsecond=0
+            ).isoformat(),
+        },
+        database_path,
+        idempotency_key=f"schedule:scout:{local_now.date().isoformat()}",
+    )
+    # A wake-time DNS failure can exhaust ordinary retries before networking returns.
+    transient_network_errors = (
+        "nodename nor servname", "name or service not known", "temporary failure in name",
+        "network is unreachable", "network is down", "connection refused",
+        "connecttimeout", "connect timeout", "connection timed out",
+    )
+    if (
+        task.status != QueuedTaskStatus.DEAD_LETTER
+        or not any(marker in (task.last_error or "").casefold() for marker in transient_network_errors)
+        or local_now.astimezone(UTC) - task.updated_at < timedelta(minutes=30)
+    ):
+        return
+    enqueue_task(
+        QueuedTaskKind.SCOUT_TODAY,
+        TrackerName.PRODUCTION,
+        {**task.payload, "recovery_of": task.task_id},
+        database_path,
+        idempotency_key=f"schedule:scout:{local_now.date().isoformat()}:connectivity-recovery",
+    )
+
+
+def ensure_application_sync(database_path: Path, now: datetime | None = None) -> str:
+    """Refresh the phone workspace without granting remote approvals."""
+    current = now or datetime.now(UTC)
+    bucket = int(current.timestamp()) // 300
+    return enqueue_task(
+        QueuedTaskKind.APPLICATION_SYNC, TrackerName.PRODUCTION, {}, database_path,
+        idempotency_key=f"application-sync:{bucket}",
+    ).task_id
 
 
 def durable_schedule_statuses(database_path: Path) -> dict[str, str]:

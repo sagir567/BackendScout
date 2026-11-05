@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="referrer" content="same-origin">
+    <meta name="description" content="Private BackendScout application workspace">
+    <title>BackendScout | Applications</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script type="module" src="/static/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div id="boot" class="boot-state" role="status">
+      <span class="brand-word">BackendScout</span>
+      <span class="loading-line"><span class="spinner" aria-hidden="true"></span> Checking session</span>
+    </div>
+
+    <section id="pair-screen" class="pair-screen" aria-labelledby="pair-title" hidden>
+      <header class="pair-brand"><span class="brand-mark" aria-hidden="true">B</span><span class="brand-word">BackendScout</span></header>
+      <main id="pair-main" class="pair-main" tabindex="-1">
+        <p class="eyebrow">Private workspace</p>
+        <h1 id="pair-title">Pair this browser</h1>
+        <p class="muted">Enter the single-use code from your owner Telegram chat.</p>
+        <form id="pair-form">
+          <label for="pair-code">Pairing code</label>
+          <input id="pair-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" required maxlength="128" aria-describedby="pair-error">
+          <p id="pair-error" class="form-error" role="alert" hidden></p>
+          <button id="pair-submit" class="button button-primary" type="submit">Pair browser</button>
+        </form>
+      </main>
+      <p class="pair-footer">Owner access only</p>
+    </section>
+
+    <div id="app" class="app-shell" hidden>
+      <header class="app-header">
+        <div class="header-inner">
+          <a class="brand" href="/" aria-label="BackendScout home"><span class="brand-mark" aria-hidden="true">B</span><span class="brand-word">BackendScout</span></a>
+          <span id="tracker-label" class="tracker-label">Private workspace</span>
+          <div class="header-actions">
+            <button id="refresh-button" class="icon-button" type="button" aria-label="Refresh workspace" title="Refresh workspace"><span aria-hidden="true">&#8635;</span></button>
+            <button id="logout-button" class="button button-quiet" type="button">Sign out</button>
+          </div>
+        </div>
+      </header>
+
+      <nav class="workspace-nav" aria-label="Workspace views">
+        <div class="tab-list" role="tablist" aria-label="Applications workspace">
+          <button id="tab-today" class="tab" type="button" role="tab" aria-selected="true" aria-controls="view-panel" data-tab="today"><span>Today</span><span id="count-today" class="tab-count">&ndash;</span></button>
+          <button id="tab-agent" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-panel" tabindex="-1" data-tab="agent"><span>Agent Apply</span><span id="count-agent" class="tab-count">&ndash;</span></button>
+          <button id="tab-input" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-panel" tabindex="-1" data-tab="input"><span>Needs My Input</span><span id="count-input" class="tab-count">&ndash;</span></button>
+          <button id="tab-applications" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-panel" tabindex="-1" data-tab="applications"><span>Applications</span><span id="count-applications" class="tab-count">&ndash;</span></button>
+          <button id="tab-health" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-panel" tabindex="-1" data-tab="health"><span>Health</span><span id="health-indicator" class="health-indicator" hidden>!</span></button>
+        </div>
+      </nav>
+
+      <div id="notice-region" class="notice-region" hidden></div>
+      <main id="main-content" tabindex="-1">
+        <div id="view-panel" role="tabpanel" aria-labelledby="tab-today"></div>
+      </main>
+      <footer class="workspace-footer"><span id="footer-tracker">Private workspace</span><span id="updated-at">Not refreshed yet</span></footer>
+    </div>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <noscript><p class="noscript-message">JavaScript is required to open this private workspace.</p></noscript>
+  </body>
+</html>

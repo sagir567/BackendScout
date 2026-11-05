@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 from playwright.sync_api import Error as PlaywrightError
 
 from backend_scout.application_answers import ApplicationFormAnswers
+from backend_scout.application_urls import is_authentication_url
 from backend_scout.guided_submission import (
     GuidedCandidateFact,
     GuidedControlKind,
@@ -48,6 +49,9 @@ class BrowserPreparationResult:
     guided_summary: str | None = None
     adapter_name: str | None = None
     page_fingerprint: str | None = None
+    review_questions: tuple[dict, ...] = ()
+    reason_code: str | None = None
+    receipt_details: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -234,8 +238,8 @@ def prepare_visible_submission(
             result = BrowserPreparationResult(
                 "submission_prepared",
                 (),
-                "The application portal requires a one-time LinkedIn sign-in before the form can be prepared.",
-                ("linkedin_authentication",),
+                "The application portal requires sign-in before the form can be prepared. Use the reusable application link in your own browser.",
+                ("portal_authentication",),
                 page.url,
             )
             result = _save_prepared_checkpoint(
@@ -261,6 +265,14 @@ def prepare_visible_submission(
 def portal_authentication_required(page) -> bool:
     parsed = urlparse(page.url)
     host = (parsed.hostname or "").casefold()
+    if is_authentication_url(page.url):
+        return True
+    try:
+        password = page.locator('input[type="password"]').first
+        if password.count() and password.is_visible():
+            return True
+    except PlaywrightError:
+        pass
     if "linkedin.com" not in host:
         return False
     path = parsed.path.casefold()
@@ -290,6 +302,12 @@ def _fill_safe_fields(
     form_answers: ApplicationFormAnswers | None = None,
     guided_plan_builder: GuidedPlanBuilder | None = None,
 ) -> BrowserPreparationResult:
+    if portal_authentication_required(page):
+        return BrowserPreparationResult(
+            "submission_prepared", (),
+            "Portal sign-in is required before application fields can be prepared. Open the reusable link in your own browser.",
+            ("portal_authentication",), page.url,
+        )
     name_parts = evidence.identity.full_name.split(maxsplit=1)
     linkedin_url = next(
         (link for link in evidence.identity.links if "linkedin.com" in link.casefold()), ""
@@ -421,7 +439,11 @@ def capture_guided_form(page) -> CapturedGuidedForm:
                 if kind is None or metadata.get("disabled"):
                     continue
                 if kind != GuidedControlKind.FILE and not control.is_visible():
-                    continue
+                    custom_choice = kind in {GuidedControlKind.CHECKBOX, GuidedControlKind.RADIO}
+                    if not custom_choice or not control.evaluate("""el => Array.from(el.labels || [])
+                        .some(label => label.getClientRects().length > 0 &&
+                            getComputedStyle(label).visibility !== 'hidden')"""):
+                        continue
                 label = " ".join(str(metadata.get("label") or "").split())
                 if not label or is_human_verification_field(label) or is_submission_field(label):
                     continue

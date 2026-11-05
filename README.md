@@ -11,6 +11,56 @@ The production runtime is migrating to DBOS workflows backed by local SQLite.
 SQLite owns operational execution state; Notion remains the dashboard I review
 and edit. `ARCHITECTURE_RESEARCH.md` explains the findings and migration design.
 
+The implementation baseline is [ARCHITECTURE.md](ARCHITECTURE.md). I track both
+the personal service and the separate commercial skill in
+[EXECUTION_PLAN.yaml](EXECUTION_PLAN.yaml), with dependencies, acceptance criteria
+and evidence. The architecture checksum detects accidental design drift.
+
+```sh
+uv run --no-editable python scripts/project_status.py --check-evidence
+```
+
+This reports dependency-ready development work and owner/external gates. It is
+a read-only development tool; production scheduling remains in DBOS.
+
+The private web workspace now connects immutable application packages to shared
+services and durable workers. A package binds the job, tracker, official route,
+CV checksum and reviewed answers. Existing Telegram applications retain their
+legacy workflow until I explicitly take them over in web review; importing a
+Notion status never transfers approval.
+
+The cloud foundation now includes a transactional SQLite application ledger,
+an opt-in private-file Gmail credential backend for Linux, and a non-root Docker
+image with separate worker lanes. See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md)
+for isolated checks and the future host runbook. Existing local automation stays
+on the Mac until the cloud cutover. Linux acceptance, budget enforcement and the
+production cloud cutover remain separate milestones.
+
+## Recovery And Next Release
+
+I am improving reliability before moving the always-on work off my laptop.
+The recovery slice adds outcome-based health checks, missed-morning recovery,
+selection of unseen jobs before the digest limit, explicit blocked tasks, full
+mailbox tracker pagination, and dependency validation before release activation.
+
+The legacy Telegram path still uses multiple approval steps. The local mobile
+workspace uses SQLite authority and exact-package approval; a production Linux
+deployment is still planned, **not an implemented capability**.
+See [the delivery plan](RECOVERY_AND_CLOUD_PLAN.md) and
+[the Dots assessment](DOTS_ASSESSMENT.md).
+
+Check actual progress independently of whether a process is running:
+
+```sh
+uv run --no-editable backend-scout system runtime health
+uv run --no-editable backend-scout gmail check
+```
+
+The first command reads only SQLite and returns a nonzero exit code for stale
+or blocked production workflows. It does not prove external API authorization;
+the second command checks Gmail separately. Expired Gmail authorization needs
+`backend-scout gmail connect`; public job-board scouting can continue meanwhile.
+
 ## What It Does
 
 - Imports and normalizes job opportunities.
@@ -20,6 +70,129 @@ and edit. `ARCHITECTURE_RESEARCH.md` explains the findings and migration design.
 - Keeps every application action behind explicit approval gates.
 - Generates truthful, job-specific CV drafts after approval and keeps exact
   artifacts versioned for review.
+
+## Private Mobile Workspace
+
+The responsive interface has Today, Agent Apply, Needs My Input, Applications and Health
+views, required experience, private PDF review, revision feedback and explicit
+answers to application questions. Missing experience is shown as unknown, not
+junior. Owner access is paired through the private Telegram `/web` command.
+
+Agent Apply groups active roles with a recognized official ATS destination and
+shows the missing prerequisites separately from the professional match score.
+It is not a guarantee of unattended submission. A host match or a high match
+score does not make a role ready, and historical or uncertain attempts are
+excluded. Complete browser preflight and unified email delivery remain in progress.
+
+A known missing or mismatched application link is excluded from Agent Apply and
+blocks approval, resume and the delivery worker, while the existing PDF stays
+available. Greenhouse availability is checked in the worker before paid drafting
+and before delivery. A public 404 means the saved route is unavailable, not proof
+that every version of the vacancy is closed. Transient failures and unsupported
+schemas do not imply closure. `Update application link` retains the CV and
+requires approval of the changed destination.
+
+For Greenhouse roles, `Check form` queues a bounded public API read of published
+questions. No employer API key or candidate details are used, and no CV is
+uploaded. The result appears in the job detail view. Public schema observation
+does not prove all hosted-form requirements are covered. The equivalent CLI is:
+
+```sh
+uv run --no-editable backend-scout apply inspect-form <page-id> --tracker production
+```
+
+Scouting still requires the hosting Mac to be on. After wake, the watchdog
+recovers the current day's missing scout. An exhausted DNS/connectivity failure
+gets one additional daily recovery after a thirty-minute cooldown, never a
+replay of old digests or application delivery.
+
+```sh
+uv sync --extra dev --no-editable
+uv run --no-editable backend-scout applications sync --tracker production
+uv run --no-editable backend-scout web serve --tracker production
+```
+
+Open [the local workspace](http://127.0.0.1:8765) on the Mac. `web pair` sends a
+single-use five-minute code to the configured owner chat; it never prints it.
+The loopback address is **not** a phone-accessible URL. Phone access needs a
+separately configured private HTTPS proxy, such as the existing Tailscale setup;
+the app is not published or exposed to the LAN by these commands.
+
+For private phone access, connect the Mac and phone to the same personal
+Tailscale network, then check `tailscale serve status` before changing routes.
+The intended proxy is `tailscale serve --bg --https=443 http://127.0.0.1:8765`.
+If Tailscale returns an enablement link, the owner must sign in and approve
+Serve/HTTPS; leave Funnel disabled. After the route is active, set the private
+HTTPS origin and `WEB_COOKIE_SECURE=true`, restart the web service, and obtain a
+new pairing code through `/web`. Device connectivity alone does not enable the
+web proxy. HTTPS certificate names appear in public certificate-transparency
+logs; the application itself remains restricted to the tailnet and owner session.
+After switching origins, open the private HTTPS address on both the Mac and
+phone and pair that browser again. The old loopback address intentionally
+cannot perform mutations with its old Origin. Keep Tailscale connected on both
+devices and the Mac awake while it hosts the app. To stop only this private
+HTTPS proxy, use `tailscale serve --https=443 off`; restoring local-only use also
+requires restoring the loopback origin and cookie configuration before reload.
+
+Sessions use hashed opaque tokens, HttpOnly SameSite cookies, CSRF and strict
+origin checks. The app has no public signup, analytics, CDN or browser storage
+of credentials. The schedule-enabled worker refreshes job snapshots every five
+minutes; unavailable Notion access does not remove local reviews.
+
+### Reviewing A Job
+
+I open a role from Today or Applications and check its required experience.
+The CV/application controls are near the top of its detail view:
+
+1. `View CV` opens an existing verified PDF; it does not require a complete
+   application route. `Create CV` queues a tailored draft when one is needed.
+2. `Request changes` opens feedback for a new immutable CV version.
+3. `Approve & apply` reviews and authorizes the exact current PDF, destination
+   and answers. It remains disabled when a material requirement is missing.
+4. `Resume delivery` is available for an unchanged approved package paused before
+   sending. A confirmed or uncertain delivery is never replayed automatically.
+
+Creating a CV first fetches missing posting details in the background. `Fetch
+job details` only fetches source data and does not request a paid model call.
+The worker tries exact public ATS endpoints before a supported public posting
+page, verifies job identity, and recalculates matching from retrieved facts.
+Source access failures, closed roles and login gates are explicit outcomes,
+not invented descriptions. Manual editing is a collapsed last-resort fallback.
+An unavailable official submission link does not prevent CV creation or viewing,
+but does prevent applying. Active work refreshes in the interface automatically;
+editing a field pauses that refresh to avoid interrupting input.
+
+Telegram `/web` and `web pair` send the workspace instructions first and the
+single-use code alone in a second message, so copying the code needs no cleanup.
+
+`WEB_ALLOW_DELIVERY=false` is the safe installation default. With it enabled,
+`Approve & apply` authorizes the exact displayed package and queues a supported
+portal adapter. New material answers or changed CV bytes require a fresh review.
+An unchanged package paused before sending can resume without another identical
+approval. A submitted or uncertain attempt cannot be blindly replayed. Browser
+windows belong to the continuous browser worker, not an individual task, and
+remain open while input is needed. Worker restart or user closure may still
+require reopening the form; this is not universal unattended ATS support.
+
+The web service is opt-in on macOS:
+
+```sh
+uv run --no-editable backend-scout system launchd install web --load
+```
+
+Use the deployed runtime as the service project root after `system runtime
+deploy --load`. This does not replace the existing morning or mailbox schedules.
+From the canonical deployed source checkout, service installation resolves to
+the private runtime automatically rather than running from Documents.
+
+The new package adapter supports verified Ashby forms alongside the constrained
+ATS registry. It checks the actual uploaded bytes in the active form, retains
+the browser on missing input, and requires a new visible receipt plus a painted
+PNG before recording success. Workday/custom dropdowns, sign-in and unsupported
+forms may still require input; this is not a universal automatic-apply claim.
+Local reviews continue during a Notion outage. A leased, retrying outbox updates
+existing tracker pages without replaying the application; durable notification
+delivery is still a remaining migration task.
 
 ## Workflow
 
@@ -171,6 +344,14 @@ Recent Indeed recommendation emails are included by default when Gmail is
 connected. Their job cards are deduplicated against the public feeds and
 existing Notion records.
 
+Lin-Srael searches follow all advertised result pages, with a configurable
+`max_pages` safety cap (default 20 per search term). A repeated page or a cap
+that leaves results unread produces a collector warning, not a complete-search
+claim. Title exclusions match whole words/phrases, including Hebrew; `BI` does
+not exclude `Billing` or `Mobile` roles.
+Listings without detailed requirements are explicitly preliminary `maybe`
+matches, not an `apply` recommendation based only on a promising title.
+
 Preview a collection without writing external state:
 
 ```bash
@@ -183,6 +364,12 @@ Tune the ignored `config/scouting_preferences.yaml` file when the digest feels
 too broad or too strict. It controls preferred titles, maybe titles, excluded
 titles, minimum score, minimum role relevance, and the maximum number of jobs
 in one digest. The shortlist is ranked by score before that cap is applied.
+Work-mode eligibility is separate: set `work_preferences.onsite: true` in the
+private candidate profile to include office-only roles. Telegram cards state
+`Work mode` explicitly; allowing onsite work does not reset any approvals.
+Every job-review card also states `Experience required`, preserving the
+`Years Experience` value from Notion. Missing source information is labeled
+as needing verification, never as zero experience or a junior opportunity.
 
 After reviewing the preview, sync new jobs to the default test tracker:
 
@@ -202,6 +389,22 @@ For a daily 08:00 production run on macOS, follow the `launchd` setup in
 you run manually, and logs remain local under ignored `data/logs/`. The bot
 sends a completion summary even when there are no new jobs, so a quiet morning
 is distinguishable from a failed scheduler.
+
+The summary separates newly discovered records, previously tracked matches,
+pending applications and submitted/closed tracker states. It also reports
+source counts and the first exclusion reason for filtered jobs. These are
+results from configured feeds, not a claim to cover the entire job market.
+Previously delivered jobs are not considered submitted and retain their exact
+CV approvals. To recover missed job-review messages without resetting states:
+
+```bash
+uv run --no-editable backend-scout collect run --tracker production \
+  --write-notion --send-digest --resend-pending
+```
+
+New discoveries get priority within the digest limit; remaining slots may
+resend jobs still awaiting tailoring approval. Approved or drafted CVs are not
+reset or automatically resubmitted.
 
 On macOS, background LaunchAgents cannot read projects inside the protected
 `Documents` folder even when they run as the same user. Deploy the private
@@ -254,6 +457,13 @@ uv run --no-editable backend-scout telegram poll-once
 them to `digest_sent`. `poll-once` processes button presses and records the
 valid next status in Notion.
 
+If an automation window closes, send `/submit_status` and use **Open in
+browser**, or send `/open_FULL_NOTION_PAGE_ID`. This reopens the stored employer
+entry link in my own browser without enqueuing submission or changing approvals.
+Transient sign-in URLs are not reusable application links; the discovery URL
+is retained as a fallback. Unsaved form values and file uploads are not restored
+by reopening a link. The exact CV artifacts remain in the private archive.
+
 All tracker-aware commands default to `--tracker test`. Use
 `--tracker production` only for the real Applications table. Telegram buttons
 carry their tracker identity, so a test approval cannot alter a production row.
@@ -304,6 +514,11 @@ This is where personal presentation rules live. The default keeps the headline
 under your name disabled, shows technical skills in their own section, and turns
 GitHub, LinkedIn, and project URLs into labeled clickable links instead of visible
 raw URLs.
+
+Experience headings keep the role title on its own line and the organization
+and dates together below it, so long titles cannot collide with dates. AI-assisted
+project work retains its ownership qualifiers rather than implying unaided
+implementation or professional experience in every tool used.
 
 Each project has explicit `selection_keywords`. Before the OpenAI request,
 BackendScout removes projects whose keywords do not appear in the target job.
@@ -507,6 +722,52 @@ uv run --no-editable backend-scout contacts whatsapp-handoff NOTION_PAGE_ID \
 ```
 
 ## Project Guide
+
+### Employer-First Delivery (Local Preview)
+
+A separate Codex oversight heartbeat is scheduled for 08:30 Asia/Hebron. It
+checks the 08:00 scout, independently finds relevant official postings,
+deduplicates useful additions, and reports new roles or actionable failures to
+the private Telegram chat. This local layer requires the Mac awake and Codex
+running; it is not a cloud availability guarantee. Employer delivery still
+requires exact-package approval.
+
+I am testing a hybrid submission engine behind `PORTAL_DELIVERY_MODE=hybrid`.
+The default remains `legacy`, so installing this code does not enable new live
+submissions or change the morning scout. No extra dependency or service is needed.
+
+Job boards supply discovery links. A read-only browser preflight follows observed
+employer/ATS links, verifies the company and role, and records the destination in
+the existing workflow SQLite database. The review package binds the exact PDF,
+answers, optional cover note, destination, and a signature of the questions and
+consent links. New questions require review, not a new CV by default.
+
+Known fields use deterministic filling. The optional OpenAI fallback maps current
+field IDs to approved facts only; it cannot invent answers, upload files, accept
+terms, choose a new recipient, or authorize submission. Marketing stays off.
+Missing pricing disables paid fallback while known forms remain usable.
+
+After the one submit action, the engine waits up to 90 seconds for a new visible
+receipt and saves a viewport proof plus a full-page screenshot. An uncertain
+result is locked as `submission_unknown`; it is never automatically resubmitted.
+Notion projection and Telegram proof delivery retry independently. A completed
+browser closes only after Telegram acknowledges the saved proof; paused forms
+remain open.
+
+Local acceptance uses five synthetic employer forms, never the five applications
+already submitted. The opt-in browser tests intercept network requests:
+
+```bash
+uv run --no-editable pytest
+BACKENDSCOUT_BROWSER_SMOKE=1 uv run --no-editable pytest \
+  tests/test_hybrid_portal.py tests/test_employer_forms.py \
+  tests/test_package_portal.py tests/test_web_browser.py
+```
+
+Production starts with `PORTAL_HYBRID_ROLLOUT=canary` and an explicit
+`PORTAL_CANARY_APPLICATION_IDS` list. General enablement requires three distinct
+new, approved hybrid applications with saved confirmation proof. Existing
+submitted applications are never rollout candidates.
 
 [SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md) documents the architecture,
 design decisions, and implementation roadmap. [REQUIREMENTS.md](REQUIREMENTS.md)

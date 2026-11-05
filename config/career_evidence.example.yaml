@@ -1,5 +1,9 @@
 identity:
   full_name: TODO Candidate Name
+  given_name: TODO Candidate
+  family_name: TODO Name
+  city: null
+  country: null
   email: TODO candidate@example.com
   phone: TODO phone number
   location: TODO City, Country

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+    <title>Example IBI | Junior Backend Engineer</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Junior Backend Engineer",
+        "hiringOrganization": {"@type": "Organization", "name": "Example IBI"}
+      }
+    </script>
+    <style>
+      body { max-width: 48rem; margin: 2rem auto; padding: 0 1rem; font-family: sans-serif; }
+      label { display: block; margin: 1rem 0; }
+      input:not([type="checkbox"]), select { display: block; max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Example IBI</h1>
+      <h2 id="job-title" dir="ltr">Junior Backend Engineer</h2>
+      <form id="application-form" aria-labelledby="job-title" method="post">
+        <label for="given-name">שם פרטי
+          <input id="given-name" name="given_name" autocomplete="given-name" required>
+        </label>
+        <label for="family-name">שם משפחה
+          <input id="family-name" name="family_name" autocomplete="family-name" required>
+        </label>
+        <label for="email">דואר אלקטרוני
+          <input id="email" name="email" type="email" autocomplete="email" required>
+        </label>
+        <label for="phone">טלפון
+          <input id="phone" name="phone" type="tel" autocomplete="tel" required>
+        </label>
+        <label for="city">עיר מגורים
+          <input id="city" name="city" autocomplete="address-level2">
+        </label>
+        <section aria-labelledby="cv-heading">
+          <h3 id="cv-heading">קורות חיים</h3>
+          <label for="attachment">העלאת קובץ
+            <input id="attachment" name="attachment" type="file" accept=".pdf,.doc,.docx" required>
+          </label>
+        </section>
+        <label for="source">כיצד הגעת אלינו?
+          <select id="source" name="source" required>
+            <option value="">בחירת מקור</option>
+            <option value="site">אתר החברה</option>
+            <option value="board">לוח דרושים</option>
+          </select>
+        </label>
+        <label for="privacy">
+          <input id="privacy" name="Privacy_Policy_Approval__c" type="checkbox" checked required>
+          קראתי ואני מאשר/ת את מדיניות הפרטיות
+        </label>
+        <label for="marketing">
+          <input id="marketing" name="Mailing_Consent__c" type="checkbox" checked>
+          אני מסכים/ה לקבל דיוור ועדכונים שיווקיים
+        </label>
+        <button type="submit">שליחת מועמדות</button>
+      </form>
+    </main>
+    <script>
+      window.sent = 0;
+      window.received = null;
+      const form = document.getElementById("application-form");
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        const file = form.querySelector('input[type="file"]').files[0];
+        const receipt = {
+          filename: file ? file.name : "",
+          size: file ? file.size : 0,
+          marketing: form.elements.namedItem("Mailing_Consent__c").checked,
+          answers: Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"))
+        };
+        window.sent += 1;
+        window.received = receipt;
+        form.reset();
+        window.setTimeout(() => {
+          const message = document.createElement("p");
+          message.id = "receipt";
+          message.setAttribute("role", "status");
+          message.textContent = "ההודעה נשלחה.";
+          form.after(message);
+        }, 150);
+      };
+    </script>
+  </body>
+</html>

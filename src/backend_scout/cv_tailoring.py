@@ -73,34 +73,44 @@ def generate_tailored_cv(
     model: str,
     revision_feedback: str | None = None,
     tailoring_note: str | None = None,
+    *,
+    usage_budget=None,
 ) -> TailoredCv:
     """Generate a structured CV draft with strict evidence citations."""
     from openai import OpenAI
 
     tailoring_evidence = evidence_for_job(evidence, job)
-    response = OpenAI(api_key=api_key).responses.create(
+    content = json.dumps(
+        {"job": job.model_dump(mode="json"),
+         "career_evidence": tailoring_evidence.model_dump(mode="json"),
+         "cv_style": style.model_dump(mode="json"), "revision_feedback": revision_feedback,
+         "tailoring_note": tailoring_note}, ensure_ascii=False,
+    )
+    schema = openai_json_schema(TailoredCv)
+    reservation = None
+    if usage_budget is not None:
+        input_cap = len(content.encode()) + len(TAILORING_INSTRUCTIONS.encode()) + len(json.dumps(schema).encode()) + 4096
+        reservation = usage_budget.reserve_external(model, input_cap, 6000)
+    options = {"max_output_tokens": 6000} if usage_budget is not None else {}
+    client_options = {"max_retries": 0, "timeout": 60} if usage_budget is not None else {}
+    response = OpenAI(api_key=api_key, **client_options).responses.create(
         model=model,
         instructions=TAILORING_INSTRUCTIONS,
-        input=json.dumps(
-            {
-                "job": job.model_dump(mode="json"),
-                "career_evidence": tailoring_evidence.model_dump(mode="json"),
-                "cv_style": style.model_dump(mode="json"),
-                "revision_feedback": revision_feedback,
-                "tailoring_note": tailoring_note,
-            },
-            ensure_ascii=False,
-        ),
+        input=content,
         text={
             "format": {
                 "type": "json_schema",
                 "name": "tailored_cv",
-                "schema": openai_json_schema(TailoredCv),
+                "schema": schema,
                 "strict": True,
             }
         },
         store=False,
+        **options,
     )
+    if reservation is not None:
+        usage_budget.settle_external(reservation.reservation_id,
+                                     response.usage.input_tokens, response.usage.output_tokens)
     if not response.output_text:
         raise ValueError("OpenAI returned no CV draft text")
 

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+    <title>Example SolarEdge | Junior Backend Engineer</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Junior Backend Engineer",
+        "hiringOrganization": {"@type": "Organization", "name": "Example SolarEdge"}
+      }
+    </script>
+    <style>
+      body { max-width: 48rem; margin: 2rem auto; padding: 0 1rem; font-family: sans-serif; }
+      label { display: block; margin: 1rem 0; }
+      input:not([type="radio"]):not([type="checkbox"]) { display: block; max-width: 100%; }
+      [hidden] { display: none !important; }
+      label[for="cv"] { cursor: pointer; text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Example SolarEdge</h1>
+      <h2 id="job-title">Junior Backend Engineer</h2>
+      <form id="application-form" aria-labelledby="job-title" method="post">
+        <label for="first-name">First name
+          <input id="first-name" name="first_name" autocomplete="given-name" required>
+        </label>
+        <label for="last-name">Last name
+          <input id="last-name" name="last_name" autocomplete="family-name" required>
+        </label>
+        <label for="email">Email
+          <input id="email" name="email" type="email" autocomplete="email" required>
+        </label>
+        <label for="phone">Phone
+          <input id="phone" name="phone" type="tel" autocomplete="tel" required>
+        </label>
+        <input id="cv" name="cv" type="file" accept=".pdf,.doc,.docx" required hidden>
+        <label for="cv">Upload CV</label>
+        <fieldset>
+          <legend>How did you hear about this position?</legend>
+          <label for="source-site">
+            <input id="source-site" name="source" type="radio" value="site" required>
+            Company website
+          </label>
+          <label for="source-board">
+            <input id="source-board" name="source" type="radio" value="board" required>
+            Job board
+          </label>
+        </fieldset>
+        <label for="retention">
+          <input id="retention" name="extended_data_retention" type="checkbox">
+          I agree to extended retention of my application data for future roles
+        </label>
+        <button type="submit">Submit application</button>
+      </form>
+    </main>
+    <script>
+      window.sent = 0;
+      window.received = null;
+      const form = document.getElementById("application-form");
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        const file = form.querySelector('input[type="file"]').files[0];
+        window.sent += 1;
+        window.received = {
+          filename: file ? file.name : "",
+          size: file ? file.size : 0,
+          marketing: false,
+          answers: Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"))
+        };
+        window.setTimeout(() => {
+          const receipt = document.createElement("p");
+          receipt.id = "receipt";
+          receipt.setAttribute("role", "status");
+          receipt.textContent = "Your application has been submitted. Good luck!";
+          form.after(receipt);
+        }, 150);
+      };
+    </script>
+  </body>
+</html>

@@ -5,6 +5,8 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
+from backend_scout.secrets import get_credential_store
+
 KEYRING_SERVICE = "BackendScout.GmailOAuth"
 KEYRING_ACCOUNT = "default"
 GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
@@ -24,19 +26,19 @@ class GmailMessageSummary:
     body_html: str = ""
 
 
-def connect_gmail(client_secret_path: Path) -> None:
-    import keyring
+def connect_gmail(client_secret_path: Path, *, port: int = 0, open_browser: bool = True) -> None:
+    """Authorize locally, or through a forwarded loopback port on a headless host."""
     from google_auth_oauthlib.flow import InstalledAppFlow
 
+    store = get_credential_store(KEYRING_SERVICE, KEYRING_ACCOUNT)
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), GMAIL_SCOPES)
-    credentials = flow.run_local_server(port=0)
-    keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, credentials.to_json())
+    credentials = flow.run_local_server(port=port, open_browser=open_browser)
+    store.save(credentials.to_json())
 
 
 def gmail_connected() -> bool:
-    import keyring
-
-    return keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT) is not None
+    store = get_credential_store(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    return store.load() is not None
 
 
 def gmail_reauthorization_required(exc: Exception) -> bool:
@@ -107,18 +109,18 @@ def list_recent_messages(
 
 
 def _authorized_gmail_service():
-    import keyring
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
 
-    token = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    store = get_credential_store(KEYRING_SERVICE, KEYRING_ACCOUNT)
+    token = store.load()
     if not token:
         raise ValueError("Gmail is not connected. Run backend-scout gmail connect first.")
     credentials = Credentials.from_authorized_user_info(json.loads(token), GMAIL_SCOPES)
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
-        keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, credentials.to_json())
+        store.save(credentials.to_json())
     return build("gmail", "v1", credentials=credentials)
 
 

@@ -23,7 +23,8 @@ from backend_scout.telegram import (
 )
 
 
-def test_format_digest_message_includes_key_job_fields() -> None:
+@pytest.mark.parametrize("work_mode", ["Hybrid, 2 days from home", "On-site", "Remote", None])
+def test_format_digest_message_includes_key_job_fields(work_mode) -> None:
     item = ApplicationDigestItem(
         notion_page_id="page-123",
         company="Example Cloud",
@@ -32,7 +33,7 @@ def test_format_digest_message_includes_key_job_fields() -> None:
         source="manual",
         source_url="https://example.com/jobs/backend",
         location="Tel Aviv, Israel",
-        remote_policy="Hybrid, 2 days from home",
+        remote_policy=work_mode,
         salary_text="18,000 NIS",
         match_score=87,
         match_reason="Recommendation: apply. Strong backend overlap.",
@@ -43,8 +44,27 @@ def test_format_digest_message_includes_key_job_fields() -> None:
 
     assert "Example Cloud - Backend Engineer" in message
     assert "Score: 87" in message
+    assert f"Work mode: {work_mode or 'unknown'}" in message
     assert "Skills: Python, FastAPI, PostgreSQL" in message
     assert "Source: https://example.com/jobs/backend" in message
+
+
+@pytest.mark.parametrize("years", ["6+ years", "5+ years", "1-3 years", "No experience required", None])
+def test_digest_states_experience_and_never_interprets_missing_years_as_junior(years):
+    from backend_scout.notion import application_digest_item_from_page
+
+    page = _application_page("page", ApplicationStatus.DIGEST_SENT)
+    page["properties"]["Years Experience"] = {
+        "rich_text": [{"plain_text": years}] if years else [],
+    }
+    item = application_digest_item_from_page(page)
+    message = format_digest_message(item)
+    if years:
+        assert f"Experience required: {years}" in message
+    else:
+        assert "Experience required: not stated in available source" in message
+        assert "verify the full posting before tailoring" in message
+        assert "0 years" not in message
 
 
 def test_parse_callback_data_round_trips() -> None:
@@ -129,6 +149,52 @@ def test_portal_progress_markup_labels_approved_and_prepared_jobs() -> None:
     assert markup["inline_keyboard"][0][0]["callback_data"] == f"b:p:{approved.notion_page_id}"
     assert markup["inline_keyboard"][0][0]["text"] == "Prepare DOKKA"
     assert markup["inline_keyboard"][1][0]["text"] == "Resume DOKKA"
+    assert markup["inline_keyboard"][0][1] == {"text": "Open in browser", "url": approved.source_url}
+
+
+@pytest.mark.parametrize("status", [ApplicationStatus.SUBMISSION_PREPARED, ApplicationStatus.SUBMITTED, ApplicationStatus.SUBMISSION_UNKNOWN])
+def test_open_application_sends_a_reusable_link_without_requeueing_or_changing_state(status):
+    page_id = "40b71273-fa0b-8162-b5b0-e1d289d34670"
+    page = _application_page(page_id, status)
+    page["parent"] = {"data_source_id": "production"}
+    page["properties"]["Application URL"] = {"url": "https://jobs.example/job/123/apply"}
+    messages = []
+
+    class Notion:
+        def retrieve_page(self, requested):
+            assert requested == page_id
+            return page
+
+    class Telegram:
+        def send_message(self, chat_id, text, reply_markup=None):
+            messages.append((text, reply_markup))
+
+    result = process_telegram_update(
+        Telegram(), Notion(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": f"/open_{page_id}"}},
+        {12345}, tracker=TrackerName.PRODUCTION, data_source_id="production",
+        task_enqueue_handler=lambda *_: pytest.fail("Opening a link must not enqueue an application"),
+    )
+    assert result == "application_link_sent"
+    assert "does not submit anything" in messages[0][0]
+    assert "do not submit again" in messages[0][0]
+    assert messages[0][1]["inline_keyboard"][0][0]["url"] == "https://jobs.example/job/123/apply"
+    assert page["properties"]["Status"]["status"]["name"] == status.value
+
+
+def test_open_application_rejects_a_page_in_the_other_tracker():
+    page_id = "40b71273-fa0b-8162-b5b0-e1d289d34670"
+    page = _application_page(page_id, ApplicationStatus.SUBMISSION_PREPARED)
+    page["parent"] = {"data_source_id": "test"}
+    notion = SimpleNamespace(retrieve_page=lambda _: page)
+    update = {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": f"/open_{page_id}"}}
+    with pytest.raises(ValueError, match="different tracker"):
+        process_telegram_update(object(), notion, update, {12345}, data_source_id="production")
+
+
+def test_unauthorized_sender_cannot_recover_an_application_link():
+    update = {"message": {"from": {"id": 2}, "chat": {"id": 2}, "text": "/open_40b71273-fa0b-8162-b5b0-e1d289d34670"}}
+    assert process_telegram_update(object(), object(), update, {12345}) is None
 
 
 def test_process_telegram_update_queues_portal_prepare_from_inline_button() -> None:

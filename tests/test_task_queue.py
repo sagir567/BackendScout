@@ -144,3 +144,13 @@ def test_sqlite_worker_lanes_claim_only_their_own_tasks(tmp_path: Path) -> None:
 
     assert claimed_general is not None and claimed_general.task_id == general.task_id
     assert claimed_browser is not None and claimed_browser.task_id == browser.task_id
+
+
+def test_web_requests_use_the_correct_lane_and_take_priority_over_bulk_work(tmp_path):
+    path = tmp_path / "runtime.sqlite3"
+    enqueue_task(QueuedTaskKind.SCOUT_TODAY, TrackerName.TEST, path=path)
+    enqueue_task(QueuedTaskKind.CV_DRAFT, TrackerName.TEST, path=path)
+    draft = enqueue_task(QueuedTaskKind.PACKAGE_CV_DRAFT, TrackerName.TEST, path=path)
+    delivery = enqueue_task(QueuedTaskKind.PACKAGE_DELIVER, TrackerName.TEST, path=path)
+    assert claim_next_task(path, allowed_kinds=GENERAL_TASK_KINDS).task_id == draft.task_id
+    assert claim_next_task(path, allowed_kinds=BROWSER_TASK_KINDS).task_id == delivery.task_id

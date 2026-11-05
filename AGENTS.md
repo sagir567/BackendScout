@@ -2,11 +2,35 @@
 
 These rules apply to all work in this repository.
 
+## Architecture and Autonomous Execution
+
+- Start with `ARCHITECTURE.md` baseline 1.1 and `EXECUTION_PLAN.yaml`. They are the
+  current implementation contract; older research documents are background.
+- Run `python scripts/project_status.py --check-evidence` to identify ready work.
+  Select a dependency-ready autonomous task and continue through implementation,
+  verification, review and evidence recording. Do not stop after proposing work.
+- Preserve the frozen stack, product scope and 100 NIS monthly ceiling. Routine
+  fixes are permitted; a changed baseline decision needs an owner-directed
+  amendment and a new version/checksum, not a silent redesign.
+- User-authorized subagents may implement independent tasks concurrently. Give
+  each a disjoint write scope and acceptance criteria. Integration owns shared
+  interfaces and the plan file. Review returned changes before recording done.
+- Update task status incrementally and attach observed acceptance evidence.
+  A blocked external task does not prevent progress on independent ready work.
+- Seller onboarding, provider purchases, actual application delivery and public
+  publication follow existing owner authorization. A task ledger is not an
+  approval for an external action. No background development is implied merely
+  by leaving a task pending in the file.
+
 ## User Approval
 
 - Ask the user before choosing or changing meaningful technologies, services, frameworks, databases, APIs, providers, hosting, or automation tools.
 - Explain the tradeoffs briefly before asking for a decision.
-- Do not push to any remote repository without explicit project-owner approval.
+- The owner granted standing approval on 2026-11-05 to commit and push coherent,
+  tested milestones to the existing BackendScout remote. Use scoped branches
+  when useful and scan staged changes for secrets. Never force-push or include
+  private profiles, credentials, CVs or docs. Employer delivery still needs its
+  own exact-package approval; provider changes still require owner agreement.
 - Do not submit job applications, send recruiter messages, upload CVs, or mark an application as submitted without explicit user approval.
 
 ## Storage Preference

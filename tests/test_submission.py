@@ -17,6 +17,7 @@ from backend_scout.submission import (
     _candidate_answer_locator,
     _capture_submission_screenshot,
     _control_has_value,
+    _fill_safe_fields,
     _follow_verified_apply_link,
     _form_scopes,
     _matches_confirmed_option,
@@ -186,6 +187,28 @@ def test_linkedin_signup_redirect_is_an_authentication_gate() -> None:
             raise AssertionError("URL detection should happen before DOM inspection")
 
     assert portal_authentication_required(Page())
+
+
+def test_workday_sign_in_redirect_is_an_authentication_gate():
+    class Page:
+        url = "https://jobs.example/en-US/careers/login"
+
+        def locator(self, _selector):
+            raise AssertionError("A sign-in URL must be detected before filling any form")
+
+    assert portal_authentication_required(Page())
+
+
+def test_form_filling_does_not_type_application_data_into_a_sign_in_page(tmp_path):
+    class Page:
+        url = "https://jobs.example/en-US/careers/login"
+
+        def locator(self, _selector):
+            raise AssertionError("Do not inspect or fill identity fields on a sign-in page")
+
+    result = _fill_safe_fields(Page(), _guided_evidence(), tmp_path / "cv.pdf")
+    assert result.filled_fields == ()
+    assert result.unresolved_required_fields == ("portal_authentication",)
 
 
 def test_linkedin_visible_password_field_is_an_authentication_gate() -> None:

@@ -324,18 +324,16 @@ def _add_role_heading(
     layout_scale: float = 1.0,
     spacing_scale: float | None = None,
 ) -> None:
-    from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
-    from docx.shared import Inches, Pt
+    from docx.shared import Pt
 
     spacing_scale = spacing_scale or layout_scale
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(3 * spacing_scale)
     paragraph.paragraph_format.space_after = Pt(spacing_scale)
-    paragraph.paragraph_format.tab_stops.add_tab_stop(
-        Inches(6.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.SPACES
-    )
-    paragraph.add_run(f"{title} | {organization}").bold = True
-    paragraph.add_run(f"\t{start_date} - {end_date}")
+    paragraph.paragraph_format.keep_with_next = True
+    paragraph.add_run(title).bold = True
+    paragraph.add_run().add_break()
+    paragraph.add_run(f"{organization} | {start_date} - {end_date}")
 
 
 def _add_bullets(document, bullets: list[str], spacing_scale: float = 1.0) -> None:

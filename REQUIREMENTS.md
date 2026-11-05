@@ -3,6 +3,50 @@
 This file is the install/run checklist for BackendScout. Keep it updated when
 we add tools, services, APIs, packages, or system dependencies.
 
+## Employer-First Hybrid Preview
+
+No new package, provider, API scope, paid host or database is required for this
+slice. Existing Playwright Chromium is needed for opt-in browser acceptance;
+`uv run --no-editable playwright install chromium` installs its matching binary.
+The default-off hybrid flag and pricing/rollout settings are in `.env.example`.
+Private pricing, identity fields, browser profiles, CVs and screenshots are not
+repository content. Real production canaries require separate exact approvals.
+
+## Recovery Slice
+
+Development planning uses existing PyYAML and the Python standard library through
+`scripts/project_status.py`; it adds no dependency. The architecture and execution
+ledger live at repository root so they can be versioned while `docs/` stays local.
+
+The October 2026 recovery adds no dependencies. `requirements.txt` and `uv.lock`
+are unchanged. Runtime deployment now uses `uv sync --locked` in the new release's
+own `.venv`, followed by a CLI startup preflight before activation. Keep the
+checkout fully available offline; do not use an iCloud-evicted virtualenv.
+
+Read-only `backend-scout system runtime health` requires only the existing SQLite
+database. Gmail reconnection still requires the configured OAuth client JSON,
+macOS Keychain, network access, and interactive Google consent. A server restart
+does not repair expired consent.
+
+FastAPI, Docker/Linux hosting, mobile authentication, and portable secret storage
+are next-release requirements, not supported deployment instructions yet. Do not
+copy the current macOS Keychain or browser profile to a VPS and expect it to work.
+
+## Linux Cloud Foundation
+
+The Dockerfile now installs Python 3.12, the existing locked Python dependencies,
+LibreOffice Writer/fonts, Playwright Chromium, Xvfb, xauth and flock. Compose
+uses one persistent private state volume and UID/GID 10001. No Python dependency
+was added; `requirements.txt` and `uv.lock` remain unchanged. This foundation is
+under integration; FastAPI/mobile authentication and production cutover still
+require their planned acceptance work.
+
+Gmail supports `GMAIL_CREDENTIAL_STORE=keyring` (default) or `file` with an absolute
+`GMAIL_CREDENTIAL_FILE`. File mode needs an owner-owned 0700 directory and a 0600
+token file. `gmail connect --port 8765 --no-browser` supports headless authorization
+through SSH; a fresh Google consent on the target environment is still required.
+Docker image checks use synthetic content, not current personal credentials.
+
 ## Current Runtime Requirements
 
 | Requirement | Status | Notes |
@@ -534,6 +578,44 @@ Expected current CV drafting behavior:
   and the callback offset is recorded safely.
 
 ## Local-Only Data Files
+
+### Private Web Runtime
+
+FastAPI and Uvicorn are locked Python dependencies installed by the same
+`uv sync --extra dev --no-editable` command. The frontend is packaged static
+HTML/CSS/JavaScript; no Node toolchain, CDN or frontend service is required.
+`requirements.txt` delegates to the same project dependency declaration.
+Pillow is explicitly declared for nonblank receipt validation; PDF previews use
+the existing pdfplumber/PDFium dependencies and do not call an AI model.
+Public posting enrichment uses the existing HTTPX/BeautifulSoup dependencies.
+It needs no additional provider, API key, model call or browser-login import.
+`package_enrich` runs in the continuous general worker, not inside an HTTP
+request. Keep workers and web assets on the same release when adding task kinds.
+Greenhouse form inspection reuses HTTPX and its documented public GET API; it
+requires no employer key and sends no candidate data. The `package_form_inspect`
+task runs in the general lane. Schema-v4 application tables retain observations
+in the same workflow database without granting approval. Back up SQLite and
+upgrade all workers/web together; an older schema-v3 release cannot use the
+upgraded application ledger. No dependency or service was added for readiness
+classification, form observation or current-day network recovery.
+
+- `WEB_HOST=127.0.0.1`, `WEB_PORT=8765`: local listener only.
+- `WEB_PUBLIC_ORIGIN=http://127.0.0.1:8765`: exact allowed mutation origin.
+- Private phone access requires HTTPS and `WEB_COOKIE_SECURE=true`; never use
+  plain HTTP on a LAN/public bind or put owner tokens in URLs.
+- Tailscale Serve also needs one-time owner consent to HTTPS/Serve. Signing in
+  on two devices alone does not enable the proxy. Funnel is not required.
+- After HTTPS activation, use the private HTTPS origin on both devices; an old
+  loopback tab must not be used for approval mutations. Both devices need an
+  active Tailscale connection and the hosting Mac must remain awake.
+- `WEB_ALLOW_DELIVERY=false`: explicitly enable only after browser-worker checks.
+- Exactly one allowlisted Telegram owner is required for automatic job sync.
+- New `owner_auth_*` and versioned application tables share the existing private
+  workflow SQLite file; they do not create a second business authority.
+- Run the continuous browser lane for persistent visible forms. A one-shot
+  debugging worker closes its owned browser when it exits.
+
+### Private Files
 
 These files are intentionally ignored:
 

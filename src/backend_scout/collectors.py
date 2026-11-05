@@ -92,12 +92,31 @@ def collect_public_jobs(
         terms = target.search_terms or [""]
         jobs: dict[str, Job] = {}
         for term in terms:
-            payload = post(
-                _lin_srael_url(target.board_token),
-                {"title": term, "page": 1, "limit": target.result_limit},
-            )
-            for job in parse_lin_srael_jobs(target, payload):
-                jobs.setdefault(job.source_url, job)
+            term_urls: set[str] = set()
+            for page in range(1, target.max_pages + 1):
+                payload = post(
+                    _lin_srael_url(target.board_token),
+                    {"title": term, "page": page, "limit": target.result_limit},
+                )
+                batch = parse_lin_srael_jobs(target, payload)
+                urls = {job.source_url for job in batch}
+                if batch and not urls - term_urls:
+                    raise ValueError(f"Lin-Srael pagination did not advance for {term!r} at page {page}")
+                term_urls.update(urls)
+                for job in batch:
+                    jobs.setdefault(job.source_url, job)
+                pages = payload.get("pages")
+                if isinstance(pages, int) and not isinstance(pages, bool) and pages >= 0:
+                    more = page < pages
+                else:
+                    more = len(payload["jobs"]) >= target.result_limit
+                if not more or not payload["jobs"]:
+                    break
+                if page == target.max_pages:
+                    raise ValueError(
+                        f"Lin-Srael search {term!r} exceeds max_pages={target.max_pages}; "
+                        "collection is incomplete, not a no-jobs result"
+                    )
         return list(jobs.values())
     raise ValueError(f"Unsupported ATS provider: {target.provider.value}")
 

@@ -140,6 +140,11 @@ def score_jobs(profile: CandidateProfile, jobs: list[Job]) -> list[ScoredJob]:
 def score_job(profile: CandidateProfile, job: Job) -> MatchResult:
     strengths: list[str] = []
     concerns: list[str] = []
+    partial_source = job.description.strip() in {
+        "Published Lin-Srael job listing.", "Published public ATS job posting.",
+    }
+    if partial_source:
+        concerns.append("Preliminary match: the source did not provide detailed requirements; verify the full posting before tailoring.")
     matched_skills, missing_skills, skill_item = _score_skill_overlap(profile, job, strengths, concerns)
     role_item, role_is_hard_blocker = _score_role_relevance(profile, job, strengths, concerns)
     experience_item = _score_experience_fit(profile, job, concerns)
@@ -164,6 +169,8 @@ def score_job(profile: CandidateProfile, job: Job) -> MatchResult:
 
     hard_blocker = role_is_hard_blocker or location_hard_blocker
     recommended_action = _recommended_action(match_score, hard_blocker)
+    if partial_source and recommended_action == MatchRecommendation.APPLY:
+        recommended_action = MatchRecommendation.MAYBE
     reason_summary = _reason_summary(strengths, concerns, recommended_action)
 
     return MatchResult(
@@ -208,9 +215,17 @@ def _score_role_relevance(
             True,
         )
 
-    has_backend_title = "backend" in title or ("python" in title and "engineer" in title)
+    implementation_title = bool(title_tokens & {"engineer", "developer"})
+    testing_title = bool(title_tokens & {"qa", "test", "testing", "sdet", "quality"})
+    has_backend_title = "backend" in title or (
+        "python" in title_tokens and implementation_title and not testing_title
+    )
     has_backend_signals = bool((title_tokens | description_tokens) & BACKEND_SIGNAL_KEYWORDS)
-    has_adjacent_software_title = "software engineer" in title or "software developer" in title
+    has_adjacent_software_title = (
+        "software engineer" in title
+        or "software developer" in title
+        or (implementation_title and not testing_title and bool(title_tokens & {"java", "c#", "net", "dotnet"}))
+    )
 
     direct_backend_target_hit = any(
         "backend" in _normalize_text(role) or "python" in _normalize_text(role)
