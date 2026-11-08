@@ -18,6 +18,11 @@ Telegram worker unwraps CLI causes and marks the task `blocked` once rather than
 retrying a factual gap. A new owner answer must be validated before updating
 private evidence or requesting another draft. Do not equate generic API use or
 software tests with prompting expertise or LLM-output evaluation.
+When the owner supplies actual examples, retain separate evidence IDs for prompt
+iteration and evaluation methodology. Manual conversational checks are qualitative
+project experience, not automated evals or measured production performance. Re-run
+coverage without changing the target; regenerate an immutable CV and obtain a new
+exact-file approval rather than transferring an earlier approval.
 
 ## Working from the Frozen Baseline
 

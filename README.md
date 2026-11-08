@@ -527,6 +527,9 @@ evidence threshold, drafting pauses for confirmed facts and lists the missing
 requirements. This is a blocked, owner-actionable state, not a transient model
 error: the worker does not retry it or exhaust it into dead letter. Existing
 CVs and submission approvals remain unchanged.
+Confirmed personal-project prompting and manual qualitative LLM evaluation can
+support scoped project claims. They do not establish automated benchmark results
+or professional production AI experience.
 
 Each project has explicit `selection_keywords`. Before the OpenAI request,
 BackendScout removes projects whose keywords do not appear in the target job.

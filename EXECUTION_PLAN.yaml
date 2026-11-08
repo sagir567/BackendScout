@@ -104,6 +104,8 @@ tasks:
         result: Owner-directed CV presentation amendment separates AI tooling skills from project authorship labels while retaining truthful ownership scope. Seventy focused tailoring/style/service tests passed; existing immutable drafts and approvals were not rewritten.
       - path: tests/test_cli.py
         result: Evidence gaps now block once with explicit missing requirements and clarification questions instead of exhausting retries; existing CVs, approvals and the 90-point factual threshold are preserved.
+      - path: tests/test_cv_coverage.py
+        result: Confirmed personal-project prompting and manual qualitative LLM evaluation retain distinct evidence IDs; generic API use and software tests alone still do not close these gaps.
   - id: A00
     track: personal
     title: Freeze architecture and executable development ledger

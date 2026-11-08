@@ -175,3 +175,18 @@ def test_llm_api_and_general_tests_do_not_prove_prompting_or_llm_evaluation():
     assert result.missing_requirements == ["Prompting", "Evaluation"]
     assert "model prompts" in result.clarification_questions[0]
     assert "LLM outputs" in result.clarification_questions[1]
+
+
+def test_confirmed_personal_prompting_and_manual_evaluation_retain_evidence_ids():
+    data = _evidence().model_dump()
+    data["projects"] = [{
+        "id": "robot", "name": "Personal Conversational Robot",
+        "bullets": [
+            {"id": "robot_prompting", "text": "Iterated on prompting with emotion model outputs in a personal robot prototype."},
+            {"id": "robot_evaluation", "text": "Performed manual qualitative evaluation of LLM responses for emotional and conversational appropriateness in that personal prototype."},
+        ],
+    }]
+    result = assess_cv_evidence_coverage(CareerEvidence.model_validate(data), _job(["Prompting", "Evaluation"]))
+    assert result.coverage_score == 100
+    assert result.missing_requirements == []
+    assert {"robot_prompting", "robot_evaluation"} <= set(result.supporting_evidence_ids)
