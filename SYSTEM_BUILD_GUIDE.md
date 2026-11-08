@@ -11,6 +11,14 @@ project-text validator enforce this boundary; genuine AI product functionality
 remains allowed. Previously generated immutable CVs are not silently rewritten
 or reapproved when presentation rules change.
 
+Evidence-pause reliability checkpoint (2026-11-08): use the typed `CvEvidenceGap`
+to carry the measured score, missing requirements and clarification questions.
+The shared service records `needs_input` / `cv_evidence_required`; the legacy
+Telegram worker unwraps CLI causes and marks the task `blocked` once rather than
+retrying a factual gap. A new owner answer must be validated before updating
+private evidence or requesting another draft. Do not equate generic API use or
+software tests with prompting expertise or LLM-output evaluation.
+
 ## Working from the Frozen Baseline
 
 Read `ARCHITECTURE.md` for the agreed boundaries, interfaces, data ownership and

@@ -23,6 +23,7 @@ from backend_scout.browser_budget import BudgetExceeded
 from backend_scout.career_evidence import load_career_evidence
 from backend_scout.config import Settings, TrackerName
 from backend_scout.cv_artifacts import load_manifest, verify_manifest
+from backend_scout.cv_coverage import CvEvidenceGap
 from backend_scout.cv_service import draft_job_cv
 from backend_scout.delivery_readiness import (
     POSTING_BLOCK_CODES,
@@ -1042,6 +1043,10 @@ class ApplicationService:
             message = "CV generation is paused until pricing and the shared budget are available. Your existing CV is unchanged; no application was sent."
             self.store.set_state(application_id, tracker, "needs_input", code=exc.reason_code, message=message)
             return self._outcome(application_id, exc.reason_code, message, status="blocked")
+        except CvEvidenceGap as exc:
+            self.store.set_state(application_id, tracker, "needs_input",
+                                 code="cv_evidence_required", message=str(exc))
+            return self._outcome(application_id, "cv_evidence_required", str(exc), status="blocked")
         except (OSError, ValueError):
             self.store.set_state(
                 application_id,

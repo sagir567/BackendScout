@@ -10,6 +10,20 @@ from backend_scout.models import CareerEvidence, CvEvidenceCoverage, Job
 
 CV_EVIDENCE_COVERAGE_TARGET = 90
 
+
+class CvEvidenceGap(ValueError):
+    """An owner-actionable evidence gap, not a retryable generation failure."""
+
+    def __init__(self, coverage: CvEvidenceCoverage):
+        self.coverage = coverage
+        missing = ", ".join(coverage.missing_requirements)
+        questions = " ".join(coverage.clarification_questions)
+        super().__init__(
+            "CV drafting is paused because factual evidence coverage is below the required "
+            f"{coverage.target_score}/100 target ({coverage.coverage_score}/100). "
+            f"Missing evidence: {missing}. Confirm only truthful experience. {questions}"
+        )
+
 _TOKEN_PATTERN = re.compile(r"[a-z0-9+#.]+")
 
 _REQUIREMENT_ALIASES: dict[str, set[str]] = {
@@ -127,6 +141,14 @@ _REQUIREMENT_ALIASES: dict[str, set[str]] = {
 }
 
 _CLARIFICATION_QUESTIONS: dict[str, str] = {
+    "prompting": (
+        "Describe a completed project where you wrote and improved model prompts or agent "
+        "instructions, including what you personally directed or reviewed."
+    ),
+    "evaluation": (
+        "How did you evaluate LLM outputs against expected results, test cases or error "
+        "analysis? Distinguish personal project practice from professional production work."
+    ),
     "distributed systems": (
         "What direct experience can we document with components running across multiple "
         "machines or services, such as coordination, queues, retries, service-to-service "

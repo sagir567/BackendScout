@@ -13,7 +13,11 @@ from backend_scout.cv_artifacts import (
     next_draft_directory,
     write_manifest,
 )
-from backend_scout.cv_coverage import CV_EVIDENCE_COVERAGE_TARGET, assess_cv_evidence_coverage
+from backend_scout.cv_coverage import (
+    CV_EVIDENCE_COVERAGE_TARGET,
+    CvEvidenceGap,
+    assess_cv_evidence_coverage,
+)
 from backend_scout.cv_documents import render_checked_cv_artifacts
 from backend_scout.cv_style import DEFAULT_CV_STYLE_PATH, load_cv_style
 from backend_scout.cv_tailoring import generate_tailored_cv, validate_tailored_cv_against_evidence
@@ -49,11 +53,7 @@ def draft_job_cv(
     style = load_cv_style(style_path)
     coverage = assess_cv_evidence_coverage(evidence, job)
     if coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
-        raise ValueError(
-            "CV drafting is paused because factual evidence coverage is below the required "
-            f"{CV_EVIDENCE_COVERAGE_TARGET}/100 target. Confirm only truthful missing evidence "
-            "or complete a real project, then update the private career evidence and retry."
-        )
+        raise CvEvidenceGap(coverage)
     if not settings.openai_api_key:
         raise ValueError("Missing OPENAI_API_KEY for CV drafting")
     if settings.cv_archive_root.resolve() == Path("applications").resolve():

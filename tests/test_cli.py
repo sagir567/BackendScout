@@ -595,6 +595,42 @@ def test_tasks_worker_once_runs_queued_cv_draft(monkeypatch: pytest.MonkeyPatch,
     assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_cv_evidence_gap_blocks_once_without_retry(monkeypatch, tmp_path, wrapped):
+    from backend_scout.cv_coverage import CvEvidenceGap, assess_cv_evidence_coverage
+    from backend_scout.models import CareerEvidence
+
+    evidence = CareerEvidence.model_validate({
+        "identity": {"full_name": "Test Candidate", "email": "candidate@example.test"},
+        "skills": [{"category": "Backend", "items": ["Python"]}],
+    })
+    job = Job(source="test", source_url="https://example.test/job", company="Test",
+              title="AI Engineer", description="Build AI workflows.",
+              required_skills=["Prompting", "Evaluation"])
+    gap = CvEvidenceGap(assess_cv_evidence_coverage(evidence, job))
+    path = tmp_path / "tasks.sqlite3"
+    enqueue_task(QueuedTaskKind.CV_DRAFT, TrackerName.PRODUCTION,
+                 {"page_id": "test-page", "chat_id": 12345}, path)
+    messages = []
+
+    def blocked(*_, **__):
+        if wrapped:
+            raise typer.Exit(1) from gap
+        raise gap
+
+    monkeypatch.setattr("backend_scout.cli.cv_draft", blocked)
+    monkeypatch.setattr("backend_scout.cli._send_task_telegram_message", lambda task, msg: messages.append(msg))
+    result = runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(path)])
+    assert result.exit_code == 0
+    task = list_tasks(path)[0]
+    assert task.status == QueuedTaskStatus.BLOCKED
+    assert task.attempts == 1
+    assert "Prompting, Evaluation" in task.last_error
+    assert len(messages) == 1 and "will not retry automatically" in messages[0]
+    runner.invoke(app, ["tasks", "worker-once", "--queue-path", str(path)])
+    assert len(messages) == 1
+
+
 def test_tasks_worker_once_runs_queued_portal_prepare(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     queue_path = tmp_path / "tasks.json"
     enqueue_task(

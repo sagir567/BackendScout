@@ -497,3 +497,30 @@ def test_cv_budget_pause_is_blocked_with_stable_reason_and_preserves_existing_pd
     assert service.store.metadata("example-job", T)["needs_input_code"] == reason
     assert path.read_bytes() == original
     assert service.store.attempt_count("example-job", T) == 0
+
+
+def test_cv_evidence_gap_has_actionable_reason_and_preserves_existing_pdf(hybrid_ready):
+    from backend_scout.cv_coverage import CvEvidenceGap, assess_cv_evidence_coverage
+    from backend_scout.models import CareerEvidence
+
+    service = hybrid_ready
+    path = service.cv_artifact("example-job", T)
+    original = path.read_bytes()
+    evidence = CareerEvidence.model_validate({
+        "identity": {"full_name": "Test Candidate", "email": "candidate@example.test"},
+        "skills": [{"category": "Backend", "items": ["Python"]}],
+    })
+    job = service.store.get_application("example-job", T).job.model_copy(
+        update={"required_skills": ["Prompting", "Evaluation"]})
+
+    def paused(*_):
+        raise CvEvidenceGap(assess_cv_evidence_coverage(evidence, job))
+
+    service.drafter = paused
+    service.request_tailoring("example-job", T, "12345")
+    result = service.draft("example-job", T)
+    assert result.status == "blocked" and result.reason_code == "cv_evidence_required"
+    assert "Prompting, Evaluation" in result.message
+    assert service.store.get_application("example-job", T).status == "needs_input"
+    assert path.read_bytes() == original
+    assert service.store.attempt_count("example-job", T) == 0

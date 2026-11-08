@@ -102,6 +102,8 @@ tasks:
         result: Owner approved preparation of three fresh roles; private CV drafts and real preflight completed. No submission approval or live canary receipt yet. Cookie and email routes remain explicit review steps.
       - path: tests/test_cv_tailoring.py
         result: Owner-directed CV presentation amendment separates AI tooling skills from project authorship labels while retaining truthful ownership scope. Seventy focused tailoring/style/service tests passed; existing immutable drafts and approvals were not rewritten.
+      - path: tests/test_cli.py
+        result: Evidence gaps now block once with explicit missing requirements and clarification questions instead of exhausting retries; existing CVs, approvals and the 90-point factual threshold are preserved.
   - id: A00
     track: personal
     title: Freeze architecture and executable development ledger

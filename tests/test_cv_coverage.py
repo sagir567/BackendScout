@@ -167,3 +167,11 @@ def test_evidence_coverage_is_not_penalized_when_job_has_no_explicit_requirement
     assert result.coverage_score == 100
     assert result.covered_requirements == []
     assert result.missing_requirements == []
+
+
+def test_llm_api_and_general_tests_do_not_prove_prompting_or_llm_evaluation():
+    result = assess_cv_evidence_coverage(_evidence(), _job(["Python", "Prompting", "Evaluation"]))
+    assert result.coverage_score == 33
+    assert result.missing_requirements == ["Prompting", "Evaluation"]
+    assert "model prompts" in result.clarification_questions[0]
+    assert "LLM outputs" in result.clarification_questions[1]

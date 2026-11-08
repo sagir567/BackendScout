@@ -522,6 +522,12 @@ labels. Verified AI and agent tooling is presented as a separate competency.
 Ownership scope remains truthful without implying unaided implementation or
 professional experience in every tool used.
 
+CV evidence coverage is distinct from the job match score. Below the 90/100
+evidence threshold, drafting pauses for confirmed facts and lists the missing
+requirements. This is a blocked, owner-actionable state, not a transient model
+error: the worker does not retry it or exhaust it into dead letter. Existing
+CVs and submission approvals remain unchanged.
+
 Each project has explicit `selection_keywords`. Before the OpenAI request,
 BackendScout removes projects whose keywords do not appear in the target job.
 The CV header keeps only general profiles such as the primary GitHub account and

@@ -40,7 +40,11 @@ from backend_scout.cv_artifacts import (
     verify_manifest,
     write_manifest,
 )
-from backend_scout.cv_coverage import CV_EVIDENCE_COVERAGE_TARGET, assess_cv_evidence_coverage
+from backend_scout.cv_coverage import (
+    CV_EVIDENCE_COVERAGE_TARGET,
+    CvEvidenceGap,
+    assess_cv_evidence_coverage,
+)
 from backend_scout.cv_documents import render_checked_cv_artifacts
 from backend_scout.cv_style import DEFAULT_CV_STYLE_PATH, load_cv_style
 from backend_scout.cv_tailoring import (
@@ -1447,6 +1451,18 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
         else:
             raise ValueError(f"No worker is implemented yet for {task.kind.value}")
     except Exception as exc:
+        if isinstance(_task_root_cause(exc), CvEvidenceGap):
+            message = str(_task_root_cause(exc))
+            mark_task_status(task.task_id, QueuedTaskStatus.BLOCKED, last_error=message, path=queue_path)
+            _send_task_telegram_message(
+                task,
+                f"{_task_label(task)} needs your input: {message}\n"
+                "No CV generation or application was attempted. Reply with factual evidence; "
+                "this task will not retry automatically. "
+                f"Correlation: {task.correlation_id or task.task_id}.",
+            )
+            console.print(f"[yellow]Task {task.task_id} blocked: {message}[/yellow]")
+            return
         failure_message = _task_failure_message(exc)
         failed = retry_task(task.task_id, failure_message, queue_path)
         retry_note = (
@@ -2020,11 +2036,7 @@ def cv_draft(
             coverage = assess_cv_evidence_coverage(evidence, job)
             _print_cv_evidence_coverage(job, coverage)
             if coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
-                raise ValueError(
-                    "CV drafting is paused because factual evidence coverage is below the required "
-                    f"{CV_EVIDENCE_COVERAGE_TARGET}/100 target. Confirm only truthful missing evidence "
-                    "or complete a real project, then update config/career_evidence.yaml and retry."
-                )
+                raise CvEvidenceGap(coverage)
 
             if dry_run:
                 draft = build_evidence_only_draft(evidence, job)
@@ -2966,12 +2978,17 @@ def _payload_string(payload: dict[str, object], key: str) -> str:
     return value
 
 
-def _task_failure_message(exc: Exception) -> str:
+def _task_root_cause(exc: Exception) -> BaseException:
     cause: BaseException = exc
     seen: set[int] = set()
     while cause.__cause__ is not None and id(cause) not in seen:
         seen.add(id(cause))
         cause = cause.__cause__
+    return cause
+
+
+def _task_failure_message(exc: Exception) -> str:
+    cause = _task_root_cause(exc)
     message = str(cause).strip()
     return message or cause.__class__.__name__
 
