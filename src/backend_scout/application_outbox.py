@@ -5,6 +5,7 @@ lease_until, next_attempt_at and last_error columns to projection_outbox.
 No event payload, candidate answer, approval or employer action is replayed here.
 """
 
+import json
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -277,13 +278,13 @@ def _safe_job(job: Job, settings: Settings) -> Job:
 def _submission_record(database: Path, claim: _Claim, application: sqlite3.Row, settings: Settings):
     with _transaction(database) as db:
         attempt = db.execute(
-            "SELECT d.proof_path,d.proof_sha256,d.updated_at,p.payload_json,a.path AS cv_path "
+            "SELECT d.proof_path,d.proof_sha256,d.updated_at,d.receipt,p.payload_json,a.path AS cv_path "
             "FROM delivery_attempts d JOIN package_versions p ON p.id=d.package_id "
             "JOIN application_artifacts a ON a.id=p.artifact_id WHERE d.application_pk=? "
             "AND d.state='submitted' AND p.fingerprint=? ORDER BY d.updated_at DESC LIMIT 1",
             (claim.application_pk, application["current_fingerprint"]),
         ).fetchone()
-    if attempt is None or not attempt["proof_path"] or not attempt["proof_sha256"]:
+    if attempt is None:
         raise _ProjectionError("projection_submission_proof_missing")
     package = ApplicationPackage.model_validate_json(attempt["payload_json"])
     if (
@@ -293,10 +294,12 @@ def _submission_record(database: Path, claim: _Claim, application: sqlite3.Row, 
     ):
         raise _ProjectionError("projection_submission_identity_mismatch")
     private_root = settings.cv_archive_root.expanduser().resolve().parent
-    for value, checksum in (
-        (attempt["proof_path"], attempt["proof_sha256"]),
-        (attempt["cv_path"], package.cv_sha256),
-    ):
+    artifacts = [(attempt["cv_path"], package.cv_sha256)]
+    if package.delivery_route != "email":
+        if not attempt["proof_path"] or not attempt["proof_sha256"]:
+            raise _ProjectionError("projection_submission_proof_missing")
+        artifacts.append((attempt["proof_path"], attempt["proof_sha256"]))
+    for value, checksum in artifacts:
         relative = Path(value)
         path = (private_root / relative).resolve()
         if (
@@ -307,6 +310,13 @@ def _submission_record(database: Path, claim: _Claim, application: sqlite3.Row, 
             raise _ProjectionError("projection_submission_proof_invalid")
         if not path.is_file() or sha256_file(path) != checksum:
             raise _ProjectionError("projection_submission_proof_invalid")
+    if package.delivery_route == "email":
+        record = _email_submission_record(package, attempt)
+        if any(value and value in record for value in (
+            settings.notion_api_key, settings.openai_api_key, settings.telegram_bot_token
+        )):
+            raise _ProjectionError("projection_submission_proof_invalid")
+        return "email", record
     proof_path = attempt["proof_path"]
     if (
         Path(proof_path).suffix.casefold() not in {".png", ".jpg", ".jpeg", ".webp"}
@@ -327,6 +337,29 @@ def _submission_record(database: Path, claim: _Claim, application: sqlite3.Row, 
     ):
         raise _ProjectionError("projection_submission_proof_invalid")
     return package.delivery_route, record
+
+
+def _email_submission_record(package: ApplicationPackage, attempt) -> str:
+    try:
+        receipt = json.loads(attempt["receipt"])
+    except (ValueError, TypeError):
+        raise _ProjectionError("projection_submission_email_receipt_invalid") from None
+    if (not isinstance(receipt, dict) or package.email is None
+            or receipt.get("channel") != "email"
+            or receipt.get("recipient") != package.email.recipient
+            or receipt.get("contact_source") != package.official_destination
+            or receipt.get("cv_version") != package.cv_version
+            or receipt.get("cv_sha256") != package.cv_sha256
+            or not isinstance(receipt.get("gmail_message_id"), str)
+            or not re.fullmatch(r"[a-fA-F0-9]{1,128}", receipt["gmail_message_id"])):
+        raise _ProjectionError("projection_submission_email_receipt_invalid")
+    return (
+        "Gmail-confirmed email submission.\n"
+        f"Timestamp: {attempt['updated_at']}\nRecipient: {package.email.recipient}\n"
+        f"Contact source: {package.official_destination}\n"
+        f"Gmail message ID: {receipt['gmail_message_id']}\n"
+        f"CV version: {package.cv_version}\nCV SHA-256: {package.cv_sha256}"
+    )
 
 
 def _project(database: Path, claim: _Claim, settings: Settings, tracker: TrackerName) -> None:

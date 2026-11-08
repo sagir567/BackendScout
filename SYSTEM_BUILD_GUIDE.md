@@ -1,5 +1,18 @@
 # Building BackendScout
 
+## Delivery Proof Checkpoint
+
+Use route-specific evidence when synchronizing confirmed deliveries. A portal
+requires its saved receipt screenshot; Gmail requires its returned message ID
+bound to the exact recipient, official contact source, CV version and checksum.
+Both routes recheck the approved attachment before projection. Never resend an
+application to recover a Notion failure. Offline projection tests cover valid
+email receipts, mismatched bindings and changed attachments.
+
+Owner-confirmed reusable facts belong in ignored private configuration, with a
+confirmation date and scope. They are facts, not authorization to deliver or
+accept new terms. Do not publish personal answers in this guide.
+
 This guide explains how to build BackendScout as a complex local-first agent
 system. Keep it updated as the project evolves.
 

@@ -46,6 +46,9 @@ These rules apply to all work in this repository.
 
 ## Authenticity
 
+- Before asking repeated application questions, consult the ignored
+  `config/application_facts.private.yaml` when present. Respect each fact's date,
+  scope and limits. Facts never replace exact-package approval or new legal consent.
 - Keep all CV and application content truthful and explainable by the user in an interview.
 - Do not invent experience or add deliberate mistakes to disguise AI usage.
 

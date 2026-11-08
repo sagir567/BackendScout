@@ -9,7 +9,7 @@ from unittest.mock import Mock, create_autospec
 import pytest
 
 from backend_scout import application_outbox as outbox
-from backend_scout.application_package import ApplicationPackage
+from backend_scout.application_package import ApplicationPackage, EmailContent
 from backend_scout.application_store import ApplicationStore
 from backend_scout.config import Settings, TrackerName
 from backend_scout.models import ApplicationStatus, Job
@@ -385,6 +385,55 @@ def test_historical_submission_without_local_proof_stays_retryable(projection):
 
     projection.client.record_submission.assert_not_called()
     assert rows(projection)[0]["last_error"] == "projection_submission_proof_missing"
+
+
+def submit_email(projection, damage=None):
+    register(projection)
+    package = ApplicationPackage(
+        application_id="page-123", tracker=TrackerName.TEST,
+        company=projection.job.company, role=projection.job.title,
+        official_destination=projection.job.application_url, delivery_route="email",
+        cv_version="v3", cv_sha256=hashlib.sha256(b"synthetic reviewed CV").hexdigest(),
+        email=EmailContent(recipient="careers@example.test", subject="Application", body="Reviewed note"),
+    )
+    projection.store.save_package(package, "cv.pdf")
+    projection.store.approve("page-123", TrackerName.TEST, package.fingerprint(), "fixture-owner")
+    attempt = projection.store.begin_attempt("page-123", TrackerName.TEST, package.fingerprint(), "email-1")
+    receipt = {
+        "channel": "email", "recipient": package.email.recipient,
+        "contact_source": package.official_destination, "gmail_message_id": "abc123def456",
+        "cv_version": package.cv_version, "cv_sha256": package.cv_sha256,
+    }
+    if damage:
+        receipt[damage] = "wrong-value"
+    projection.store.finish_attempt(attempt.attempt_id, "submitted", json.dumps(receipt))
+    return package
+
+
+def test_email_submission_projects_gmail_receipt_without_screenshot(projection):
+    package = submit_email(projection)
+    assert dispatch(projection).projected == 1
+    args = projection.client.record_submission.call_args.args
+    assert args[:3] == ("page-123", "email", "Verified local application ledger")
+    assert "Gmail message ID: abc123def456" in args[3]
+    assert package.cv_sha256 in args[3]
+    assert "Screenshot" not in args[3]
+    assert "Reviewed note" not in args[3]
+    assert dispatch(projection).claimed == 0
+
+
+@pytest.mark.parametrize("damage", ["recipient", "contact_source", "cv_version", "cv_sha256", "gmail_message_id", "channel"])
+def test_email_submission_rejects_mismatched_receipt(projection, damage):
+    submit_email(projection, damage)
+    assert dispatch(projection).retrying == 1
+    projection.client.record_submission.assert_not_called()
+
+
+def test_email_submission_rechecks_attachment_checksum(projection):
+    submit_email(projection)
+    (projection.store.private_root / "cv.pdf").write_bytes(b"changed")
+    assert dispatch(projection).retrying == 1
+    projection.client.record_submission.assert_not_called()
 
 
 def test_partial_remote_update_retries_assignment_not_append_or_delivery(projection):

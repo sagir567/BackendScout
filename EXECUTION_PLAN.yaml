@@ -1,5 +1,5 @@
 schema_version: 1
-updated_on: '2026-11-05'
+updated_on: '2026-11-08'
 architecture:
   path: ARCHITECTURE.md
   version: '1.1'
@@ -106,6 +106,8 @@ tasks:
         result: Evidence gaps now block once with explicit missing requirements and clarification questions instead of exhausting retries; existing CVs, approvals and the 90-point factual threshold are preserved.
       - path: tests/test_cv_coverage.py
         result: Confirmed personal-project prompting and manual qualitative LLM evaluation retain distinct evidence IDs; generic API use and software tests alone still do not close these gaps.
+      - path: tests/test_application_outbox.py
+        result: Route-specific Gmail receipt projection verifies recipient source message ID CV version and attachment checksum without requiring a portal screenshot; eight new regressions and the full 1930-test suite passed. Owner-interactive live portal and Gmail receipts were recorded privately; these are not autonomous-engine canary acceptance or permission for general rollout.
   - id: A00
     track: personal
     title: Freeze architecture and executable development ledger

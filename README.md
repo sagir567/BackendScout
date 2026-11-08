@@ -68,6 +68,8 @@ the second command checks Gmail separately. Expired Gmail authorization needs
 - Uses Notion as the human-facing application dashboard.
 - Sends Telegram job digests with approval controls.
 - Keeps every application action behind explicit approval gates.
+- Records portal receipts with screenshots and email delivery with an exact-package
+  Gmail message receipt; projection retries never resend an application.
 - Generates truthful, job-specific CV drafts after approval and keeps exact
   artifacts versioned for review.
 
