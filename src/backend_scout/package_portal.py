@@ -24,7 +24,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qsl, urljoin, urlsplit
 
 from PIL import Image
 
@@ -398,6 +398,28 @@ def _allowed(url: str, adapter: PortalAdapter, tracker: TrackerName) -> bool:
 
 def _same_job(current: str, approved: str) -> bool:
     current_url, approved_url = urlsplit(current), urlsplit(approved)
+    # Query-based vacancies share a path; tracking parameters are not identity.
+    identity_keys = {
+        "jobid",
+        "job_id",
+        "positionid",
+        "position_id",
+        "position_uid",
+        "uid",
+        "gh_jid",
+    }
+    identities = [
+        [
+            (key.casefold(), value)
+            for key, value in parse_qsl(url.query, keep_blank_values=True)
+            if key.casefold() in identity_keys
+        ]
+        for url in (current_url, approved_url)
+    ]
+    if any(len(items) > 1 or any(not value.strip() for _, value in items) for items in identities):
+        return False
+    if identities[0] != identities[1]:
+        return False
     base = approved_url.path.rstrip("/")
     for suffix in ("/application", "/apply"):
         if base.endswith(suffix):

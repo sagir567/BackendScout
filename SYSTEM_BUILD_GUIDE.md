@@ -1504,3 +1504,16 @@ Verification: 1,913 regular tests passed (38 optional-browser skips), 68 tests
 passed in the selected isolated browser suite, and authenticated deep-link
 pairing/unknown-record checks passed after the last UI change. Private pricing,
 source captures, CVs, email drafts and evidence changes remain ignored by Git.
+
+### Query-Based Vacancy Identity (9 November 2026)
+
+Some boards identify vacancies by query parameters rather than distinct paths.
+The portal executor now compares explicit vacancy ID parameters before allowing
+same-job navigation. Missing, changed, blank and multiple IDs fail closed;
+unrelated tracking parameters do not change identity. Existing path-bound ATS
+checks remain in place. This is a prerequisite guard, not an enabled AllJobs
+delivery adapter. The authenticated UI review remains private under `docs/`.
+
+Verification: 1,938 tests passed, 38 optional tests skipped; the focused portal
+and route suites passed 122 tests with six optional browser skips. No live
+application, account change or runtime deployment was part of this milestone.

@@ -797,6 +797,11 @@ Production starts with `PORTAL_HYBRID_ROLLOUT=canary` and an explicit
 new, approved hybrid applications with saved confirmation proof. Existing
 submitted applications are never rollout candidates.
 
+Portal job identity checks retain explicit query-based vacancy identifiers and
+reject missing, changed, blank or ambiguous IDs. This guard does not enable an
+AllJobs adapter: authenticated per-job file selection and receipt verification
+still require a separately tested integration.
+
 [SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md) documents the architecture,
 design decisions, and implementation roadmap. [REQUIREMENTS.md](REQUIREMENTS.md)
 lists runtime requirements and configuration details.

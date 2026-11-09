@@ -48,6 +48,29 @@ def test_changed_cv_stops_before_any_browser_io(review_service):
     manager.acquire.assert_not_called()
 
 
+@pytest.mark.parametrize("query", ["JobID=123", "jobid=123&utm_source=test"])
+def test_query_job_identity_preserves_tracking_independence(query):
+    approved = "https://www.alljobs.co.il/Search/UploadSingle.aspx?JobID=123"
+    assert _same_job(f"https://www.alljobs.co.il/Search/UploadSingle.aspx?{query}", approved)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "JobID=456",
+        "",
+        "JobID=",
+        "JobID=123&JobID=123",
+        "JobID=123&jobid=456",
+        "JobID=123&position_id=456",
+    ],
+)
+def test_query_job_identity_rejects_changed_missing_or_ambiguous_id(query):
+    base = "https://www.alljobs.co.il/Search/UploadSingle.aspx"
+    assert not _same_job(f"{base}?{query}", f"{base}?JobID=123")
+    assert not _same_job(f"{base}?JobID=123", f"{base}?{query}")
+
+
 def test_blank_receipt_png_is_rejected():
     from io import BytesIO
 
