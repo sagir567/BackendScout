@@ -47,7 +47,9 @@ def test_same_role_from_two_sources_creates_only_one_row(monkeypatch: pytest.Mon
     )
     monkeypatch.setattr(cli, "load_candidate_profile", lambda _: object())
     monkeypatch.setattr(
-        cli, "load_scouting_preferences", lambda _: SimpleNamespace(maximum_digest_jobs=5)
+        cli, "load_scouting_preferences", lambda _: SimpleNamespace(
+            maximum_digest_jobs=5, include_secrethunter_email=False
+        )
     )
     monkeypatch.setattr(cli, "collect_public_jobs", lambda _: jobs)
     monkeypatch.setattr(cli, "score_jobs", lambda *_: scored)

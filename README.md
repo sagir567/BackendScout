@@ -802,6 +802,20 @@ reject missing, changed, blank or ambiguous IDs. This guard does not enable an
 AllJobs adapter: authenticated per-job file selection and receipt verification
 still require a separately tested integration.
 
+SecretHunter recommendation-email discovery can be included in the daily scout
+with `include_secrethunter_email: true` in the private scouting preferences.
+It shares one bounded Gmail read with Indeed and uses the existing scoring,
+deduplication, tracker and Telegram path. Account/login emails are not job leads.
+The initial parser supports evidence-bearing cards and JobPosting metadata;
+unknown email layouts produce warnings, not invented vacancies. Live alert-template
+compatibility still needs verification when an actual job alert arrives. This
+does not scrape the signed-in site or enable its paid Auto-Apply feature.
+
+Software QA/testing roles are eligible when explicitly selected in the private
+candidate target roles. This changes search intent, not career evidence or
+professional QA experience. General pharmaceutical/industrial quality roles are
+not promoted merely because their title contains QA.
+
 [SYSTEM_BUILD_GUIDE.md](SYSTEM_BUILD_GUIDE.md) documents the architecture,
 design decisions, and implementation roadmap. [REQUIREMENTS.md](REQUIREMENTS.md)
 lists runtime requirements and configuration details.

@@ -158,6 +158,7 @@ from backend_scout.scouting_preferences import (
     public_collection_digest_candidate,
     public_collection_rejection_reason,
 )
+from backend_scout.secrethunter_email import collect_secrethunter_email_jobs
 from backend_scout.submission import (
     BrowserPreparationResult,
     load_browser_checkpoint,
@@ -700,16 +701,29 @@ def collect_run(
             successful_sources += 1
         except (httpx.HTTPError, TypeError, ValueError) as exc:
             failures.append(f"{target.name}: {exc}")
-    if include_indeed_email:
+    if include_indeed_email or preferences.include_secrethunter_email:
         try:
-            indeed_messages = list_recent_messages(INDEED_JOB_EMAIL_QUERY, 50)
-            indeed_report = collect_indeed_email_jobs(indeed_messages)
-            successful_sources += 1
-            collected.extend(indeed_report.jobs)
-            source_counts["Indeed email"] = len(indeed_report.jobs)
-            failures.extend(f"Indeed email: {warning}" for warning in indeed_report.warnings)
+            # One bounded mailbox read for both sources, not two overlapping scans.
+            query = INDEED_JOB_EMAIL_QUERY
+            if preferences.include_secrethunter_email:
+                query = "newer_than:14d {from:secrethunter.io from:mail.secrethunter.io}"
+                if include_indeed_email:
+                    query = "newer_than:14d {from:indeed from:secrethunter.io from:mail.secrethunter.io}"
+            messages = list_recent_messages(query, 50)
+            if include_indeed_email:
+                indeed_report = collect_indeed_email_jobs(messages)
+                successful_sources += 1
+                collected.extend(indeed_report.jobs)
+                source_counts["Indeed email"] = len(indeed_report.jobs)
+                failures.extend(f"Indeed email: {warning}" for warning in indeed_report.warnings)
+            if preferences.include_secrethunter_email:
+                secret_report = collect_secrethunter_email_jobs(messages)
+                successful_sources += 1
+                collected.extend(secret_report.jobs)
+                source_counts["SecretHunter email"] = len(secret_report.jobs)
+                failures.extend(f"SecretHunter email: {warning}" for warning in secret_report.warnings)
         except (GoogleAuthError, GoogleHttpError, httpx.HTTPError, OSError, TypeError, ValueError) as exc:
-            failures.append(f"Indeed email: {exc}")
+            failures.append(f"Job recommendation email: {exc}")
     israel_relevant = [job for job in collected if is_israel_or_remote(job)]
     scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))
     shortlist_candidates = [

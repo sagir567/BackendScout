@@ -1,5 +1,5 @@
 schema_version: 1
-updated_on: '2026-11-08'
+updated_on: '2026-11-09'
 architecture:
   path: ARCHITECTURE.md
   version: '1.1'
@@ -310,6 +310,10 @@ tasks:
         result: Bounded read-only exact-posting retrieval and explicit gated/closed outcomes tested with public ATS and structured HTML fixtures. Create CV fetches missing facts first; fetch-only never invokes a model. One live public Lever EU example succeeded without writes or delivery; a LinkedIn gate was reported honestly. Full collector/mailbox cutover remains unfinished.
       - path: tests/test_recovery.py
         result: Exhausted current-day DNS/connectivity failure receives one additional recovery after thirty minutes; non-network failures, cancellations and successful work never replay. November 3 recovery and November 4 scheduled scout completed in production; mailbox healthy on November 4.
+      - path: tests/test_secrethunter_collect.py
+        result: SecretHunter email opt-in joins the existing daily scout through one shared bounded Gmail read; strict sender and job-identity parser has synthetic tests, unknown alert layouts warn and welcome messages are ignored. Actual recommendation-template verification remains pending. Owner-authorized November 9 UI scan imported four new QA leads with experience caveats and delivered four private Telegram digests without applications.
+      - path: tests/test_matcher.py
+        result: Explicit software QA target opt-in preserves backend-only defaults, avoid-list precedence and non-software QA exclusion. Full regression suite 1989 passed with 38 optional skips on November 9.
   - id: P09
     track: personal
     title: Linux container portable secrets cost limits and restore

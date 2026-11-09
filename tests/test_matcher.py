@@ -34,26 +34,94 @@ def make_profile() -> CandidateProfile:
     )
 
 
-@pytest.mark.parametrize("title,expected", [
-    ("AI Python Developer", 25),
-    ("C# Developer", 18),
-    (".NET Developer", 18),
-    ("Python QA Analyst", 10),
-])
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("AI Python Developer", 25),
+        ("C# Developer", 18),
+        (".NET Developer", 18),
+        ("Python QA Analyst", 10),
+    ],
+)
 def test_language_developer_titles_are_recognized_without_promoting_qa(title, expected):
-    result = score_job(make_profile(), Job(
-        source="test", source_url="https://example.com/jobs/1", company="Example", title=title,
-        description="Build Python backend APIs and .NET services.", location="Israel",
-    ))
-    assert next(b.points_awarded for b in result.score_breakdown if b.component == "role_relevance") == expected
+    result = score_job(
+        make_profile(),
+        Job(
+            source="test",
+            source_url="https://example.com/jobs/1",
+            company="Example",
+            title=title,
+            description="Build Python backend APIs and .NET services.",
+            location="Israel",
+        ),
+    )
+    assert (
+        next(b.points_awarded for b in result.score_breakdown if b.component == "role_relevance")
+        == expected
+    )
+
+
+def test_qa_is_targeted_only_when_owner_explicitly_selects_it():
+    profile = make_profile()
+    job = Job(
+        source="test",
+        source_url="https://example.com/jobs/qa",
+        company="Example",
+        title="Junior QA Engineer",
+        description="Manual software testing",
+        location="Israel",
+    )
+    before = score_job(profile, job)
+    profile.target_roles.append("QA Engineer")
+    after = score_job(profile, job)
+    role_points = lambda result: next(
+        item.points_awarded for item in result.score_breakdown if item.component == "role_relevance"
+    )
+    assert role_points(before) < 25
+    assert role_points(after) == 25
+    assert profile.core_skills == make_profile().core_skills
+    profile.constraints.roles_to_avoid.append("QA")
+    assert score_job(profile, job).recommended_action == MatchRecommendation.SKIP
+
+
+def test_software_qa_opt_in_does_not_promote_pharmaceutical_qa():
+    profile = make_profile()
+    profile.target_roles.append("QA")
+    result = score_job(
+        profile,
+        Job(
+            source="test",
+            source_url="https://example.com/jobs/pharmacist",
+            company="Example",
+            title="QA Analyst - Pharmacist",
+            description="Pharmaceutical manufacturing quality compliance.",
+            location="Israel",
+        ),
+    )
+    assert (
+        next(
+            item.points_awarded
+            for item in result.score_breakdown
+            if item.component == "role_relevance"
+        )
+        < 25
+    )
 
 
 def test_title_only_feed_is_a_preliminary_match_not_an_apply_recommendation():
-    result = score_job(make_profile(), Job(
-        source="lin_srael:Example", source_url="https://example.com/jobs/1", company="Example",
-        title="Backend Python Engineer", location="Israel", remote_policy="Hybrid",
-        description="Published Lin-Srael job listing.", required_skills=["Python"],
-    ))
+    result = score_job(
+        make_profile(),
+        Job(
+            source="lin_srael:Example",
+            source_url="https://example.com/jobs/1",
+            company="Example",
+            title="Backend Python Engineer",
+            location="Israel",
+            remote_policy="Hybrid",
+            description="Published Lin-Srael job listing.",
+            required_skills=["Python"],
+        ),
+    )
     assert result.match_score >= 75
     assert result.recommended_action == MatchRecommendation.MAYBE
     assert "did not provide detailed requirements" in result.reason_summary
@@ -123,7 +191,10 @@ def test_score_job_marks_unknown_salary_when_not_listed() -> None:
     )
 
     assert result.salary_assessment == SalaryAssessment.UNKNOWN
-    assert any(item.component == "salary_fit" and item.points_awarded == 5 for item in result.score_breakdown)
+    assert any(
+        item.component == "salary_fit" and item.points_awarded == 5
+        for item in result.score_breakdown
+    )
 
 
 def test_score_job_skips_onsite_only_role_when_onsite_is_disallowed() -> None:
@@ -157,17 +228,30 @@ def test_onsite_allowed_profile_keeps_role_eligible_without_preferring_it_to_hyb
     profile = make_profile()
     profile.work_preferences.onsite = True
     job = Job(
-        source="manual", source_url="https://example.com/jobs/onsite", company="Example",
-        title="Backend Engineer", location="Haifa, Israel", remote_policy="On-site",
-        salary_text="18,000 NIS", description="Build backend APIs with Python.",
-        required_skills=["Python"], years_experience="2 years",
+        source="manual",
+        source_url="https://example.com/jobs/onsite",
+        company="Example",
+        title="Backend Engineer",
+        location="Haifa, Israel",
+        remote_policy="On-site",
+        salary_text="18,000 NIS",
+        description="Build backend APIs with Python.",
+        required_skills=["Python"],
+        years_experience="2 years",
     )
     result = score_job(profile, job)
     assert result.location_assessment == LocationAssessment.FIT
     assert result.recommended_action != MatchRecommendation.SKIP
     assert not any("disallows onsite" in concern for concern in result.concerns)
-    assert next(b.points_awarded for b in result.score_breakdown if b.component == "work_mode_location") == 6
-    assert public_collection_digest_candidate(ScoredJob(job, result), ScoutingPreferences(minimum_match_score=65))
+    assert (
+        next(
+            b.points_awarded for b in result.score_breakdown if b.component == "work_mode_location"
+        )
+        == 6
+    )
+    assert public_collection_digest_candidate(
+        ScoredJob(job, result), ScoutingPreferences(minimum_match_score=65)
+    )
 
 
 def test_score_job_handles_years_slightly_above_target_range() -> None:
@@ -187,7 +271,10 @@ def test_score_job_handles_years_slightly_above_target_range() -> None:
         ),
     )
 
-    assert any(item.component == "experience_fit" and item.points_awarded == 8 for item in result.score_breakdown)
+    assert any(
+        item.component == "experience_fit" and item.points_awarded == 8
+        for item in result.score_breakdown
+    )
     assert any("slightly more experience" in concern for concern in result.concerns)
 
 
@@ -209,7 +296,10 @@ def test_score_job_skips_non_backend_role_without_backend_signals() -> None:
     )
 
     assert result.recommended_action == MatchRecommendation.SKIP
-    assert any(item.component == "role_relevance" and item.points_awarded == 0 for item in result.score_breakdown)
+    assert any(
+        item.component == "role_relevance" and item.points_awarded == 0
+        for item in result.score_breakdown
+    )
 
 
 def test_score_job_treats_tel_aviv_as_a_match_for_an_israel_target() -> None:

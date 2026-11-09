@@ -77,7 +77,11 @@ SKILL_ALIASES = {
         "performance-oriented development",
         "performance optimization",
     },
-    "enterprise software": {"enterprise software", "enterprise class software", "enterprise-class software"},
+    "enterprise software": {
+        "enterprise software",
+        "enterprise class software",
+        "enterprise-class software",
+    },
 }
 
 BACKEND_SIGNAL_KEYWORDS = {
@@ -141,11 +145,16 @@ def score_job(profile: CandidateProfile, job: Job) -> MatchResult:
     strengths: list[str] = []
     concerns: list[str] = []
     partial_source = job.description.strip() in {
-        "Published Lin-Srael job listing.", "Published public ATS job posting.",
+        "Published Lin-Srael job listing.",
+        "Published public ATS job posting.",
     }
     if partial_source:
-        concerns.append("Preliminary match: the source did not provide detailed requirements; verify the full posting before tailoring.")
-    matched_skills, missing_skills, skill_item = _score_skill_overlap(profile, job, strengths, concerns)
+        concerns.append(
+            "Preliminary match: the source did not provide detailed requirements; verify the full posting before tailoring."
+        )
+    matched_skills, missing_skills, skill_item = _score_skill_overlap(
+        profile, job, strengths, concerns
+    )
     role_item, role_is_hard_blocker = _score_role_relevance(profile, job, strengths, concerns)
     experience_item = _score_experience_fit(profile, job, concerns)
     work_item, location_assessment, location_hard_blocker = _score_work_mode_and_location(
@@ -197,9 +206,7 @@ def _score_role_relevance(
     title_tokens = _keyword_set(job.title)
     description_tokens = _keyword_set(job.description)
     target_role_hits = [
-        role
-        for role in profile.target_roles
-        if _roles_match(_normalize_text(role), title)
+        role for role in profile.target_roles if _roles_match(_normalize_text(role), title)
     ]
 
     roles_to_avoid = [_normalize_text(role) for role in profile.constraints.roles_to_avoid]
@@ -217,6 +224,25 @@ def _score_role_relevance(
 
     implementation_title = bool(title_tokens & {"engineer", "developer"})
     testing_title = bool(title_tokens & {"qa", "test", "testing", "sdet", "quality"})
+    explicit_testing_target = any(
+        _keyword_set(role) & {"qa", "test", "testing", "sdet", "quality"}
+        for role in target_role_hits
+    )
+    software_testing_signals = bool(
+        (title_tokens | description_tokens)
+        & {"software", "sdet", "python", "selenium", "playwright", "api", "apis", "web"}
+    )
+    if testing_title and explicit_testing_target and software_testing_signals:
+        strengths.append("QA/testing is an explicitly selected target role.")
+        return (
+            ScoreBreakdownItem(
+                component="role_relevance",
+                points_awarded=ROLE_RELEVANCE_MAX,
+                points_max=ROLE_RELEVANCE_MAX,
+                reason="Explicit QA/testing target; skill and experience fit remain scored separately.",
+            ),
+            False,
+        )
     has_backend_title = "backend" in title or (
         "python" in title_tokens and implementation_title and not testing_title
     )
@@ -224,7 +250,11 @@ def _score_role_relevance(
     has_adjacent_software_title = (
         "software engineer" in title
         or "software developer" in title
-        or (implementation_title and not testing_title and bool(title_tokens & {"java", "c#", "net", "dotnet"}))
+        or (
+            implementation_title
+            and not testing_title
+            and bool(title_tokens & {"java", "c#", "net", "dotnet"})
+        )
     )
 
     direct_backend_target_hit = any(
@@ -233,7 +263,9 @@ def _score_role_relevance(
     )
 
     if target_role_hits and has_backend_signals:
-        strengths.append("Title aligns directly with your target roles and the description has backend signals.")
+        strengths.append(
+            "Title aligns directly with your target roles and the description has backend signals."
+        )
         return (
             ScoreBreakdownItem(
                 component="role_relevance",
@@ -430,7 +462,9 @@ def _score_work_mode_and_location(
     hard_blocker = False
 
     if remote_mode == "onsite" and not profile.work_preferences.onsite:
-        concerns.append("Job appears onsite-only, but your profile currently disallows onsite work.")
+        concerns.append(
+            "Job appears onsite-only, but your profile currently disallows onsite work."
+        )
         return (
             ScoreBreakdownItem(
                 component="work_mode_location",
@@ -475,7 +509,9 @@ def _score_work_mode_and_location(
             points_awarded = WORK_MODE_LOCATION_MAX
             reason = "Hybrid work matches your preferences and listed target locations."
         else:
-            concerns.append("Hybrid role fits your work mode, but the location may be inconvenient.")
+            concerns.append(
+                "Hybrid role fits your work mode, but the location may be inconvenient."
+            )
             location_assessment = LocationAssessment.MISMATCH
             points_awarded = 4
             reason = "Hybrid work matches, but the location is outside your target locations."
@@ -628,7 +664,9 @@ def _score_evidence_strength(
     if matched_evidence:
         strengths.append("Your proof points support part of this role's skill or domain profile.")
     else:
-        concerns.append("The job asks for skills that are not yet strongly tied to your proof points.")
+        concerns.append(
+            "The job asks for skills that are not yet strongly tied to your proof points."
+        )
 
     return ScoreBreakdownItem(
         component="evidence_strength",
@@ -705,7 +743,11 @@ def _classify_remote_policy(remote_policy: str | None) -> str | None:
         return "hybrid"
     if "remote" in normalized_policy or "from home" in normalized_policy:
         return "remote"
-    if "onsite" in normalized_policy or "on site" in normalized_policy or "office" in normalized_policy:
+    if (
+        "onsite" in normalized_policy
+        or "on site" in normalized_policy
+        or "office" in normalized_policy
+    ):
         return "onsite"
     return None
 

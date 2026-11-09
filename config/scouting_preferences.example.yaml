@@ -24,3 +24,4 @@ excluded_title_keywords:
 minimum_match_score: 55
 minimum_role_relevance_points: 15
 maximum_digest_jobs: 15
+include_secrethunter_email: false

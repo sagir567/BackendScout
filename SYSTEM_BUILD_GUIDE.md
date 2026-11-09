@@ -1517,3 +1517,30 @@ delivery adapter. The authenticated UI review remains private under `docs/`.
 Verification: 1,938 tests passed, 38 optional tests skipped; the focused portal
 and route suites passed 122 tests with six optional browser skips. No live
 application, account change or runtime deployment was part of this milestone.
+
+### SecretHunter Discovery and Optional Software QA Targets
+
+Keep third-party account authentication separate from discovery. The initial
+SecretHunter connector consumes recommendation emails through the existing Gmail
+readonly scope. Enable it in private scouting preferences; the daily scout then
+uses one combined bounded mailbox query for Indeed and SecretHunter. Only exact
+known sender domains and observed selected-job URLs are accepted. Explicit title,
+company and description evidence are required, and unsupported layouts are
+reported instead of silently being treated as parsed jobs. This initial parser
+has synthetic-template coverage; an actual recommendation email remains a live
+compatibility gate. The signed-in browser session is not copied into the worker,
+and paid Auto-Apply is never activated by this connector.
+
+Software QA relevance is opt-in through candidate target roles. Tests keep the
+backend-only default conservative, preserve avoid-list precedence and prevent a
+pharmaceutical QA title from becoming a software match. Skills and tenure still
+need real evidence; a numeric match is not proof of professional QA employment.
+Live observed vacancies are imported privately with source provenance and clear
+experience caveats, using existing tracker services, never as application tests.
+
+November 9 verification: 1,989 tests passed, 38 optional tests skipped; Ruff passed.
+An actual bounded Gmail read returned one welcome message and no job alerts, so
+live job-alert compatibility is still pending rather than claimed as verified.
+The read-only UI scan found four new QA leads; existing SQLite/Notion services
+stored them and Telegram acknowledged all four digest messages. No CV upload,
+employer contact, premium activation or application submission occurred.
