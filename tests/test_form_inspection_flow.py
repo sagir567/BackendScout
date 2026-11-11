@@ -173,6 +173,26 @@ def test_hybrid_inspection_without_tailor_after_does_not_queue_paid_draft(hybrid
     assert len(calls) == 1 and not list_tasks(service.store.database_path)
 
 
+def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybrid):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    production = TrackerName.PRODUCTION
+    original = service.store.get_application("example-job", T).job
+    for score in range(60, 68):
+        service.store.import_snapshot(
+            f"job-{score}", production, original.model_copy(update={"match_score": score}), "found",
+        )
+    service.store.import_snapshot("submitted", production, original, "submitted")
+    assert service.queue_daily_preparation(T, "12345") == []
+    task_ids = service.queue_daily_preparation(production, "12345")
+    assert len(task_ids) == 5
+    assert service.queue_daily_preparation(production, "12345") == []
+    tasks = list_tasks(service.store.database_path)
+    assert [task.payload["page_id"] for task in tasks] == [f"job-{score}" for score in range(67, 62, -1)]
+    assert all(task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT for task in tasks)
+    assert all(task.payload["tailor_after"] is True for task in tasks)
+
+
 def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True
@@ -202,6 +222,40 @@ def test_hybrid_required_questions_block_until_confirmed_without_being_erased(hy
     updated = service.preview_package("example-job", T)[0].fingerprint()
     assert updated != fp
     assert service.approve_and_queue("example-job", T, "12345", updated).reason_code == "queued"
+
+
+def test_telegram_answers_unlock_current_package_without_approving(hybrid):
+    service, result, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    result["questions"] = [
+        {"key": key, "label": label, "required": True, "sensitive": True, "options": ["yes", "no"]}
+        for key, label in [("onsite", "Can you work onsite?"), ("relocation", "Can you relocate?")]
+    ]
+    assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
+    assert service.draft("example-job", T).reason_code == "portal_input_required"
+    first = service.telegram_preparation_question("example-job", T, "12345")
+    with pytest.raises(ValueError, match="listed answers"):
+        service.answer_telegram_preparation("example-job", T, "12345", first[0], "maybe")
+    message = service.answer_telegram_preparation("example-job", T, "12345", first[0], "yes")
+    assert "Can you relocate?" in message
+    with pytest.raises(ApplicationConflict, match="changed"):
+        service.answer_telegram_preparation("example-job", T, "12345", first[0], "no")
+    second = service.telegram_preparation_question("example-job", T, "12345")
+    assert second[0] != first[0]
+    service.answer_telegram_preparation("example-job", T, "12345", second[0], "no")
+    detail = service.detail("example-job", T)
+    assert detail["item"]["workspace_bucket"] == "ready"
+    assert detail["package"]["approved"] is False
+    assert not any(task.kind == QueuedTaskKind.PACKAGE_DELIVER for task in list_tasks(service.store.database_path))
+
+
+def test_telegram_preparation_does_not_request_portal_consent(hybrid):
+    service, result, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    result["questions"] = [{"key": "legal", "label": "Accept the terms?",
+                             "required": True, "sensitive": True, "options": ["yes", "no"]}]
+    assert service.inspect_form("example-job", T, "12345").reason_code == "portal_input_required"
+    assert service.telegram_preparation_question("example-job", T, "12345") is None
 
 
 def test_hybrid_draft_does_not_erase_questions_discovered_after_queueing(hybrid):

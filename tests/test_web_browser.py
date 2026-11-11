@@ -11,6 +11,7 @@ import pytest
 import uvicorn
 from playwright.sync_api import expect, sync_playwright
 
+from backend_scout.application_routes import ApplicationRoute
 from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import write_manifest
 from backend_scout.web.app import create_app
@@ -205,6 +206,37 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
             expect(page.get_by_role("link", name="View CV", exact=False)).to_be_visible()
             expect(page.get_by_role("button", name="Approve & apply", exact=True)).to_be_disabled()
             page.screenshot(path=str(output / "cv-ready-route-missing-390.png"), full_page=True)
+            context.close()
+
+            tracker = TrackerName.TEST
+            service.store.revise_job("example-job", tracker, job)
+            settings.web_ready_to_apply = True
+            settings.portal_delivery_mode = "hybrid"
+            route = ApplicationRoute(
+                status="verified", reason_code="route_verified", message="Synthetic application form",
+                source_url=job.source_url, company=job.company, title=job.title,
+                employer_posting_url=job.application_url, application_url=job.application_url,
+                adapter_name="ashby", evidence_urls=[job.application_url],
+            )
+            service.browser_inspector = lambda *_: {
+                "route": route.model_dump(mode="json"), "form_identified": True,
+                "questions": [], "proposed_answers": {"review.form_schema_sha256": "1" * 64},
+            }
+            assert service.inspect_form("example-job", tracker, "12345").status == "succeeded"
+            service.store.import_snapshot("unverified-job", tracker, job, "found")
+            context = browser.new_context(viewport={"width": 390, "height": 844})
+            page = context.new_page()
+            page.goto(origin)
+            page.get_by_label("Pairing code", exact=True).fill(sessions.issue_pairing_code("12345"))
+            page.get_by_role("button", name="Pair browser", exact=True).click()
+            expect(page.get_by_role("heading", name="Ready to apply", exact=True)).to_be_visible()
+            expect(page.locator("[data-job-id='unverified-job']")).to_have_count(0)
+            page.locator("[data-job-id='example-job']").click()
+            expect(page.get_by_role("button", name="Apply with this CV", exact=True)).to_be_enabled()
+            expect(page.get_by_role("button", name="Request CV changes", exact=True)).to_be_visible()
+            expect(page.get_by_role("button", name="Check form", exact=True)).to_have_count(0)
+            expect(page.locator(".pdf-preview")).to_be_visible()
+            page.screenshot(path=str(output / "ready-to-apply-390.png"), full_page=True)
             context.close()
             browser.close()
     finally:

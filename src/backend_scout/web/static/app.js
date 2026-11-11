@@ -1107,12 +1107,13 @@ $('#refresh-button').addEventListener('click', refreshAll);
 for (const button of $$('.tab')) {
   button.addEventListener('click', () => selectTab(button.dataset.tab));
   button.addEventListener('keydown', (event) => {
-    const index = tabs.indexOf(button.dataset.tab);
+    const visibleTabs = tabs.filter((tab) => !$(`#tab-${tab}`).hidden);
+    const index = visibleTabs.indexOf(button.dataset.tab);
     let next;
-    if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
-    if (event.key === 'ArrowLeft') next = tabs[(index + tabs.length - 1) % tabs.length];
-    if (event.key === 'Home') next = tabs[0];
-    if (event.key === 'End') next = tabs[tabs.length - 1];
+    if (event.key === 'ArrowRight') next = visibleTabs[(index + 1) % visibleTabs.length];
+    if (event.key === 'ArrowLeft') next = visibleTabs[(index + visibleTabs.length - 1) % visibleTabs.length];
+    if (event.key === 'Home') next = visibleTabs[0];
+    if (event.key === 'End') next = visibleTabs[visibleTabs.length - 1];
     if (next) { event.preventDefault(); selectTab(next, true); }
   });
 }

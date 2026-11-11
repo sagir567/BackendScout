@@ -79,6 +79,10 @@ class TaskQueue(BaseModel):
     tasks: list[QueuedTask] = Field(default_factory=list)
 
 
+class TaskQuotaReached(ValueError):
+    """The durable enqueue quota has already been reserved."""
+
+
 def enqueue_task(
     kind: QueuedTaskKind,
     tracker: TrackerName,
@@ -88,8 +92,11 @@ def enqueue_task(
     max_attempts: int = 3,
     idempotency_key: str | None = None,
     correlation_id: str | None = None,
+    quota: tuple[str, int] | None = None,
 ) -> QueuedTask:
     if _is_json_path(path):
+        if quota is not None:
+            raise ValueError("Task quotas require a SQLite queue")
         return _json_enqueue_task(kind, tracker, payload, path)
     requested_payload = payload or {}
     key = idempotency_key or _task_key(kind, tracker, requested_payload)
@@ -106,6 +113,14 @@ def enqueue_task(
         ).fetchone()
         if existing is not None:
             return _row_to_task(existing)
+        if quota is not None:
+            prefix, maximum = quota
+            count = connection.execute(
+                "SELECT COUNT(*) FROM tasks WHERE substr(idempotency_key, 1, ?) = ?",
+                (len(prefix), prefix),
+            ).fetchone()[0]
+            if count >= maximum:
+                raise TaskQuotaReached("Daily background preparation quota reached")
         task = QueuedTask(
             task_id=uuid4().hex[:12],
             kind=kind,

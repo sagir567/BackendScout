@@ -1366,6 +1366,17 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
             if outcome.status == "retryable_failure":
                 raise ValueError(outcome.reason_code)
             completion_message = f"{_task_label(task)}: {outcome.message}\nWorkspace: {settings.web_public_origin}"
+            if settings.web_ready_to_apply and outcome.reason_code == "portal_input_required" and task.kind in {
+                QueuedTaskKind.PACKAGE_CV_DRAFT, QueuedTaskKind.PACKAGE_FORM_INSPECT,
+            }:
+                chat = task.payload.get("chat_id")
+                if isinstance(chat, int) and chat in settings.telegram_allowed_user_id_set:
+                    question = build_application_service(settings).telegram_preparation_question(
+                        _payload_string(task.payload, "page_id"), task.tracker, str(chat),
+                    )
+                    completion_message = question[2] if question else None
+            elif task.payload.get("background_preparation") is True:
+                completion_message = None
             console.print_json(data=outcome.model_dump(mode="json"))
         elif task.kind == QueuedTaskKind.APPLICATION_SYNC:
             settings = Settings().model_copy(update={"workflow_database_path": queue_path})

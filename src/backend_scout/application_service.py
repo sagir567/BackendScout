@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Literal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
@@ -33,7 +34,12 @@ from backend_scout.delivery_readiness import (
 from backend_scout.guided_submission import build_guided_candidate_facts
 from backend_scout.models import Job
 from backend_scout.runtime_health import workflow_health
-from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_task
+from backend_scout.task_queue import (
+    QueuedTaskKind,
+    QueuedTaskStatus,
+    TaskQuotaReached,
+    enqueue_task,
+)
 
 HISTORICAL = {
     "submitted",
@@ -250,11 +256,55 @@ class ApplicationService:
                     )
                 self.store.import_snapshot(item.notion_page_id, tracker, job, item.status.value)
                 count += 1
+        self.queue_daily_preparation(tracker, actor_id)
         return self._outcome(
             "tracker",
             "projection_imported",
             f"Imported {count} job snapshots without transferring approval.",
         )
+
+    def queue_daily_preparation(self, tracker, actor_id, *, now=None) -> list[str]:
+        """Reserve bounded, read-only preflights; a verified form may chain a draft."""
+        self._authorize(actor_id)
+        if not (self.settings.web_ready_to_apply and self._hybrid and tracker == TrackerName.PRODUCTION):
+            return []
+        day = (now or datetime.now(UTC)).astimezone(ZoneInfo("Asia/Hebron")).date()
+        prefix = f"background-prepare:{tracker.value}:{day}:"
+        candidates = []
+        for row in self.store.list_records(tracker):
+            if (not row["job_json"] or row["status"] not in {"discovered", "shortlisted"}
+                    or row["current_fingerprint"] or row["needs_input_code"]):
+                continue
+            job = Job.model_validate_json(row["job_json"])
+            url = application_entry_url(job.application_url, job.source_url)
+            if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
+                continue
+            candidates.append((job.match_score, row["application_id"]))
+        task_ids = []
+        for _, application_id in sorted(candidates, key=lambda pair: (-pair[0], pair[1])):
+            if (self.store.form_check_pending(application_id, tracker)
+                    or self.store.latest_form_inspection(application_id, tracker)):
+                continue
+            try:
+                self._manifest(application_id, tracker)
+            except (OSError, ValueError):
+                pass
+            else:
+                continue
+            record = self._record(application_id, tracker)
+            try:
+                task = enqueue_task(
+                    QueuedTaskKind.PACKAGE_FORM_INSPECT, tracker,
+                    self._task_context(record, actor_id) | {
+                        "actor_id": actor_id, "tailor_after": True, "background_preparation": True,
+                    },
+                    self.store.database_path, idempotency_key=prefix + application_id,
+                    quota=(prefix, 5),
+                )
+            except TaskQuotaReached:
+                break
+            task_ids.append(task.task_id)
+        return task_ids
 
     @staticmethod
     def _outcome(application_id, reason_code, message, *, status="succeeded", **values):
@@ -886,6 +936,62 @@ class ApplicationService:
         return self._outcome(
             application_id, "answers_saved", "Answers saved; review the exact updated package."
         )
+
+    def telegram_preparation_question(self, application_id, tracker, actor_id):
+        self._authorize(actor_id)
+        if not self.settings.web_ready_to_apply or not self._hybrid:
+            return None
+        record = self._record(application_id, tracker)
+        meta = self.store.metadata(application_id, tracker)
+        if (record.status != "needs_input" or meta.get("needs_input_code") != "portal_input_required"
+                or self._verified_route(application_id, tracker) is None):
+            return None
+        pending = self._pending_questions(application_id, tracker)
+        if not pending or not isinstance(pending[0], dict):
+            return None
+        question = pending[0]
+        if re.search(
+            r"password|secret|token|captcha|verification.code|privacy|consent|terms|agreement|marketing",
+            f'{question["key"]} {question["label"]}', re.IGNORECASE,
+        ):
+            return None
+        binding = json.dumps([application_id, tracker.value, record.job.application_url,
+                              meta.get("proposed_answers_json"), question], sort_keys=True)
+        token = hashlib.sha256(binding.encode()).hexdigest()[:16]
+        command = f"/answer_{application_id} {token}"
+        options = ", ".join(question.get("options", []))
+        label = question["label"][:500]
+        suffix = f"\nOptions: {options[:700]}" if options else ""
+        return token, question, f"{record.job.company}: {label}{suffix}\n\n{command} YOUR_ANSWER"
+
+    def answer_telegram_preparation(self, application_id, tracker, actor_id, token, answer):
+        self._authorize(actor_id)
+        meta = self.store.metadata(application_id, tracker)
+        question = self.telegram_preparation_question(application_id, tracker, actor_id)
+        if not question or token != question[0]:
+            raise ApplicationConflict("This question changed or was already answered.")
+        options = question[1].get("options", [])
+        if not answer or len(answer) > 2000 or options and answer not in options:
+            raise ValueError("Use one of the listed answers or enter a short factual answer.")
+        previous = json.loads(meta.get("answers_json") or "{}")
+        self.store.set_answers(
+            application_id, tracker, previous | {question[1]["key"]: answer},
+            expected_question_state={key: meta[key] for key in (
+                "questions_json", "proposed_answers_json", "answers_json", "needs_input_code",
+            )},
+        )
+        if self._pending_questions(application_id, tracker):
+            self.store.set_state(application_id, tracker, "needs_input", code="portal_input_required",
+                                 message="Required portal answers are still missing.")
+            following = self.telegram_preparation_question(application_id, tracker, actor_id)
+            return following[2] if following else "Answer saved. Complete the remaining question in the official portal."
+        try:
+            self._manifest(application_id, tracker)
+        except (OSError, ValueError):
+            self.store.set_state(application_id, tracker, "discovered")
+            self.request_tailoring(application_id, tracker, actor_id)
+            return "Answer saved. CV preparation queued; no application was approved."
+        return "Answer saved. Review the exact CV and application in the private workspace; nothing was sent."
 
     def request_tailoring(self, application_id, tracker, actor_id):
         self._authorize(actor_id)

@@ -745,6 +745,21 @@ def _process_message(
         task_id = _enqueue_task(task_enqueue_handler, QueuedTaskKind.SCOUT_TODAY, tracker, payload)
         confirmation = f"Queued today's {tracker.value} scout. Task: {task_id}."
         result = "scout_queued"
+    elif command.startswith("/answer_"):
+        if chat_id != user_id:
+            return None
+        from backend_scout.application_service import build_application_service
+        from backend_scout.config import Settings
+
+        page_id = command.removeprefix("/answer_")
+        token, _, answer = feedback.partition(" ")
+        if not _is_complete_notion_page_id(page_id) or not re.fullmatch(r"[0-9a-f]{16}", token):
+            confirmation = "Use the exact answer command shown with the current question."
+        else:
+            confirmation = build_application_service(Settings()).answer_telegram_preparation(
+                page_id, tracker, str(user_id), token, answer.strip(),
+            )
+        result = "preparation_answer_processed"
     elif command.startswith("/open_"):
         page_id = command.removeprefix("/open_")
         if not _is_complete_notion_page_id(page_id):

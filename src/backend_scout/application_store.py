@@ -570,7 +570,8 @@ class ApplicationStore:
             )
             self._event(db, app["id"], "revision_requested", {})
 
-    def set_answers(self, application_id: str, tracker: TrackerName, answers: dict[str, str]):
+    def set_answers(self, application_id: str, tracker: TrackerName, answers: dict[str, str], *,
+                    expected_question_state: dict | None = None):
         if len(answers) > 50 or any(
             not isinstance(key, str)
             or not isinstance(value, str)
@@ -606,8 +607,13 @@ class ApplicationStore:
             }:
                 raise ApplicationConflict("Resolve delivery or history before changing answers")
             meta = db.execute(
-                "SELECT answers_json FROM application_metadata WHERE application_pk=?", (app["id"],)
+                "SELECT * FROM application_metadata WHERE application_pk=?", (app["id"],)
             ).fetchone()
+            if expected_question_state is not None and (
+                meta is None or app["status"] != "needs_input"
+                or any(meta[key] != value for key, value in expected_question_state.items())
+            ):
+                raise ApplicationConflict("The application questions changed; request the current question.")
             if meta and meta["answers_json"] == payload:
                 return
             now = _now()
@@ -621,6 +627,9 @@ class ApplicationStore:
                 "needs_input_code=NULL,needs_input_message=NULL,questions_json='[]',updated_at=excluded.updated_at",
                 (app["id"], payload, now, now),
             )
+            if expected_question_state is not None:
+                db.execute("UPDATE application_metadata SET questions_json=? WHERE application_pk=?",
+                           (expected_question_state["questions_json"], app["id"]))
             self._event(db, app["id"], "answers_changed", {})
 
     def resume_approved(self, application_id: str, tracker: TrackerName, fingerprint: str):
