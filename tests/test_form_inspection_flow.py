@@ -10,6 +10,7 @@ from backend_scout.application_routes import ApplicationRoute
 from backend_scout.application_store import SCHEMA_VERSION, ApplicationConflict, ApplicationStore
 from backend_scout.config import TrackerName
 from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, list_tasks, mark_task_status
+from backend_scout.telegram import process_telegram_update
 
 T = TrackerName.TEST
 
@@ -274,6 +275,35 @@ def test_telegram_preparation_does_not_request_portal_consent(hybrid):
                              "required": True, "sensitive": True, "options": ["yes", "no"]}]
     assert service.inspect_form("example-job", T, "12345").reason_code == "portal_input_required"
     assert service.telegram_preparation_question("example-job", T, "12345") is None
+
+
+def test_private_telegram_update_resumes_preparation_without_approval(hybrid, monkeypatch):
+    service, result, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    page = "deadbeef-0000-4000-8000-000000000001"
+    job = service.store.get_application("example-job", T).job
+    service.store.import_snapshot(page, T, job, "found")
+    result["questions"] = [{"key": "onsite", "label": "Can you work onsite?",
+                             "required": True, "sensitive": True, "options": ["yes", "no"]}]
+    assert service.inspect_form(page, T, "12345").reason_code == "portal_input_required"
+    token = service.telegram_preparation_question(page, T, "12345")[0]
+    monkeypatch.setattr("backend_scout.application_service.build_application_service", lambda _: service)
+    messages = []
+
+    class Telegram:
+        def send_message(self, chat_id, text, **_):
+            messages.append((chat_id, text))
+
+    def update(chat_id, sender=12345):
+        return {"message": {"chat": {"id": chat_id}, "from": {"id": sender},
+                            "text": f"/answer_{page} {token} yes"}}
+
+    assert process_telegram_update(Telegram(), None, update(-12345), {12345}) is None
+    assert process_telegram_update(Telegram(), None, update(12345, 678), {12345}) is None
+    assert not messages and not list_tasks(service.store.database_path)
+    assert process_telegram_update(Telegram(), None, update(12345), {12345}) == "preparation_answer_processed"
+    assert len(messages) == 1 and "no application was approved" in messages[0][1]
+    assert [task.kind for task in list_tasks(service.store.database_path)] == [QueuedTaskKind.PACKAGE_CV_DRAFT]
 
 
 def test_hybrid_draft_does_not_erase_questions_discovered_after_queueing(hybrid):

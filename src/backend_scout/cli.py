@@ -1348,18 +1348,13 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
             settings = Settings().model_copy(update={"workflow_database_path": queue_path})
             try:
                 if task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT:
-                    from backend_scout.hybrid_portal import HybridPortalAdapter
-                    from backend_scout.portal_sessions import PortalSessionManager
-                    manager = portal_sessions or PortalSessionManager(settings.browser_profile_root / "owned-packages")
-                    try:
-                        inspector = HybridPortalAdapter(manager, settings).inspect if settings.portal_delivery_mode == "hybrid" else None
-                        outcome = build_application_service(settings, browser_inspector=inspector).inspect_form(
-                            _payload_string(task.payload, "page_id"), task.tracker,
-                            _payload_string(task.payload, "actor_id"),
-                            tailor_after=task.payload.get("tailor_after") is True)
-                    finally:
-                        if portal_sessions is None:
-                            manager.close()
+                    from backend_scout.preflight_process import inspect_in_subprocess
+
+                    inspector = inspect_in_subprocess if settings.portal_delivery_mode == "hybrid" else None
+                    outcome = build_application_service(settings, browser_inspector=inspector).inspect_form(
+                        _payload_string(task.payload, "page_id"), task.tracker,
+                        _payload_string(task.payload, "actor_id"),
+                        tailor_after=task.payload.get("tailor_after") is True)
                 elif task.kind == QueuedTaskKind.PACKAGE_ENRICH:
                     outcome = build_application_service(settings).refresh_details(
                         _payload_string(task.payload, "page_id"), task.tracker,
