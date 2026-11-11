@@ -52,7 +52,7 @@ def draft_job_cv(
     evidence = load_career_evidence(evidence_path)
     style = load_cv_style(style_path)
     coverage = assess_cv_evidence_coverage(evidence, job)
-    if coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
+    if settings.cv_require_coverage_target and coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
         raise CvEvidenceGap(coverage)
     if not settings.openai_api_key:
         raise ValueError("Missing OPENAI_API_KEY for CV drafting")

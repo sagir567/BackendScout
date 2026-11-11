@@ -524,11 +524,10 @@ labels. Verified AI and agent tooling is presented as a separate competency.
 Ownership scope remains truthful without implying unaided implementation or
 professional experience in every tool used.
 
-CV evidence coverage is distinct from the job match score. Below the 90/100
-evidence threshold, drafting pauses for confirmed facts and lists the missing
-requirements. This is a blocked, owner-actionable state, not a transient model
-error: the worker does not retry it or exhaust it into dead letter. Existing
-CVs and submission approvals remain unchanged.
+CV evidence coverage is distinct from the job match score. By default, drafting
+pauses below 90/100 and lists missing requirements. Set
+`CV_REQUIRE_COVERAGE_TARGET=false` to allow a factual draft below the target.
+This does not change the score, add evidence, or approve a submission.
 Confirmed personal-project prompting and manual qualitative LLM evaluation can
 support scoped project claims. They do not establish automated benchmark results
 or professional production AI experience.
@@ -549,10 +548,10 @@ uv run --no-editable backend-scout cv draft NOTION_PAGE_ID --dry-run
 
 Before every CV draft, BackendScout also calculates a separate **CV evidence
 coverage** score against the job's explicit requirements. This is not the job
-match score and does not change it. The target is 90/100: when the evidence is
-below that target, drafting pauses and the agent lists the exact factual gaps to
-resolve. A gap can be closed only by confirmed experience or a completed project,
-never by adding a claim just to raise a score.
+match score and does not change it. A gap can be closed only by confirmed
+experience or a completed project, never by adding a claim just to raise a
+score. A verified posting can support a draft before its submission route is
+verified; the application still cannot proceed without a verified route.
 
 ```bash
 uv run --no-editable backend-scout cv coverage NOTION_PAGE_ID --tracker test

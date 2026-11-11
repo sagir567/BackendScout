@@ -2049,7 +2049,7 @@ def cv_draft(
 
             coverage = assess_cv_evidence_coverage(evidence, job)
             _print_cv_evidence_coverage(job, coverage)
-            if coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
+            if settings.cv_require_coverage_target and coverage.coverage_score < CV_EVIDENCE_COVERAGE_TARGET:
                 raise CvEvidenceGap(coverage)
 
             if dry_run:

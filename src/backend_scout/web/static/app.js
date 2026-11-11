@@ -151,18 +151,25 @@ async function api(path, { method = 'GET', body, pairing = false } = {}) {
     else if (!pairing) throw new ApiError(403, null, 'The session is missing its security token. Refresh the workspace.');
   }
   let response;
+  let text;
+  const controller = new AbortController();
+  const requestTimeout = setTimeout(() => controller.abort(), 20000);
   try {
     response = await fetch(path, {
       method, headers, credentials: 'same-origin', cache: 'no-store',
+      signal: controller.signal,
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
+    text = await response.text();
   } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, null, 'The request timed out. Refresh to check the current state before repeating an action.');
+    }
     throw new ApiError(0, null, 'The server could not be reached. Check your connection and refresh.');
+  } finally {
+    clearTimeout(requestTimeout);
   }
   let payload = null;
-  let text;
-  try { text = await response.text(); }
-  catch { throw new ApiError(0, null, 'The server response was interrupted. Refresh to check the current state.'); }
   if (text) {
     try { payload = JSON.parse(text); }
     catch {

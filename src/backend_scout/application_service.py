@@ -861,7 +861,9 @@ class ApplicationService:
         if record.status in {"drafting", "enriching"}:
             return self._outcome(application_id, "queued", "CV drafting is already queued.")
         if self._hybrid:
-            if self._verified_route(application_id, tracker) is None:
+            if self._verified_route(application_id, tracker) is None and (
+                not self._has_requirements(record.job) or record.current_fingerprint
+            ):
                 return self.request_form_inspection(application_id, tracker, actor_id, tailor_after=True)
             if record.current_fingerprint and record.status in {"needs_input", "blocked"}:
                 return self._outcome(application_id, "review_ready", "Review the existing PDF and remaining portal answers.")
@@ -1001,12 +1003,9 @@ class ApplicationService:
         if record.status != "drafting" or not meta.get("claimed"):
             raise ApplicationConflict("No authorized drafting request is active")
         try:
-            if self._hybrid and self._verified_route(application_id, tracker) is None:
-                self.store.set_state(application_id, tracker, "needs_input", code="browser_preflight_required",
-                                     message="Browser preflight must verify the route before drafting.")
-                return self._outcome(application_id, "browser_preflight_required",
-                                     "Verify the application route before drafting.", status="blocked")
-            self._refresh_route_observation(application_id, tracker)
+            route_pending = self._hybrid and self._verified_route(application_id, tracker) is None
+            if not route_pending:
+                self._refresh_route_observation(application_id, tracker)
             if blocked := self._posting_blocked_outcome(application_id, tracker):
                 self.store.set_state(application_id, tracker, "needs_input",
                                      code=blocked.reason_code, message=blocked.message)
@@ -1015,6 +1014,15 @@ class ApplicationService:
                 record.job, application_id, tracker, self.settings, meta.get("revision_feedback")
             )
             self._manifest(application_id, tracker)
+            if route_pending:
+                self.store.set_state(
+                    application_id, tracker, "review_ready", code="browser_preflight_required",
+                    message="Your CV is ready. Check the employer form before reviewing the submission package.",
+                )
+                return self._outcome(
+                    application_id, "cv_ready_route_pending",
+                    "Your CV is ready to view; employer form verification is still required before applying.",
+                )
             if not application_entry_url(record.job.application_url):
                 self.store.set_state(
                     application_id,

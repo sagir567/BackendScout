@@ -131,6 +131,18 @@ def test_draft_from_passed_job_without_notion_or_telegram(drafting: SimpleNamesp
     )
 
 
+def test_owner_can_allow_truthful_draft_below_coverage_target(drafting):
+    drafting.settings.cv_require_coverage_target = False
+    job = drafting.job.model_copy(update={
+        "description": "Requirements: Python APIs and Kubernetes operations.",
+        "required_skills": ["Python", "Kubernetes"],
+    })
+    manifest = _draft(drafting, job=job)
+    verify_manifest(manifest, manifest.draft_id)
+    drafting.generate.assert_called_once()
+    assert all("Kubernetes" not in skill for group in drafting.draft.skills for skill in group.items)
+
+
 def test_global_guidance_job_note_and_feedback_reach_generator(drafting: SimpleNamespace) -> None:
     save_tailoring_note(
         "application-123",

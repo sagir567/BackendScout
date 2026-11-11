@@ -132,22 +132,23 @@ def test_unsupported_and_historical_checks_never_enqueue(review_service):
     assert not list_tasks(review_service.store.database_path)
 
 
-def test_hybrid_request_queues_one_readonly_preflight_before_cv(hybrid):
+def test_hybrid_full_posting_can_draft_without_a_verified_delivery_form(hybrid):
     service, _, calls = hybrid
     first = service.request_tailoring("example-job", T, "12345")
     again = service.request_tailoring("example-job", T, "12345")
-    assert first.task_id == again.task_id and not calls
+    assert first.task_id and again.reason_code == "queued" and not calls
     task, = list_tasks(service.store.database_path)
-    assert task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT
-    assert task.payload == {"page_id": "example-job", "company": "Example",
-                            "title": "Backend Engineer", "chat_id": 12345,
-                            "actor_id": "12345", "tailor_after": True}
-    assert service.approve_and_queue("example-job", T, "12345", "0" * 64).reason_code == "browser_preflight_pending"
+    assert task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT
+    assert service.draft("example-job", T).reason_code == "cv_ready_route_pending"
+    detail = service.detail("example-job", T)
+    assert detail["item"]["has_cv"]
+    assert detail["package"] is None
+    assert service.approve_and_queue("example-job", T, "12345", "0" * 64).reason_code == "browser_preflight_required"
 
 
 def test_hybrid_worker_chains_authorized_tailoring_and_preserves_schema_answer(hybrid):
     service, result, calls = hybrid
-    queued = service.request_tailoring("example-job", T, "12345")
+    queued = service.request_form_inspection("example-job", T, "12345", tailor_after=True)
     outcome = service.inspect_form("example-job", T, "12345", tailor_after=True)
     assert outcome.reason_code == "queued" and len(calls) == 1
     mark_task_status(queued.task_id, QueuedTaskStatus.DONE, path=service.store.database_path)
@@ -268,13 +269,14 @@ def test_route_alone_and_unidentified_form_do_not_claim_browser_readiness(hybrid
     assert not any(task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT for task in list_tasks(service.store.database_path))
 
 
-def test_hybrid_expired_route_requeues_preflight_not_cv(hybrid):
+def test_hybrid_expired_route_does_not_block_cv_but_still_blocks_approval(hybrid):
     service, result, _ = hybrid
     result["route"]["checked_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
     service.inspect_form("example-job", T, "12345")
     assert service.request_tailoring("example-job", T, "12345").reason_code == "queued"
     task, = list_tasks(service.store.database_path)
-    assert task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT
+    assert task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT
+    assert service.approve_and_queue("example-job", T, "12345", "0" * 64).status == "blocked"
 
 
 def test_hybrid_failed_inspection_cannot_reuse_old_verified_observation(hybrid):

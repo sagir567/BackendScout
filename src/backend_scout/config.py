@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     notion_production_applications_data_source_id: str | None = None
 
     cv_archive_root: Path = Path("applications")
+    cv_require_coverage_target: bool = True
     gmail_oauth_client_secret_path: Path | None = None
     gmail_credential_store: Literal["keyring", "file"] = "keyring"
     gmail_credential_file: Path | None = None

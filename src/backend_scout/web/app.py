@@ -87,7 +87,10 @@ def create_app(
     async def private_transport(request: Request, call_next):
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             if request.headers.get("origin") != origin:
-                return JSONResponse({"detail": "Origin rejected"}, status_code=403)
+                return JSONResponse(
+                    {"detail": f"Open the configured workspace at {origin} before signing in or taking actions."},
+                    status_code=403,
+                )
             if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
                 return JSONResponse({"detail": "JSON content is required"}, status_code=415)
             try:

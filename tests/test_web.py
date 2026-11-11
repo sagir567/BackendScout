@@ -51,6 +51,18 @@ def test_pairing_session_cookie_csrf_and_refresh(web):
     assert cookie.get_nonstandard_attr("SameSite") == "strict"
 
 
+def test_wrong_origin_explains_workspace_address_without_consuming_code(web):
+    client, sessions, _ = web
+    code = sessions.issue_pairing_code("12345")
+    response = client.post("/api/pair", json={"code": code},
+                           headers={"Origin": "https://wrong.example"})
+    assert response.status_code == 403
+    assert ORIGIN in response.json()["detail"]
+    assert code not in response.text
+    assert client.get("/api/session").json()["authenticated"] is False
+    assert client.post("/api/pair", json={"code": code}, headers={"Origin": ORIGIN}).status_code == 200
+
+
 def test_public_form_check_requires_session_csrf_and_queues_only(web, monkeypatch):
     client, sessions, service = web
     path = "/api/applications/example-job/inspect-form"

@@ -1072,7 +1072,10 @@ Current implementation as of 2026-09-01:
   ledger against the job's explicit requirements. Its 90/100 target is separate
   from the match score: tailoring can improve presentation, but it cannot make a
   job more suitable or introduce unsupported qualifications. Below target, CV
-  creation pauses and produces targeted factual questions. Confirmed answers are
+  creation pauses by default. Set `CV_REQUIRE_COVERAGE_TARGET=false` to draft
+  without closing the evidence gaps. Test drafting and submission readiness
+  independently: complete requirements can support a draft, but a verified
+  route is still required for an approvable package. Confirmed answers are
   added to the private evidence ledger; a skill gap remains open until backed by
   real work or a completed project.
 - The first version presents coverage questions in the active conversation. Its
