@@ -371,6 +371,25 @@ def test_hidden_title_is_not_identity_evidence():
     assert route.reason_code == "title_mismatch"
 
 
+@pytest.mark.parametrize("token", ["123", "999"])
+def test_greenhouse_embed_is_manual_only_and_must_match_job_id(token):
+    url = "https://acme.test/jobs/123"
+    widget = f"https://job-boards.eu.greenhouse.io/embed/job_app?for=acme&token={token}&validityToken=fixture"
+    source = html(
+        posting()
+        + f'<iframe src="{widget}"></iframe>'
+        + '<iframe src="https://i.liadm.com/sync-container"></iframe>'
+        + '<iframe src="https://consentcdn.cookiebot.com/sdk/bc-v5.min.html"></iframe>'
+    )
+    route = resolve_application_route(job(url), FakePage({url: source}))
+    if token == "123":
+        assert route.reason_code == "greenhouse_embed_manual"
+        assert route.application_url == url and route.evidence_urls == [url]
+        assert "validityToken" not in route.model_dump_json()
+    else:
+        assert route.status != "verified"
+
+
 @pytest.mark.parametrize(
     "url",
     [

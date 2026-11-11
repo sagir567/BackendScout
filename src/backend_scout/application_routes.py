@@ -123,6 +123,38 @@ def _verification_frame(url: str) -> bool:
         return False
 
 
+def _non_application_frame(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        return _verification_frame(url) or (
+            parsed.scheme == "https" and parsed.port in {None, 443}
+            and parsed.username is None and parsed.password is None
+            and (parsed.hostname, parsed.path) in {
+                ("consentcdn.cookiebot.com", "/sdk/bc-v5.min.html"),
+                ("i.liadm.com", "/sync-container"),
+            }
+        )
+    except ValueError:
+        return False
+
+
+def _greenhouse_embed_for_job(url: str, company: str, job_id: str) -> bool:
+    """Bind a public embed to the posting, without retaining the widget URL."""
+    try:
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        return (
+            parsed.scheme == "https" and parsed.port in {None, 443}
+            and parsed.username is None and parsed.password is None
+            and parsed.hostname in {"job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
+            and parsed.path == "/embed/job_app"
+            and job_id.isdecimal() and query.get("token") == [job_id]
+            and query.get("for") == [_normal(company).replace(" ", "")]
+        )
+    except ValueError:
+        return False
+
+
 def _binding(url: str) -> tuple[str, str, str] | None:
     """Only recognize actual route identifiers, not title-slug guesses."""
     try:
@@ -605,9 +637,13 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                 for link in view["links"]
                 if _APPLY.search(link["label"]) or _APPLY.search(urlsplit(link["url"]).path)
             ]
-            urls += [
-                src for src in view["frames"] if not _verification_frame(urljoin(current, src))
-            ]
+            frames = [urljoin(current, src) for src in view["frames"]]
+            frames = [src for src in frames if not _non_application_frame(src)]
+            embedded = bool(
+                employer == current and expected and len(frames) == 1
+                and _greenhouse_embed_for_job(frames[0], job.company, expected[2])
+            )
+            urls.extend(frames if not embedded else [])
             for href in urls:
                 target = urljoin(current, href)
                 widget = bool(
@@ -657,6 +693,12 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                     "There is no unique trusted apply destination.",
                 )
             forms = [form for form in view["forms"] if form["resume"] or form["application"]]
+            if embedded and not candidates and not unsafe_link and not forms:
+                return result(
+                    "verified", "greenhouse_embed_manual",
+                    "The employer page embeds a Greenhouse form for the exact role; apply on the employer page.",
+                    current,
+                )
             if forms and not _board(current):
                 if len(forms) != 1 or candidates or unsafe_link:
                     return result(

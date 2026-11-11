@@ -163,7 +163,8 @@ class HybridPortalAdapter:
                     hosts = tuple(configured)
             route = resolve_application_route(job, session.page, tracker=tracker,
                                               verified_employer_hosts=hosts)
-            view = find_application_form(session.page, route) if route.status == "verified" else None
+            view = (find_application_form(session.page, route)
+                    if route.status == "verified" and route.reason_code != "greenhouse_embed_manual" else None)
             questions, proposals, fields = [], {}, []
             if view:
                 from backend_scout.cv_service import load_career_evidence
