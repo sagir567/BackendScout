@@ -413,17 +413,49 @@ class ApplicationService:
                     package_ready, fingerprint = True, package.fingerprint()
                 except (OSError, ValueError):
                     pass
+            inspection = self.store.latest_form_inspection(row["application_id"], tracker) if self._hybrid else None
+            route_record = self.store.latest_application_route(row["application_id"], tracker)
+            if self.settings.web_ready_to_apply and route and inspection and fingerprint:
+                pending = self._pending_questions(row["application_id"], tracker)
+                inspection = inspection | {
+                    "passed": not pending,
+                    "blockers": [q["key"] if isinstance(q, dict) else q for q in pending],
+                    "package_fingerprint": fingerprint,
+                    "adapter": route.adapter_name or "employer-form",
+                }
             readiness = assess_delivery_readiness(
                 readiness_job, lifecycle_status=row["status"], has_cv=has_cv,
                 package_ready=package_ready, needs_input_code=code,
                 package_fingerprint=fingerprint,
                 verified_route=route.model_dump(mode="json") if route else None,
                 tracker=tracker,
-                inspection=self.store.latest_form_inspection(row["application_id"], tracker) if self._hybrid else None,
+                inspection=inspection,
             )
+            bucket = "internal"
+            if row["status"] in HISTORICAL:
+                bucket = "history"
+            elif (self.settings.web_allow_delivery and route and not code
+                  and row["status"] in {"discovered", "shortlisted", "review_ready"}
+                  and not self.store.form_check_pending(row["application_id"], tracker)
+                  and readiness.state == "supported_after_approval"):
+                bucket = "ready"
+            elif (has_cv and route_record and route_record.get("status") == "verified"
+                  and row["status"] in {"discovered", "shortlisted", "review_ready", "needs_input"}
+                  and self._has_requirements(job) and inspection
+                  and inspection.get("status") == "unavailable"
+                  and inspection.get("reason_code") in {"browser_form_unidentified", "application_context_missing"}
+                  and (route_record.get("company"), route_record.get("title"), route_record.get("source_url"))
+                  == (job.company, job.title, job.source_url)
+                  and str(route_record.get("application_url", "")).startswith("https://")
+                  and route_record.get("application_url") == application_entry_url(job.application_url)
+                  and route_record.get("application_url") in route_record.get("evidence_urls", [])
+                  and timedelta(0) <= datetime.now(UTC) - datetime.fromisoformat(route_record["checked_at"])
+                  <= timedelta(hours=24)):
+                bucket = "manual"
             items.append(
                 {
                     "id": row["application_id"],
+                    "workspace_bucket": bucket,
                     "company": job.company,
                     "title": job.title,
                     "location": job.location,
@@ -447,7 +479,7 @@ class ApplicationService:
                     "concerns": [message] if message else [],
                     "claimed": bool(row["claimed"]),
                     "delivery_readiness": readiness.model_dump(mode="json"),
-                    "application_route": self.store.latest_application_route(row["application_id"], tracker),
+                    "application_route": route_record,
                     "verified_route": route.model_dump(mode="json") if self._hybrid and route else None,
                     "browser_observation": self.store.latest_browser_observation(row["application_id"], tracker),
                 }
@@ -455,6 +487,7 @@ class ApplicationService:
         active = [item for item in items if item["status"] not in HISTORICAL]
         return {
             "tracker": tracker.value,
+            "ready_to_apply": self.settings.web_ready_to_apply,
             "items": items,
             "counts": {
                 "today": len(active),
@@ -530,7 +563,8 @@ class ApplicationService:
         readiness_job = self._record(application_id, tracker).job
         if self._hybrid and item["verified_route"]:
             readiness_job = readiness_job.model_copy(update={"application_url": item["verified_route"]["application_url"]})
-        item["delivery_readiness"] = assess_delivery_readiness(
+        if not self.settings.web_ready_to_apply:
+            item["delivery_readiness"] = assess_delivery_readiness(
             readiness_job,
             lifecycle_status=item["status"], has_cv=item["has_cv"],
             package_ready=preview is not None, needs_input_code=item["needs_input_code"],
@@ -538,7 +572,7 @@ class ApplicationService:
             verified_route=item["verified_route"] if self._hybrid else None,
             tracker=tracker,
             inspection=self.store.latest_form_inspection(application_id, tracker) if self._hybrid else None,
-        ).model_dump(mode="json")
+            ).model_dump(mode="json")
         can_resume = bool(
             preview
             and preview["approved"]

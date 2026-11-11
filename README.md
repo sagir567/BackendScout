@@ -1,5 +1,12 @@
 # BackendScout
 
+Runtime health reports the oldest available browser task and last queue poll.
+A browser task waiting at least two minutes is reported as stalled even if the
+worker process is still loaded.
+
+The experimental `WEB_READY_TO_APPLY` flag defaults to off. It separates
+ready-to-approve, manual, and historical applications from internal preparation.
+
 BackendScout is a local-first, human-approved job-search agent for backend
 engineering roles.
 

@@ -137,6 +137,7 @@ def claim_next_task(
     *,
     lease_seconds: int = 900,
     allowed_kinds: frozenset[QueuedTaskKind] | None = None,
+    heartbeat_lane: str | None = None,
 ) -> QueuedTask | None:
     """Atomically claim the highest-priority available task."""
     if _is_json_path(path):
@@ -146,6 +147,12 @@ def claim_next_task(
         return mark_task_status(task.task_id, QueuedTaskStatus.RUNNING, path=path)
     now = datetime.now(UTC)
     with _transaction(path) as connection:
+        if heartbeat_lane is not None:
+            connection.execute(
+                "INSERT INTO task_worker_heartbeat(lane, polled_at) VALUES (?, ?) "
+                "ON CONFLICT(lane) DO UPDATE SET polled_at=excluded.polled_at",
+                (heartbeat_lane, _dt(now)),
+            )
         _recover_expired(connection, now)
         kind_filter = ""
         parameters: list[str] = [_dt(now)]
@@ -470,6 +477,9 @@ def _initialize(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_tasks_available ON tasks(status, available_at, created_at);
         CREATE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks(idempotency_key, status);
+        CREATE TABLE IF NOT EXISTS task_worker_heartbeat (
+            lane TEXT PRIMARY KEY, polled_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS task_events (
             event_id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL,
             event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL,

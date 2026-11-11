@@ -3,7 +3,7 @@ updated_on: '2026-11-09'
 architecture:
   path: ARCHITECTURE.md
   version: '1.1'
-  sha256: 4888a2374355ae51c9d1e714d15fd3b07469cae4ced361f7521eb2b95c9db83e
+  sha256: 11af4e67cddb36bbbc5e73888b3afc9b15bf7f310a4d2ca0e6dbaaf155707a14
 budget:
   currency: NIS
   total_monthly_ceiling: 100
@@ -13,6 +13,21 @@ tracks:
   commercial:
     root: ../BackendScout-Skill
 tasks:
+  - id: P20
+    track: personal
+    title: Prepare verified applications before exposing them for approval
+    status: in_progress
+    execution: autonomous
+    owner: integration
+    depends_on: [P18]
+    write_scope: [src/backend_scout, tests]
+    acceptance:
+      - Browser queue stalls are visible even when LaunchAgent is running.
+      - Verified discovery and background preparation feed ready and manual views.
+      - Synthetic delivery produces one receipt and does not replay uncertain sends.
+    evidence:
+      - path: tests/test_browser_queue_health.py
+        result: A stale browser inspection is unhealthy until the matching lane claims it.
   - id: P15
     track: personal
     title: Verify employer-first routes and inspect real forms before review

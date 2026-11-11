@@ -201,6 +201,10 @@ record. Urgent action requests notify immediately; routine updates join the dige
 
 ## Mobile Interface and Authorization
 
+The staged ready-to-apply rollout separates automatic review, manual submission,
+history, and internal preparation. The execution ledger tracks rollout gates;
+the local runbook is `docs/READY_TO_APPLY_PLAN.md`.
+
 Provide the four views with compact work-focused layouts and explicit pending
 actions. The package review displays job facts, gaps, answers, route and exact PDF.
 Repeated clicks are idempotent. The user sees a receipt or the precise remaining

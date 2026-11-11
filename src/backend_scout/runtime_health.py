@@ -4,6 +4,34 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from backend_scout.task_queue import BROWSER_TASK_KINDS
+
+
+def _browser_queue_health(db: sqlite3.Connection, now: datetime) -> dict:
+    kinds = tuple(sorted(kind.value for kind in BROWSER_TASK_KINDS))
+    placeholders = ", ".join("?" for _ in kinds)
+    oldest = db.execute(
+        f"SELECT task_id, COALESCE(available_at, created_at) AS ready_at FROM tasks "
+        f"WHERE kind IN ({placeholders}) AND status IN ('queued', 'retrying') "
+        "AND COALESCE(available_at, created_at) <= ? ORDER BY ready_at LIMIT 1",
+        (*kinds, now.isoformat()),
+    ).fetchone()
+    heartbeat = None
+    if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_worker_heartbeat'"
+    ).fetchone():
+        heartbeat = db.execute(
+            "SELECT MAX(polled_at) FROM task_worker_heartbeat WHERE lane IN ('browser', 'all')"
+        ).fetchone()[0]
+    age = max(0, int((now - datetime.fromisoformat(oldest["ready_at"])).total_seconds())) if oldest else 0
+    return {
+        "healthy": age < 120,
+        "latest_status": "stalled" if age >= 120 else "waiting" if oldest else "idle",
+        "oldest_task_id": oldest["task_id"] if oldest else None,
+        "oldest_available_seconds": age,
+        "last_poll_at": heartbeat,
+    }
+
 
 def workflow_health(database_path: Path, now: datetime | None = None) -> dict:
     now = now or datetime.now(UTC)
@@ -47,6 +75,7 @@ def workflow_health(database_path: Path, now: datetime | None = None) -> dict:
                     "latest_outcome": outcome_status,
                     "last_success_at": success[0] if success else None,
                 }
+            components["browser_queue"] = _browser_queue_health(db, now)
     except (sqlite3.Error, ValueError, TypeError):
         return {"healthy": False, "components": {}, "problem": "Workflow database is unreadable"}
     return {

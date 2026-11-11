@@ -121,8 +121,8 @@ function safeURL(value, { localOnly = false, email = false } = {}) {
   }
 }
 
-function externalLink(value, label) {
-  const url = safeURL(value, { email: true });
+function externalLink(value, label, options = { email: true }) {
+  const url = safeURL(value, options);
   return url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(label)} <span aria-hidden="true">&#8599;</span></a>` : '';
 }
 
@@ -280,6 +280,10 @@ function requiresInput(item) {
 }
 
 function tabItems() {
+  if (state.overview?.ready_to_apply) {
+    const bucket = { today: 'ready', agent: 'manual', applications: 'history' }[state.tab];
+    return bucket ? items().filter((item) => item.workspace_bucket === bucket) : [];
+  }
   if (state.tab === 'agent') return items().filter((item) =>
     ['ashby', 'comeet', 'greenhouse', 'lever', 'employer-form'].includes(item.delivery_readiness?.adapter)
     && !['unavailable', 'manual_or_unsupported'].includes(item.delivery_readiness?.state));
@@ -315,7 +319,20 @@ function renderChrome() {
   $('#tracker-label').textContent = tracker;
   $('#footer-tracker').textContent = tracker;
   $('#updated-at').textContent = state.overview?.updated_at ? `Updated ${dateText(state.overview.updated_at, true)}` : 'Update time not reported';
-  const counts = {
+  const streamlined = state.overview?.ready_to_apply === true;
+  const names = streamlined
+    ? { today: 'Ready to apply', agent: 'Manual apply', applications: 'History' }
+    : { today: 'Today', agent: 'Agent Apply', applications: 'Applications' };
+  $('#tab-input').hidden = streamlined;
+  for (const [tab, name] of Object.entries(names)) {
+    $(`#tab-${tab} > span`).textContent = name;
+  }
+  const counts = streamlined ? {
+    today: items().filter((item) => item.workspace_bucket === 'ready').length,
+    agent: items().filter((item) => item.workspace_bucket === 'manual').length,
+    applications: items().filter((item) => item.workspace_bucket === 'history').length,
+    input: 0,
+  } : {
     today: serverCount(['today'], items().filter((item) => !finishedStages.has(normalizedStage(item))).length),
     input: serverCount(['needs_input', 'needs_my_input', 'input'], items().filter(requiresInput).length),
     applications: serverCount(['applications', 'total'], items().length),
@@ -387,8 +404,11 @@ function emptyMarkup(title, message = '', retry = false) {
 function renderView() {
   if (!state.session) return;
   if (state.tab === 'health') { renderHealth(); return; }
-  const heading = ({ today: 'Today', agent: 'Agent Apply', input: 'Needs My Input', applications: 'Applications' })[state.tab];
-  const subtitle = ({ today: 'Active application queue', agent: 'Supported routes; readiness shown per role', input: 'Questions, revisions and blocked applications', applications: 'All stages' })[state.tab];
+  const streamlined = state.overview?.ready_to_apply === true;
+  const heading = $(`#tab-${state.tab} > span`).textContent;
+  const subtitle = streamlined
+    ? ({ today: 'Reviewed destination and tailored CV', agent: 'Tailored CV and official employer link', applications: 'Application outcomes' })[state.tab] || ''
+    : ({ today: 'Active application queue', agent: 'Supported routes; readiness shown per role', input: 'Questions, revisions and blocked applications', applications: 'All stages' })[state.tab];
   const panel = $('#view-panel');
   panel.innerHTML = `<div class="workspace ${state.selectedId ? 'has-detail' : ''}">
     <section class="queue-pane" aria-labelledby="queue-title">
@@ -463,14 +483,15 @@ async function openDetail(id) {
   }
 }
 
-async function loadDetail() {
+async function loadDetail({ quiet = false } = {}) {
   const id = state.selectedId;
   if (!id || !state.session) return;
   const epoch = state.epoch;
   const request = ++state.detailRequest;
   state.detailLoading = true;
   state.detailError = '';
-  renderDetail();
+  const previous = state.detail;
+  if (!quiet) renderDetail();
   try {
     const detail = await api(`/api/applications/${encodeURIComponent(id)}`);
     if (epoch !== state.epoch || request !== state.detailRequest || state.selectedId !== id) return;
@@ -485,13 +506,17 @@ async function loadDetail() {
     if (state.queued.has(id) && state.queued.get(id) !== detail.package?.fingerprint) state.queued.delete(id);
   } catch (error) {
     if (epoch !== state.epoch || request !== state.detailRequest || state.selectedId !== id) return;
-    state.detailError = error.message;
-    state.detail = null;
+    if (!quiet || !previous) {
+      state.detailError = error.message;
+      state.detail = null;
+    }
   } finally {
     if (epoch === state.epoch && request === state.detailRequest && state.selectedId === id) {
       state.detailLoading = false;
-      renderDetail();
-      renderResults();
+      if (!quiet || JSON.stringify(previous) !== JSON.stringify(state.detail)) {
+        renderDetail();
+        renderResults();
+      }
     }
   }
 }
@@ -767,15 +792,21 @@ function renderDetail() {
   const concerns = Array.isArray(item.concerns) ? item.concerns : [];
   const official = externalLink(item.official_url, 'Official application');
   const source = externalLink(item.source_url, 'Original listing');
+  const streamlined = state.overview?.ready_to_apply === true;
+  const manual = streamlined && item.workspace_bucket === 'manual';
+  const ready = streamlined && item.workspace_bucket === 'ready';
   root.innerHTML = `<div class="detail-inner">${back}
     <header class="detail-heading"><p class="detail-company">${missing(item.company, 'Company not listed')}</p><h2 id="detail-title" class="detail-title" tabindex="-1">${missing(item.title, 'Role not listed')}</h2><p class="detail-location">${missing(item.location, 'Location not listed')}</p><div class="detail-status">${stageBadge(item)}${scoreMarkup(item)}</div></header>
     <dl class="facts-grid"><div><dt>Required experience</dt><dd>${missing(experience(item))}</dd></div><div><dt>Work mode</dt><dd>${missing(workMode(item))}</dd></div><div><dt>Salary</dt><dd>${missing(salary(item))}</dd></div><div><dt>Added</dt><dd>${escapeHTML(dateText(item.created_at))}</dd></div></dl>
-    ${workflowMarkup(detail, guards)}${deliveryReadinessMarkup(detail, guards)}${answersMarkup(detail, guards)}${packageMarkup(detail, guards)}
+    ${manual ? `<section class="workflow-section"><h2>Manual application</h2><p>The employer form is not supported for automatic submission.</p><div class="link-row">${externalLink(item.cv_url, 'View CV', { localOnly: true })}${official}</div></section>` : ''}
+    ${ready ? `<section class="workflow-section"><div class="primary-actions">${actionButton('approve', 'Apply with this CV', guards.approve, 'button-primary', 'Approving...')}<button id="request-changes" class="button" type="button">Request CV changes</button></div>${revisionMarkup(detail, guards)}</section>` : ''}
+    ${!streamlined ? workflowMarkup(detail, guards) + deliveryReadinessMarkup(detail, guards) + answersMarkup(detail, guards) : ''}
+    ${!streamlined || ready ? packageMarkup(detail, guards) : ''}
     <section class="detail-section" aria-labelledby="job-facts-heading"><div class="section-heading"><h2 id="job-facts-heading">Role &amp; fit</h2></div><p class="prose">${missing(item.match_reason, 'Match reason not provided.')}</p>
       <details class="description-details"><summary>Job description</summary><div class="prose">${missing(item.description, 'Job description not provided.')}</div></details>
       <h3 class="gaps-heading">Gaps &amp; concerns</h3>${concerns.length ? `<ul class="concern-list">${concerns.map((concern) => `<li>${escapeHTML(concern && typeof concern === 'object' ? concern.message || concern.description || concern.reason || valueText(concern) : valueText(concern))}</li>`).join('')}</ul>` : '<p class="muted action-context">No concerns reported.</p>'}
       <div class="link-row">${official || '<span class="missing">Official application URL not listed</span>'}${source || '<span class="missing">Source URL not listed</span>'}</div>
-      ${detailsEditor(detail, guards)}
+      ${streamlined ? '' : detailsEditor(detail, guards)}
     </section>
     ${detail.submission?.proof_url && safeURL(detail.submission.proof_url, { localOnly: true }) ? `<section class="detail-section"><h2>Submission confirmed</h2><p class="action-context">${escapeHTML(dateText(detail.submission.timestamp, true))} &middot; CV ${escapeHTML(detail.submission.cv_version)}</p><img class="receipt-proof" src="${escapeHTML(safeURL(detail.submission.proof_url, { localOnly: true }))}" alt="Portal confirmation screenshot" loading="lazy"></section>` : ''}
     ${present(item.legacy_status) ? `<p class="action-context">Previous tracker stage: ${escapeHTML(valueText(item.legacy_status))}</p>` : ''}
@@ -1099,7 +1130,8 @@ function refreshPendingWork() {
   const pending = state.selectedId
     ? activeDeliveryStages.has(normalizedStage(state.detail?.item)) || state.queued.has(state.selectedId) || state.detail?.form_check_pending
     : items().some((item) => activeDeliveryStages.has(normalizedStage(item)));
-  if (pending) void refreshAll();
+  if (pending && state.selectedId) void loadDetail({ quiet: true });
+  else if (pending) void loadOverview({ quiet: true });
 }
 window.setInterval(refreshPendingWork, 2500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPendingWork(); });

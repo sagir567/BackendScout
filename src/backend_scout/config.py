@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     web_public_origin: str = "http://127.0.0.1:8765"
     web_cookie_secure: bool = False
     web_allow_delivery: bool = False
+    web_ready_to_apply: bool = False
     portal_delivery_mode: Literal["legacy", "hybrid"] = "legacy"
     portal_hybrid_rollout: Literal["test", "canary", "enabled"] = "test"
     portal_canary_application_ids: str = ""

@@ -173,6 +173,19 @@ def test_hybrid_inspection_without_tailor_after_does_not_queue_paid_draft(hybrid
     assert len(calls) == 1 and not list_tasks(service.store.database_path)
 
 
+def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hybrid):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
+    assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
+    assert service.draft("example-job", T).reason_code == "review_ready"
+    detail = service.detail("example-job", T)
+    assert detail["item"]["workspace_bucket"] == "ready"
+    assert detail["package"]["approved"] is False
+    service.settings.web_allow_delivery = False
+    assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
+
+
 def test_hybrid_required_questions_block_until_confirmed_without_being_erased(hybrid):
     service, result, _ = hybrid
     result["questions"] = [{"key": "work_authorization", "label": "Work authorization?",

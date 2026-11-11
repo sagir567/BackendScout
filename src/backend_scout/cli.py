@@ -1278,7 +1278,7 @@ def tasks_worker(
                 ensure_today_scout(queue_path, settings.telegram_default_chat_id)
                 ensure_application_sync(queue_path)
                 next_schedule_check = time.monotonic() + 60
-            task = claim_next_task(queue_path, allowed_kinds=allowed_kinds)
+            task = claim_next_task(queue_path, allowed_kinds=allowed_kinds, heartbeat_lane=lane)
             if task is None:
                 time.sleep(poll_seconds)
                 continue
