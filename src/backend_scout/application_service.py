@@ -159,6 +159,27 @@ class ApplicationService:
             return None
         return route
 
+    @staticmethod
+    def _manual_route(job, raw, inspection):
+        if not raw or not inspection or inspection.get("mode") != "hybrid":
+            return None
+        try:
+            route = ApplicationRoute.model_validate(raw)
+        except ValueError:
+            return None
+        if (route.status == "verified"
+                and (route.company, route.title, route.source_url) == (job.company, job.title, job.source_url)
+                and route.application_url == job.application_url
+                and route.application_url in route.evidence_urls
+                and route.application_url.startswith("https://")
+                and inspection.get("status") == "unavailable"
+                and inspection.get("job_application_url") == route.application_url
+                and inspection.get("reason_code") in {"browser_form_unidentified", "form_schema_unverified"}
+                and timedelta(0) <= datetime.now(UTC) - datetime.fromisoformat(route.checked_at)
+                <= timedelta(hours=24)):
+            return route
+        return None
+
     def _pending_questions(self, application_id, tracker):
         from backend_scout.employer_forms import IDENTITY
         from backend_scout.package_portal import _identifier
@@ -489,18 +510,9 @@ class ApplicationService:
                   and not self.store.form_check_pending(row["application_id"], tracker)
                   and readiness.state == "supported_after_approval"):
                 bucket = "ready"
-            elif (has_cv and route_record and route_record.get("status") == "verified"
+            elif (has_cv and self._manual_route(job, route_record, inspection)
                   and row["status"] in {"discovered", "shortlisted", "review_ready", "needs_input"}
-                  and self._has_requirements(job) and inspection
-                  and inspection.get("status") == "unavailable"
-                  and inspection.get("reason_code") in {"browser_form_unidentified", "application_context_missing"}
-                  and (route_record.get("company"), route_record.get("title"), route_record.get("source_url"))
-                  == (job.company, job.title, job.source_url)
-                  and str(route_record.get("application_url", "")).startswith("https://")
-                  and route_record.get("application_url") == application_entry_url(job.application_url)
-                  and route_record.get("application_url") in route_record.get("evidence_urls", [])
-                  and timedelta(0) <= datetime.now(UTC) - datetime.fromisoformat(route_record["checked_at"])
-                  <= timedelta(hours=24)):
+                  and self._has_requirements(job) and not route_blocker):
                 bucket = "manual"
             items.append(
                 {
@@ -648,6 +660,11 @@ class ApplicationService:
             "item": item,
             "package": preview,
             "questions": json.loads(meta.get("questions_json") or "[]"),
+            "pending_questions": (
+                self._pending_questions(application_id, tracker)
+                if self.settings.web_ready_to_apply and self._hybrid and item["status"] not in HISTORICAL
+                else None
+            ),
             "delivery_enabled": self.settings.web_allow_delivery,
             "delivery_mode": self.settings.portal_delivery_mode,
             "can_resume": can_resume,
@@ -818,9 +835,13 @@ class ApplicationService:
             self.store.set_answers(application_id, tracker, retained)
         job = current.job
         updates = {}
-        if passed and route.application_url != job.application_url:
+        public_destination = bool(route_passed and route.application_url
+                                  and route.application_url.startswith("https://")
+                                  and route.application_url in route.evidence_urls
+                                  and application_entry_url(route.application_url) == route.application_url)
+        if (passed or self.settings.web_ready_to_apply and public_destination) and route.application_url != job.application_url:
             updates["application_url"] = route.application_url
-        if passed and route.posting_text and route.posting_text != job.description:
+        if (passed or self.settings.web_ready_to_apply and public_destination) and route.posting_text and route.posting_text != job.description:
             candidate = job.model_copy(update={"description": route.posting_text})
             if self._has_requirements(candidate):
                 updates["description"] = route.posting_text
@@ -860,6 +881,12 @@ class ApplicationService:
                     else:
                         return blocked
                 return self.request_tailoring(application_id, tracker, actor_id)
+            if (tailor_after and self.settings.web_ready_to_apply
+                    and self._manual_route(job, route.model_dump(mode="json"), observation)):
+                try:
+                    self._manifest(application_id, tracker)
+                except (OSError, ValueError):
+                    return self.request_tailoring(application_id, tracker, actor_id)
             return blocked
         if self._record(application_id, tracker).status in {"needs_input", "blocked"}:
             try:

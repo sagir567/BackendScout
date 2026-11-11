@@ -648,6 +648,27 @@ def collect_preferences_check(
     console.print(f"Maximum jobs per digest: {preferences.maximum_digest_jobs}")
 
 
+@collect_app.command("job-space-connect")
+def collect_job_space_connect() -> None:
+    """Verify a Job Space key and save it locally in the OS keyring."""
+    from backend_scout.job_space import (
+        JOB_SPACE_CREDENTIAL,
+        JobSpaceError,
+        fetch_job_space_jobs,
+        job_space_response_shape,
+    )
+
+    key = typer.prompt("Job Space personal API key", hide_input=True)
+    try:
+        with httpx.Client(timeout=12, trust_env=False) as client:
+            payload = fetch_job_space_jobs(client, key, query="python")
+    except JobSpaceError as exc:
+        console.print(str(exc))
+        raise typer.Exit(1) from exc
+    JOB_SPACE_CREDENTIAL.save(key)
+    console.print_json(data=job_space_response_shape(payload))
+
+
 @collect_app.command("run")
 def collect_run(
     targets_path: TargetCompaniesPathOption = DEFAULT_TARGET_COMPANIES_PATH,

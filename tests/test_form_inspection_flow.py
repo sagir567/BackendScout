@@ -206,6 +206,24 @@ def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hyb
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
 
 
+def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybrid):
+    service, result, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    pdf = service.cv_artifact("example-job", T)
+    content = pdf.read_bytes()
+    pdf.unlink()
+    service.drafter = lambda *_: pdf.write_bytes(content)
+    result.update(form_identified=False, proposed_answers={})
+    assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
+    assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
+    assert service.draft("example-job", T).reason_code == "cv_ready_route_pending"
+    detail = service.detail("example-job", T)
+    assert detail["item"]["workspace_bucket"] == "manual"
+    assert detail["item"]["official_url"] == result["route"]["application_url"]
+    assert detail["package"] is None
+    assert service.approve_and_queue("example-job", T, "12345", "not-approved").status == "blocked"
+
+
 def test_hybrid_required_questions_block_until_confirmed_without_being_erased(hybrid):
     service, result, _ = hybrid
     result["questions"] = [{"key": "work_authorization", "label": "Work authorization?",

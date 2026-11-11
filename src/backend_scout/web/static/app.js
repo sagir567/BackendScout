@@ -533,7 +533,8 @@ function closeDetail() {
 }
 
 function questionsFor(detail) {
-  return (Array.isArray(detail.questions) ? detail.questions : []).filter((question) => typeof question === 'string' || (question && typeof question === 'object')).map((question, index) => {
+  const questions = detail.pending_questions ?? detail.questions;
+  return (Array.isArray(questions) ? questions : []).filter((question) => typeof question === 'string' || (question && typeof question === 'object')).map((question, index) => {
     if (typeof question === 'string') return { key: question, label: question, required: true, options: [] };
     return {
       key: String(question.key ?? question.id ?? question.label ?? index),

@@ -6,6 +6,9 @@ worker process is still loaded.
 
 The experimental `WEB_READY_TO_APPLY` flag defaults to off. It separates
 ready-to-approve, manual, and historical applications from internal preparation.
+The Job Space credential probe is `backend-scout collect job-space-connect`.
+It saves a validated key in the OS keyring; scheduled Job Space ingestion is
+not enabled by that command.
 
 BackendScout is a local-first, human-approved job-search agent for backend
 engineering roles.

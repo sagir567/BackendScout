@@ -14,6 +14,7 @@ from playwright.sync_api import expect, sync_playwright
 from backend_scout.application_routes import ApplicationRoute
 from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import write_manifest
+from backend_scout.task_queue import QueuedTaskKind, list_tasks
 from backend_scout.web.app import create_app
 from backend_scout.web_sessions import OwnerSessionStore
 
@@ -220,7 +221,8 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
             )
             service.browser_inspector = lambda *_: {
                 "route": route.model_dump(mode="json"), "form_identified": True,
-                "questions": [], "proposed_answers": {"review.form_schema_sha256": "1" * 64},
+                "questions": [{"key": "email", "label": "Email", "required": True}],
+                "proposed_answers": {"review.form_schema_sha256": "1" * 64},
             }
             assert service.inspect_form("example-job", tracker, "12345").status == "succeeded"
             service.store.import_snapshot("unverified-job", tracker, job, "found")
@@ -237,6 +239,14 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
             expect(page.get_by_role("button", name="Check form", exact=True)).to_have_count(0)
             expect(page.locator(".pdf-preview")).to_be_visible()
             page.screenshot(path=str(output / "ready-to-apply-390.png"), full_page=True)
+            fingerprint = service.preview_package("example-job", tracker)[0].fingerprint()
+            page.get_by_role("button", name="Apply with this CV", exact=True).click()
+            expect(page.get_by_text("queued", exact=False).first).to_be_visible()
+            queued = [task for task in list_tasks(settings.workflow_database_path)
+                      if task.kind == QueuedTaskKind.PACKAGE_DELIVER]
+            assert len(queued) == 1
+            assert queued[0].payload["fingerprint"] == fingerprint
+            assert service.store.package_approved("example-job", tracker, fingerprint)
             context.close()
             browser.close()
     finally:
