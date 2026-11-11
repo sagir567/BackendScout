@@ -238,6 +238,12 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
             expect(page.get_by_role("button", name="Request CV changes", exact=True)).to_be_visible()
             expect(page.get_by_role("button", name="Check form", exact=True)).to_have_count(0)
             expect(page.locator(".pdf-preview")).to_be_visible()
+            page.locator(".pdf-preview").evaluate("(img) => { img.dataset.qaPreserved = 'yes'; }")
+            service.store.import_snapshot("historical-job", tracker, job, "closed")
+            with page.expect_response(lambda response: response.url.endswith("/api/overview")):
+                page.evaluate("() => { const now = Date.now.bind(Date); Date.now = () => now() + 31000; }")
+            expect(page.locator("#count-applications")).to_have_text("1")
+            expect(page.locator(".pdf-preview")).to_have_attribute("data-qa-preserved", "yes")
             page.screenshot(path=str(output / "ready-to-apply-390.png"), full_page=True)
             fingerprint = service.preview_package("example-job", tracker)[0].fingerprint()
             page.get_by_role("button", name="Apply with this CV", exact=True).click()

@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     web_cookie_secure: bool = False
     web_allow_delivery: bool = False
     web_ready_to_apply: bool = False
+    job_space_collection_enabled: bool = False
     portal_delivery_mode: Literal["legacy", "hybrid"] = "legacy"
     portal_hybrid_rollout: Literal["test", "canary", "enabled"] = "test"
     portal_canary_application_ids: str = ""

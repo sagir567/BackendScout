@@ -371,6 +371,7 @@ async function loadOverview({ quiet = false } = {}) {
   if (!state.session) return;
   const epoch = state.epoch;
   const request = ++state.overviewRequest;
+  const previous = state.overview;
   state.overviewLoading = true;
   state.overviewError = '';
   if (!quiet || !state.overview) renderView();
@@ -388,7 +389,15 @@ async function loadOverview({ quiet = false } = {}) {
     if (epoch === state.epoch && request === state.overviewRequest) {
       state.overviewLoading = false;
       renderChrome();
-      renderView();
+      const keepDetail = quiet && previous && $('#queue-results')
+        && previous.ready_to_apply === state.overview?.ready_to_apply;
+      if (keepDetail) {
+        if (JSON.stringify(previous.items) !== JSON.stringify(state.overview.items)) renderResults();
+        const count = $('.queue-total');
+        if (count) count.textContent = `${tabItems().length} roles`;
+      } else {
+        renderView();
+      }
     }
   }
 }
@@ -1134,7 +1143,12 @@ function refreshPendingWork() {
     : items().some((item) => activeDeliveryStages.has(normalizedStage(item)));
   if (pending && state.selectedId) void loadDetail({ quiet: true });
   else if (pending) void loadOverview({ quiet: true });
+  else if (state.overview?.ready_to_apply && Date.now() - lastQuietOverview >= 30000) {
+    lastQuietOverview = Date.now();
+    void loadOverview({ quiet: true });
+  }
 }
+let lastQuietOverview = Date.now();
 window.setInterval(refreshPendingWork, 2500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPendingWork(); });
 void start();

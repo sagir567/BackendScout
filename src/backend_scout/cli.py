@@ -709,11 +709,22 @@ def collect_run(
         _print_load_error("Public collection setup failed", exc)
         raise typer.Exit(1) from exc
 
+    settings = Settings()
     collected: list[Job] = []
     successful_sources = 0
     source_counts: dict[str, int] = {}
     failures: list[str] = []
     indeed_report: IndeedEmailCollection | None = None
+    if settings.job_space_collection_enabled:
+        from backend_scout.job_space import JobSpaceError, collect_job_space_jobs
+
+        try:
+            jobs = collect_job_space_jobs()
+            collected.extend(jobs)
+            source_counts["Job Space"] = len(jobs)
+            successful_sources += 1
+        except JobSpaceError as exc:
+            failures.append(f"Job Space: {exc}")
     for target in (item for item in targets.companies if item.enabled):
         try:
             source_jobs = collect_public_jobs(target)
@@ -780,7 +791,6 @@ def collect_run(
         console.print("[yellow]Preview only. Re-run with --write-notion to sync new jobs.[/yellow]")
         return successful_sources > 0
 
-    settings = Settings()
     if not settings.notion_api_key:
         console.print("[red]Notion configuration is required for syncing.[/red]")
         raise typer.Exit(1)

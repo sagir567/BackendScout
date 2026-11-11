@@ -1,7 +1,12 @@
 import httpx
 import pytest
 
-from backend_scout.job_space import JobSpaceError, fetch_job_space_jobs, job_space_response_shape
+from backend_scout.job_space import (
+    JobSpaceError,
+    fetch_job_space_jobs,
+    job_space_response_shape,
+    parse_job_space_jobs,
+)
 
 
 def test_search_is_read_only_and_reports_only_shape():
@@ -35,3 +40,18 @@ def test_errors_never_expose_body_or_forward_credential(status):
         fetch_job_space_jobs(client, "fixture", query="python")
     assert len(requests) == 1
     assert "fixture" not in str(error.value)
+
+
+def test_discovery_preserves_listing_and_employer_urls_separately():
+    data = {"id": 12, "company": {"name": "Acme"}, "title": "Backend Engineer", "city": "Tel Aviv",
+            "apply_url": "https://acme.example/jobs/12", "description": "<p>Python and APIs</p>"}
+    assert len(parse_job_space_jobs({"jobs": [data, data | {"apply_url": "https://acme.example/?session=hidden"}]})) == 1
+    job = parse_job_space_jobs({"jobs": [data]})[0]
+    assert job.source_url == "https://jobs.ti-space.com/jobs/12"
+    assert job.application_url == data["apply_url"]
+    assert job.description == "Python and APIs"
+
+
+def test_unknown_discovery_schema_fails_closed():
+    with pytest.raises(JobSpaceError, match="unrecognized"):
+        parse_job_space_jobs({"unknown": []})
