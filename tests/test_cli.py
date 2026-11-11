@@ -978,10 +978,18 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
         notion_production_applications_data_source_id = "production-data-source"
         telegram_bot_token = "telegram-token"
         telegram_default_chat_id = 12345
+        job_space_collection_enabled = True
 
         @property
         def telegram_allowed_user_id_set(self) -> set[int]:
             return set()
+
+    from backend_scout.job_space import JobSpaceError
+
+    def unavailable_job_space():
+        raise JobSpaceError("Job Space rate limit reached.")
+
+    monkeypatch.setattr("backend_scout.job_space.collect_job_space_jobs", unavailable_job_space)
 
     class FakeNotionClient:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -1058,6 +1066,8 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
     assert digest_pages == (["page-indeed"] if delivered else [])
     assert f"New matching jobs: {0 if existing_page else 1}" in sent_messages[0]
     assert "Indeed email: 1 messages, 1 jobs parsed" in sent_messages[0]
+    assert "Collector warnings: 1" in sent_messages[0]
+    assert "Job Space rate limit reached" in result.output
     if existing_page:
         assert existing_page["properties"]["Status"]["status"]["name"] == existing_status.value
 

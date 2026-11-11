@@ -68,14 +68,24 @@ def question_key(field, control):
 
 def question(field, control):
     label = field.label
+    key = question_key(field, control)
+    if key.startswith("cards[") and callable(getattr(control, "evaluate", None)):
+        group_label = control.evaluate("""el => {
+            const row = el.closest('li.application-question.custom-question');
+            const labels = row?.querySelectorAll('.application-label');
+            if (labels?.length !== 1 || !labels[0].getClientRects().length) return '';
+            return (labels[0].innerText || '').trim();
+        }""")
+        if group_label:
+            label = group_label
     if (field.sensitive or LEGAL.search(label)) and callable(getattr(control, "evaluate", None)):
         links = control.evaluate("""el => Array.from(el.labels || []).flatMap(label =>
             Array.from(label.querySelectorAll('a[href]')).map(a=>a.href))""")
         if links:
             label += " (" + ", ".join(links) + ")"
     return {
-        "key": question_key(field, control), "label": label[:2000],
-        "required": field.required, "sensitive": field.sensitive or bool(LEGAL.search(field.label)),
+        "key": key, "label": label[:2000],
+        "required": field.required, "sensitive": field.sensitive or bool(LEGAL.search(label)),
         "options": (["yes", "no"] if field.kind == GuidedControlKind.CHECKBOX
                     else field.options[:100]),
     }

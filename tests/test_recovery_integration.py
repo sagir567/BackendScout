@@ -62,6 +62,7 @@ def test_same_role_from_two_sources_creates_only_one_row(monkeypatch: pytest.Mon
             notion_api_key="fake",
             notion_api_version="fake",
             notion_production_applications_data_source_id="source",
+            job_space_collection_enabled=False,
         ),
     )
     monkeypatch.setattr(cli, "validate_applications_data_source", lambda _: [])
