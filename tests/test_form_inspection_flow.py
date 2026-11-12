@@ -150,7 +150,8 @@ def test_hybrid_full_posting_can_draft_without_a_verified_delivery_form(hybrid):
 def test_hybrid_worker_chains_authorized_tailoring_and_preserves_schema_answer(hybrid):
     service, result, calls = hybrid
     queued = service.request_form_inspection("example-job", T, "12345", tailor_after=True)
-    outcome = service.inspect_form("example-job", T, "12345", tailor_after=True)
+    outcome = service.inspect_form("example-job", T, "12345", tailor_after=True,
+                                   background_preparation=True)
     assert outcome.reason_code == "queued" and len(calls) == 1
     mark_task_status(queued.task_id, QueuedTaskStatus.DONE, path=service.store.database_path)
     assert service.draft("example-job", T).reason_code == "review_ready"
@@ -160,6 +161,9 @@ def test_hybrid_worker_chains_authorized_tailoring_and_preserves_schema_answer(h
     assert {task.kind for task in list_tasks(service.store.database_path)} == {
         QueuedTaskKind.PACKAGE_FORM_INSPECT, QueuedTaskKind.PACKAGE_CV_DRAFT,
     }
+    draft_task = next(task for task in list_tasks(service.store.database_path)
+                      if task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT)
+    assert draft_task.payload["background_preparation"] is True
     detail = service.detail("example-job", T)
     assert detail["delivery_mode"] == "hybrid"
     assert detail["item"]["verified_route"]["application_url"] == package.official_destination

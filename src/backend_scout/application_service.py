@@ -704,7 +704,8 @@ class ApplicationService:
         return self._outcome(application_id, "queued", "Public form check queued; no personal data will be sent.",
                              task_id=task.task_id)
 
-    def inspect_form(self, application_id, tracker, actor_id, *, tailor_after=False) -> OperationOutcome:
+    def inspect_form(self, application_id, tracker, actor_id, *, tailor_after=False,
+                     background_preparation=False) -> OperationOutcome:
         """Worker-only inspection; injected browsers must stay on their owner thread."""
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
@@ -712,7 +713,10 @@ class ApplicationService:
             return self._outcome(application_id, "historical", "This application is not available for a new check.",
                                  status="blocked")
         if self._hybrid:
-            return self._inspect_hybrid_form(application_id, tracker, actor_id, tailor_after=tailor_after)
+            return self._inspect_hybrid_form(
+                application_id, tracker, actor_id, tailor_after=tailor_after,
+                background_preparation=background_preparation,
+            )
         if not record.job.application_url:
             return self._outcome(application_id, "official_route_required", "Verify an official posting URL first.",
                                  status="blocked")
@@ -744,7 +748,8 @@ class ApplicationService:
                            "options": options, "sensitive": question.get("sensitive", False)})
         return result
 
-    def _inspect_hybrid_form(self, application_id, tracker, actor_id, *, tailor_after):
+    def _inspect_hybrid_form(self, application_id, tracker, actor_id, *, tailor_after,
+                             background_preparation=False):
         record = self._record(application_id, tracker)
         if record.status in {"drafting", "enriching"}:
             return self._outcome(application_id, "application_busy", "Wait for current application work.",
@@ -884,13 +889,15 @@ class ApplicationService:
                         pass
                     else:
                         return blocked
-                return self.request_tailoring(application_id, tracker, actor_id)
+                return self.request_tailoring(application_id, tracker, actor_id,
+                                              background_preparation=background_preparation)
             if (tailor_after and self.settings.web_ready_to_apply
                     and self._manual_route(job, route.model_dump(mode="json"), observation)):
                 try:
                     self._manifest(application_id, tracker)
                 except (OSError, ValueError):
-                    return self.request_tailoring(application_id, tracker, actor_id)
+                    return self.request_tailoring(application_id, tracker, actor_id,
+                                                  background_preparation=background_preparation)
             return blocked
         if self._record(application_id, tracker).status in {"needs_input", "blocked"}:
             try:
@@ -900,7 +907,8 @@ class ApplicationService:
                 state = "discovered"
             self.store.set_state(application_id, tracker, state)
         if tailor_after:
-            return self.request_tailoring(application_id, tracker, actor_id)
+            return self.request_tailoring(application_id, tracker, actor_id,
+                                          background_preparation=background_preparation)
         return self._outcome(application_id, observation["reason_code"], observation["message"])
 
     def cv_artifact(self, application_id: str, tracker: TrackerName) -> Path:
@@ -1020,11 +1028,11 @@ class ApplicationService:
             self._manifest(application_id, tracker)
         except (OSError, ValueError):
             self.store.set_state(application_id, tracker, "discovered")
-            self.request_tailoring(application_id, tracker, actor_id)
+            self.request_tailoring(application_id, tracker, actor_id, background_preparation=True)
             return "Answer saved. CV preparation queued; no application was approved."
         return "Answer saved. Review the exact CV and application in the private workspace; nothing was sent."
 
-    def request_tailoring(self, application_id, tracker, actor_id):
+    def request_tailoring(self, application_id, tracker, actor_id, *, background_preparation=False):
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
         if record.status in HISTORICAL:
@@ -1060,18 +1068,20 @@ class ApplicationService:
             record.job.model_dump_json() + (meta.get("revision_feedback") or "") + previous_version
         )
         key = hashlib.sha256(content.encode()).hexdigest()[:24]
+        payload = self._task_context(record, actor_id)
+        if background_preparation:
+            payload["background_preparation"] = True
         task = enqueue_task(
             QueuedTaskKind.PACKAGE_CV_DRAFT,
             tracker,
-            self._task_context(record, actor_id),
+            payload,
             self.store.database_path,
             idempotency_key=f"package-cv:{tracker.value}:{application_id}:{key}",
         )
         if task.status in {QueuedTaskStatus.BLOCKED, QueuedTaskStatus.DEAD_LETTER,
                            QueuedTaskStatus.FAILED, QueuedTaskStatus.CANCELLED}:
             # An explicit retry may draft again, but simultaneous clicks share active work.
-            task = enqueue_task(QueuedTaskKind.PACKAGE_CV_DRAFT, tracker,
-                                self._task_context(record, actor_id), self.store.database_path)
+            task = enqueue_task(QueuedTaskKind.PACKAGE_CV_DRAFT, tracker, payload, self.store.database_path)
         self.store.set_state(application_id, tracker, "drafting")
         return self._outcome(application_id, "queued", "CV drafting queued.", task_id=task.task_id)
 

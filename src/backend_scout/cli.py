@@ -1364,7 +1364,8 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                     outcome = build_application_service(settings, browser_inspector=inspector).inspect_form(
                         _payload_string(task.payload, "page_id"), task.tracker,
                         _payload_string(task.payload, "actor_id"),
-                        tailor_after=task.payload.get("tailor_after") is True)
+                        tailor_after=task.payload.get("tailor_after") is True,
+                        background_preparation=task.payload.get("background_preparation") is True)
                 elif task.kind == QueuedTaskKind.PACKAGE_ENRICH:
                     outcome = build_application_service(settings).refresh_details(
                         _payload_string(task.payload, "page_id"), task.tracker,
@@ -1532,7 +1533,8 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
     mark_task_status(task.task_id, status, last_error=blocked_reason, path=queue_path)
     if completion_message:
         _send_task_telegram_message(task, completion_message)
-    if task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT and not blocked_reason:
+    if (task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT and not blocked_reason
+            and task.payload.get("background_preparation") is not True):
         _send_package_artifact(task)
     if task.kind == QueuedTaskKind.PACKAGE_DELIVER:
         _service_submission_notifications(queue_path, portal_sessions=portal_sessions)
