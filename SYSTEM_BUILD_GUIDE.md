@@ -1556,3 +1556,7 @@ recognizes only that display change on the known Lever widget after verifying
 the exact PDF checksum. Form destinations, consent links and question text
 still invalidate a review when they change. Reproduce the issue with a dummy
 PDF and synthetic browser routes before retrying any approved application.
+
+Live Telegram testing caught a separate usability issue: help fell through to
+the AI assistant queue. Route `/help` and `/start` to a static command menu so
+onboarding works without Notion, an available worker, or a paid model call.

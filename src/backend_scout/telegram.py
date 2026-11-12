@@ -687,7 +687,19 @@ def _process_message(
     chat = message.get("chat", {})
     chat_id = chat.get("id")
     reply_markup = None
-    if command.casefold() in {"/web", "/app"}:
+    if command.casefold() in {"/help", "/start"}:
+        confirmation = (
+            "BackendScout commands\n"
+            "/web - Open the private workspace\n"
+            "/jobs - Show active jobs\n"
+            "/today - Show the latest tracked jobs\n"
+            "/status - Show application counts\n"
+            "/submit_status - Show portal progress\n"
+            "/scout - Request another job scan\n"
+            "/ask followed by your question - Ask the assistant"
+        )
+        result = "help_sent"
+    elif command.casefold() in {"/web", "/app"}:
         if chat_id != user_id:
             confirmation = "Request browser pairing in your private chat with this bot."
         elif browser_pairing_handler is None:

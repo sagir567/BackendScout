@@ -783,6 +783,27 @@ def test_process_telegram_update_keeps_approval_when_callback_acknowledgement_ex
     assert updated_statuses == [("page-123", ApplicationStatus.APPROVED_TO_TAILOR)]
 
 
+@pytest.mark.parametrize("command", ["/help", "/start"])
+def test_telegram_help_requires_no_notion_or_assistant_task(command) -> None:
+    messages = []
+
+    class Telegram:
+        def send_message(self, chat_id, text, reply_markup=None):
+            messages.append((chat_id, text))
+
+    def unexpected_task(*args):
+        pytest.fail("Help must not enqueue a task")
+
+    assert process_telegram_update(
+        Telegram(), object(),
+        {"message": {"from": {"id": 12345}, "chat": {"id": 12345}, "text": command}},
+        {12345}, task_enqueue_handler=unexpected_task,
+    ) == "help_sent"
+    assert len(messages) == 1
+    assert messages[0][0] == 12345
+    assert "/web" in messages[0][1]
+
+
 def test_process_telegram_message_sends_status_counts() -> None:
     sent_messages = []
 
