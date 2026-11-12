@@ -30,6 +30,8 @@ tasks:
         result: A stale browser inspection is unhealthy until the matching lane claims it.
       - path: tests/test_employer_forms.py
         result: Isolated Chromium preserves exact approval on Lever attachment display changes, but not on privacy-link or form-destination changes.
+      - path: tests/test_web_browser.py
+        result: Browser focus refreshes a completed inspection with interval polling suspended; streamlined review renders without JavaScript errors.
   - id: P15
     track: personal
     title: Verify employer-first routes and inspect real forms before review

@@ -14,7 +14,7 @@ from playwright.sync_api import expect, sync_playwright
 from backend_scout.application_routes import ApplicationRoute
 from backend_scout.config import TrackerName
 from backend_scout.cv_artifacts import write_manifest
-from backend_scout.task_queue import QueuedTaskKind, list_tasks
+from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, list_tasks, mark_task_status
 from backend_scout.web.app import create_app
 from backend_scout.web_sessions import OwnerSessionStore
 
@@ -211,7 +211,6 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
 
             tracker = TrackerName.TEST
             service.store.revise_job("example-job", tracker, job)
-            settings.web_ready_to_apply = True
             settings.portal_delivery_mode = "hybrid"
             route = ApplicationRoute(
                 status="verified", reason_code="route_verified", message="Synthetic application form",
@@ -225,12 +224,33 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
                 "proposed_answers": {"review.form_schema_sha256": "1" * 64},
             }
             assert service.inspect_form("example-job", tracker, "12345").status == "succeeded"
-            service.store.import_snapshot("unverified-job", tracker, job, "found")
             context = browser.new_context(viewport={"width": 390, "height": 844})
             page = context.new_page()
-            page.goto(origin)
+            page.add_init_script("""() => {
+                const interval = window.setInterval.bind(window);
+                window.setInterval = (fn, delay, ...args) =>
+                    delay === 2500 ? 0 : interval(fn, delay, ...args);
+            }""")
+            page.goto(origin + "?application=example-job")
             page.get_by_label("Pairing code", exact=True).fill(sessions.issue_pairing_code("12345"))
             page.get_by_role("button", name="Pair browser", exact=True).click()
+            check_form = page.get_by_role("button", name="Check form", exact=True)
+            check_form.click()
+            expect(page.get_by_role("button", name="Checking form...", exact=True)).to_be_disabled()
+            tasks = [task for task in list_tasks(settings.workflow_database_path)
+                     if task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT]
+            assert len(tasks) == 1
+            mark_task_status(tasks[0].task_id, QueuedTaskStatus.DONE, path=settings.workflow_database_path)
+            page.evaluate("window.dispatchEvent(new Event('focus'))")
+            expect(check_form).to_be_enabled()
+            expect(page.get_by_role("link", name="View CV", exact=True)).to_be_visible()
+
+            settings.web_ready_to_apply = True
+            service.store.import_snapshot("unverified-job", tracker, job, "found")
+            page = context.new_page()
+            streamlined_errors = []
+            page.on("pageerror", lambda error: streamlined_errors.append(str(error)))
+            page.goto(origin)
             expect(page.get_by_role("heading", name="Ready to apply", exact=True)).to_be_visible()
             expect(page.locator("[data-job-id='unverified-job']")).to_have_count(0)
             page.locator("[data-job-id='example-job']").click()
@@ -253,6 +273,7 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
             assert len(queued) == 1
             assert queued[0].payload["fingerprint"] == fingerprint
             assert service.store.package_approved("example-job", tracker, fingerprint)
+            assert not streamlined_errors
             context.close()
             browser.close()
     finally:

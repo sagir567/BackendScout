@@ -1563,3 +1563,9 @@ onboarding works without Notion, an available worker, or a paid model call.
 Pairing keeps the code in a separate message and uses Telegram's native copy
 button to avoid mistyping lookalike characters. The code is still single-use,
 expires after five minutes, and is never embedded in a URL.
+
+For browser acceptance, suspend periodic polling, complete a queued form
+inspection on the test database, and return focus to the workspace. The
+selected detail must update without a navigation, while focused text fields
+defer refresh. The streamlined view must not bind handlers to the legacy
+details editor, and refresh errors must not leave the mutation lock set.

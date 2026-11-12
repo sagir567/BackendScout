@@ -856,11 +856,11 @@ function renderDetail() {
     $('#request-changes').setAttribute('aria-expanded', 'true');
     $('#revision-feedback').focus();
   });
-  $('#details-editor').addEventListener('toggle', (event) => {
+  $('#details-editor')?.addEventListener('toggle', (event) => {
     if (event.currentTarget.isConnected) draftFor(String(item.id)).detailsOpen = event.currentTarget.open;
   });
-  $('#details-form').addEventListener('input', saveDetailsDraft);
-  $('#details-form').addEventListener('submit', submitDetails);
+  $('#details-form')?.addEventListener('input', saveDetailsDraft);
+  $('#details-form')?.addEventListener('submit', submitDetails);
   updateBusyUI();
 }
 
@@ -986,9 +986,12 @@ async function mutate(action, extra = {}, renderedFingerprint = '') {
     }
   } finally {
     if (epoch === state.epoch) {
-      await loadOverview({ quiet: true });
-      if (state.selectedId === id) await loadDetail();
-      if (epoch === state.epoch) { state.mutation = null; updateBusyUI(); }
+      try {
+        await loadOverview({ quiet: true });
+        if (state.selectedId === id) await loadDetail();
+      } finally {
+        if (epoch === state.epoch) { state.mutation = null; updateBusyUI(); }
+      }
     }
   }
 }
@@ -1150,5 +1153,6 @@ function refreshPendingWork() {
 }
 let lastQuietOverview = Date.now();
 window.setInterval(refreshPendingWork, 2500);
+window.addEventListener('focus', refreshPendingWork);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPendingWork(); });
 void start();
