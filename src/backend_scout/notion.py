@@ -1,5 +1,6 @@
 from typing import Any, Self
 
+from backend_scout.application_routes import ats_job_identity
 from backend_scout.models import ApplicationDigestItem, ApplicationStatus, Job
 
 NOTION_BASE_URL = "https://api.notion.com/v1"
@@ -607,14 +608,39 @@ def _find_job_page_by_company_and_role(
     data_source_id: str,
     job: Job,
 ) -> dict[str, Any] | None:
-    return _query_single_job_page(
-        self,
-        data_source_id,
-        _compound_and_filter(
-            _find_rich_text_equals_filter(APPLICATIONS_PROPERTY_NAMES["company"], job.company),
-            _find_title_equals_filter(APPLICATIONS_PROPERTY_NAMES["role"], job.title),
-        ),
+    query_filter = _compound_and_filter(
+        _find_rich_text_equals_filter(APPLICATIONS_PROPERTY_NAMES["company"], job.company),
+        _find_title_equals_filter(APPLICATIONS_PROPERTY_NAMES["role"], job.title),
     )
+    identity = ats_job_identity(job.application_url) or ats_job_identity(job.source_url)
+    if identity is None:
+        return _query_single_job_page(self, data_source_id, query_filter)
+
+    legacy = []
+    cursor = None
+    seen_cursors = set()
+    while True:
+        query = {"page_size": 100, "filter": query_filter}
+        if cursor:
+            query["start_cursor"] = cursor
+        batch = self.query_data_source(data_source_id, query)
+        for page in batch.get("results", []):
+            properties = page.get("properties", {})
+            existing = (
+                ats_job_identity(_extract_url_value(properties, "application_url"))
+                or ats_job_identity(_extract_url_value(properties, "source_url"))
+            )
+            if existing == identity:
+                return page
+            if existing is None:
+                legacy.append(page)
+        if not batch.get("has_more"):
+            break
+        cursor = batch.get("next_cursor")
+        if not cursor or cursor in seen_cursors:
+            raise ValueError("Notion job lookup returned an invalid pagination cursor")
+        seen_cursors.add(cursor)
+    return legacy[0] if len(legacy) == 1 else None
 
 
 def _query_filter_for_source_url(job: Job) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from backend_scout.models import ApplicationStatus, Job
 from backend_scout.notion import (
     APPLICATIONS_PROPERTY_NAMES,
     APPLICATIONS_PROPERTY_TYPES,
+    NotionClient,
     application_digest_item_from_page,
     build_job_page_properties,
     missing_submission_property_definitions,
@@ -12,6 +13,29 @@ from backend_scout.notion import (
     upsert_job_page,
     validate_applications_data_source,
 )
+
+
+def test_find_job_matches_ats_alias_and_does_not_merge_a_different_requisition():
+    root = "https://job-boards.greenhouse.io/example/jobs/"
+    job = Job(source="job_space", source_url="https://jobs.ti-space.com/jobs/123",
+              application_url=root + "123", company="Example", title="Backend Engineer",
+              description="Test vacancy.")
+    different = {"id": "different", "properties": {"Application URL": {"url": root + "456"}}}
+    exact = {"id": "exact", "properties": {
+        "Application URL": {"url": "https://job-boards.eu.greenhouse.io/example/jobs/123?utm_source=fixture"},
+    }}
+
+    class Query:
+        def __init__(self, pages):
+            self.pages = iter(pages)
+
+        def query_data_source(self, _id, _query):
+            return next(self.pages)
+
+    no_source = {"results": []}
+    first = {"results": [different], "has_more": True, "next_cursor": "next"}
+    assert NotionClient.find_job_page(Query([no_source, first, {"results": [exact]}]), "tracker", job) == exact
+    assert NotionClient.find_job_page(Query([no_source, {"results": [different]}]), "tracker", job) is None
 
 
 def test_build_job_page_properties_uses_data_source_schema_names() -> None:
