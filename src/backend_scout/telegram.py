@@ -36,7 +36,12 @@ class BrowserPairingMessage:
 def send_browser_pairing_message(client, chat_id: int, pairing: BrowserPairingMessage) -> None:
     """Keep the owner code in its own copyable message, outside instructions."""
     client.send_message(chat_id, pairing.instructions)
-    client.send_message(chat_id, pairing.code)
+    client.send_message(
+        chat_id, pairing.code,
+        reply_markup={"inline_keyboard": [[{
+            "text": "Copy sign-in code", "copy_text": {"text": pairing.code},
+        }]]},
+    )
 
 
 class TelegramApprovalAction(str, Enum):

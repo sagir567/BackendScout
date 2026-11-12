@@ -1560,3 +1560,6 @@ PDF and synthetic browser routes before retrying any approved application.
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
 onboarding works without Notion, an available worker, or a paid model call.
+Pairing keeps the code in a separate message and uses Telegram's native copy
+button to avoid mistyping lookalike characters. The code is still single-use,
+expires after five minutes, and is never embedded in a URL.

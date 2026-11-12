@@ -127,6 +127,11 @@ def test_private_owner_pairing_issues_once_and_sends_only_to_owner(bridge, comma
     assert bridge.telegram.send_message.call_count == 2
     assert bridge.telegram.send_message.call_args_list[0].args == (OWNER, pairing.instructions)
     assert bridge.telegram.send_message.call_args_list[1].args == (OWNER, pairing.code)
+    assert bridge.telegram.send_message.call_args_list[1].kwargs["reply_markup"] == {
+        "inline_keyboard": [[{
+            "text": "Copy sign-in code", "copy_text": {"text": pairing.code},
+        }]],
+    }
     assert pairing.code not in pairing.instructions
     assert pairing.code not in repr(pairing)
     guard.assert_not_called()
