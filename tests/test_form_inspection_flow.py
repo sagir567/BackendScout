@@ -198,6 +198,30 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
     assert all(task.payload["tailor_after"] is True for task in tasks)
 
 
+def test_expired_review_recheck_has_no_draft_authority_and_skips_changed_state(hybrid):
+    service, result, calls = hybrid
+    service.settings.web_ready_to_apply = True
+    tracker = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    service.store.import_snapshot("older-review", tracker, job, "found")
+    service.store.set_state("older-review", tracker, "review_ready")
+    now = datetime.now(UTC)
+    route = ApplicationRoute.model_validate(result["route"] | {
+        "checked_at": (now - timedelta(hours=25)).isoformat(),
+    })
+    service.store.save_application_route("older-review", tracker, route)
+    queued = service.queue_expired_review_checks(tracker, "12345", now=now)
+    assert len(queued) == 1
+    assert service.queue_expired_review_checks(tracker, "12345", now=now) == []
+    task = list_tasks(service.store.database_path)[0]
+    assert task.payload["tailor_after"] is False
+    assert task.payload["expired_review_recheck"] is True
+    service.store.set_state("older-review", tracker, "blocked")
+    outcome = service.inspect_form("older-review", tracker, "12345", expired_review_recheck=True)
+    assert outcome.reason_code == "recheck_skipped"
+    assert not calls
+
+
 def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True

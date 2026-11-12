@@ -281,6 +281,7 @@ class ApplicationService:
                 self.store.import_snapshot(item.notion_page_id, tracker, job, item.status.value)
                 count += 1
         self.queue_daily_preparation(tracker, actor_id)
+        self.queue_expired_review_checks(tracker, actor_id)
         return self._outcome(
             "tracker",
             "projection_imported",
@@ -328,6 +329,53 @@ class ApplicationService:
             except TaskQuotaReached:
                 break
             task_ids.append(task.task_id)
+        return task_ids
+
+    def queue_expired_review_checks(self, tracker, actor_id, *, now=None) -> list[str]:
+        """Refresh aged public observations without redrafting or reusing approvals."""
+        self._authorize(actor_id)
+        if not (self.settings.web_ready_to_apply and self._hybrid and tracker == TrackerName.PRODUCTION):
+            return []
+        now = now or datetime.now(UTC)
+        day = now.astimezone(ZoneInfo("Asia/Hebron")).date()
+        prefix = f"background-recheck:{tracker.value}:{day}:"
+        task_ids = []
+        for row in self.store.list_records(tracker):
+            if row["status"] != "review_ready" or not row["job_json"]:
+                continue
+            application_id = row["application_id"]
+            fingerprint = row["current_fingerprint"]
+            if ((fingerprint and self.store.package_approved(application_id, tracker, fingerprint))
+                    or self.store.form_check_pending(application_id, tracker)):
+                continue
+            route = self.store.latest_application_route(application_id, tracker)
+            if not route or route.get("status") != "verified":
+                continue
+            try:
+                age = now - datetime.fromisoformat(route["checked_at"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if age <= timedelta(hours=24):
+                continue
+            record = self._record(application_id, tracker)
+            if (route.get("company"), route.get("title"), route.get("source_url")) != (
+                record.job.company, record.job.title, record.job.source_url,
+            ):
+                continue
+            try:
+                task = enqueue_task(
+                    QueuedTaskKind.PACKAGE_FORM_INSPECT, tracker,
+                    self._task_context(record, actor_id) | {
+                        "actor_id": actor_id, "tailor_after": False, "background_preparation": True,
+                        "expired_review_recheck": True,
+                    },
+                    self.store.database_path, idempotency_key=prefix + application_id,
+                    quota=(prefix, 5),
+                )
+            except TaskQuotaReached:
+                break
+            if task.status in {QueuedTaskStatus.QUEUED, QueuedTaskStatus.RUNNING, QueuedTaskStatus.RETRYING}:
+                task_ids.append(task.task_id)
         return task_ids
 
     @staticmethod
@@ -705,10 +753,17 @@ class ApplicationService:
                              task_id=task.task_id)
 
     def inspect_form(self, application_id, tracker, actor_id, *, tailor_after=False,
-                     background_preparation=False) -> OperationOutcome:
+                     background_preparation=False, expired_review_recheck=False) -> OperationOutcome:
         """Worker-only inspection; injected browsers must stay on their owner thread."""
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
+        if expired_review_recheck and (record.status != "review_ready" or (
+            record.current_fingerprint and self.store.package_approved(
+                application_id, tracker, record.current_fingerprint,
+            )
+        )):
+            return self._outcome(application_id, "recheck_skipped",
+                                 "The application left unapproved review before the check.")
         if record.status in HISTORICAL:
             return self._outcome(application_id, "historical", "This application is not available for a new check.",
                                  status="blocked")

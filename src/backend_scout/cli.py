@@ -1365,7 +1365,8 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                         _payload_string(task.payload, "page_id"), task.tracker,
                         _payload_string(task.payload, "actor_id"),
                         tailor_after=task.payload.get("tailor_after") is True,
-                        background_preparation=task.payload.get("background_preparation") is True)
+                        background_preparation=task.payload.get("background_preparation") is True,
+                        expired_review_recheck=task.payload.get("expired_review_recheck") is True)
                 elif task.kind == QueuedTaskKind.PACKAGE_ENRICH:
                     outcome = build_application_service(settings).refresh_details(
                         _payload_string(task.payload, "page_id"), task.tracker,
