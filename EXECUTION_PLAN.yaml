@@ -28,6 +28,8 @@ tasks:
     evidence:
       - path: tests/test_browser_queue_health.py
         result: A stale browser inspection is unhealthy until the matching lane claims it.
+      - path: tests/test_employer_forms.py
+        result: Isolated Chromium preserves exact approval on Lever attachment display changes, but not on privacy-link or form-destination changes.
   - id: P15
     track: personal
     title: Verify employer-first routes and inspect real forms before review

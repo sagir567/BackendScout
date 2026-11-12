@@ -785,6 +785,10 @@ field IDs to approved facts only; it cannot invent answers, upload files, accept
 terms, choose a new recipient, or authorize submission. Marketing stays off.
 Missing pricing disables paid fallback while known forms remain usable.
 
+On supported Lever forms, displaying the verified attachment filename does
+not invalidate an approval. Changes to the reviewed questions, consent links
+or form destination still stop delivery.
+
 After the one submit action, the engine waits up to 90 seconds for a new visible
 receipt and saves a viewport proof plus a full-page screenshot. An uncertain
 result is locked as `submission_unknown`; it is never automatically resubmitted.

@@ -431,7 +431,7 @@ class HybridPortalAdapter:
             if requires_additional_attachment(view):
                 return result("needs_input", "additional_attachment_required",
                               "The employer now requires an additional file. No application was sent.")
-            if expected_schema != form_review_signature(view):
+            if expected_schema != form_review_signature(view, attached_filename=cv_path.name):
                 return result("needs_input", "form_review_changed", "Questions changed after upload; inspect and review them before submitting.")
             _, pending = prepare_reviewed_fields(view, package_for_audit, fill=False)
             if pending:

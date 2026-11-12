@@ -1547,3 +1547,12 @@ live job-alert compatibility is still pending rather than claimed as verified.
 The read-only UI scan found four new QA leads; existing SQLite/Notion services
 stored them and Telegram acknowledged all four digest messages. No CV upload,
 employer contact, premium activation or application submission occurred.
+
+### Lever Attachment Review Regression
+
+Lever replaces the CV upload prompt with the attached filename in both the
+visible upload link and its enclosing file-field label. The delivery guard
+recognizes only that display change on the known Lever widget after verifying
+the exact PDF checksum. Form destinations, consent links and question text
+still invalidate a review when they change. Reproduce the issue with a dummy
+PDF and synthetic browser routes before retrying any approved application.

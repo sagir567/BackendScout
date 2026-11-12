@@ -398,6 +398,46 @@ def reviewed_package(**answers):
     )
 
 
+def test_lever_attachment_display_does_not_invalidate_review(isolated_browser):
+    url = "https://jobs.eu.lever.co/example/123/apply"
+    context = isolated_browser.new_context(service_workers="block")
+    try:
+        page = context.new_page()
+        context.route("**/*", lambda route: route.fulfill(content_type="text/html", body="""
+            <form method="post">
+              <input type="email" name="email" required>
+              <label>Resume/CV <a href="#" class="visible-resume-upload"><span class="filename"
+                style="text-transform: uppercase"></span><span
+                class="default-label">ATTACH RESUME/CV</span><input id="resume-upload-input"
+                name="resume" type="file"></a></label>
+              <a id="privacy" href="/privacy">Privacy policy</a>
+              <button type="submit">Submit application</button>
+            </form>
+            <script>
+              document.querySelector('input[type=file]').onchange = ({target}) => {
+                target.parentElement.classList.add('has-file');
+                target.parentElement.querySelector('.filename').textContent = target.files[0].name;
+                target.parentElement.querySelector('.default-label').style.display = 'none';
+              };
+            </script>
+        """) if route.request.url == url and route.request.method == "GET" else route.abort())
+        page.goto(url)
+        upload = page.locator("input[type=file]")
+        view = forms.ApplicationFormView(page, page.main_frame, page.locator("form"), upload, url)
+        expected = forms.form_review_signature(view)
+        upload.set_input_files({"name": "Example CV.pdf", "mimeType": "application/pdf", "buffer": b"PDF"})
+        assert forms.form_review_signature(view) != expected
+        assert forms.form_review_signature(view, attached_filename="Example CV.pdf") == expected
+        assert forms.form_review_signature(view, attached_filename="Other.pdf") != expected
+        page.locator("#privacy").evaluate("link => link.href = '/new-privacy'")
+        assert forms.form_review_signature(view, attached_filename="Example CV.pdf") != expected
+        page.locator("#privacy").evaluate("link => link.href = '/privacy'")
+        page.locator("form").evaluate("form => form.action = '/different-role'")
+        assert forms.form_review_signature(view, attached_filename="Example CV.pdf") != expected
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("name", ["raft", "ibi", "skyhawk", "richkid", "comeet-form"])
 def test_browser_fixture_selection_and_no_submission(browser_fixture, name):
     page, load, _ = browser_fixture

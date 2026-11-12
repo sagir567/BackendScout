@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from playwright.sync_api import Error as PlaywrightError
 
@@ -103,7 +104,7 @@ def lever_choice_groups(captured):
     return {key for key, fields in groups.items() if len(fields) > 1}
 
 
-def form_review_signature(view):
+def form_review_signature(view, *, attached_filename=None):
     """Bind question meaning and consent links, excluding changing field values."""
     captured = capture_guided_form(view)
     fields = []
@@ -115,6 +116,30 @@ def form_review_signature(view):
             "options": field.options, "sensitive": field.sensitive,
         })
     links = view.locator("a[href]").evaluate_all("els=>els.map(e=>({text:e.innerText,url:e.href}))")
+    if attached_filename and re.fullmatch(r"jobs(?:\.eu)?\.lever\.co", urlsplit(view.url).hostname or ""):
+        display = view.file_control.evaluate("""(cv, {links, filename}) => {
+            const link = cv.parentElement;
+            if (!link?.matches('a.visible-resume-upload.has-file[href="#"]') ||
+                !cv.matches('input#resume-upload-input[name="resume"][type="file"]') ||
+                cv.files?.length !== 1 || cv.files[0].name !== filename) return null;
+            const label = link.querySelector(':scope > .default-label');
+            const shown = link.querySelector(':scope > .filename');
+            const escaped = document.createElement('span');
+            escaped.textContent = filename;
+            if (label?.textContent !== 'ATTACH RESUME/CV' || shown?.textContent !== escaped.innerHTML ||
+                link.innerText.trim() !== shown.innerText.trim()) return null;
+            const index = [...(cv.form?.querySelectorAll('a[href]') || [])].indexOf(link);
+            if (links[index]?.url === link.href && links[index]?.text === link.innerText) {
+                return {index, before: label.textContent, after: link.innerText};
+            }
+            return null;
+        }""", {"links": links, "filename": attached_filename})
+        if display:
+            links[display["index"]]["text"] = display["before"]
+            suffix = " " + " ".join(display["after"].split())
+            for field in fields:
+                if field["key"] == "resume" and field["kind"] == "file" and field["label"].endswith(suffix):
+                    field["label"] = field["label"].removesuffix(suffix) + " " + display["before"]
     form = view.file_control.evaluate("""el => {
         const f=el.form;
         return f ? {action:f.action,method:f.method,target:f.target,enctype:f.enctype,
