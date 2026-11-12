@@ -406,10 +406,12 @@ def test_lever_attachment_display_does_not_invalidate_review(isolated_browser):
         context.route("**/*", lambda route: route.fulfill(content_type="text/html", body="""
             <form method="post">
               <input type="email" name="email" required>
-              <label>Resume/CV <a href="#" class="visible-resume-upload"><span class="filename"
+              <label>Resume/CV <span><a href="#" class="visible-resume-upload"><span class="filename"
                 style="text-transform: uppercase"></span><span
                 class="default-label">ATTACH RESUME/CV</span><input id="resume-upload-input"
-                name="resume" type="file"></a></label>
+                name="resume" type="file"></a>
+                <span class="resume-upload-working" hidden>Analyzing resume...</span>
+              </span></label>
               <a id="privacy" href="/privacy">Privacy policy</a>
               <button type="submit">Submit application</button>
             </form>
@@ -418,6 +420,7 @@ def test_lever_attachment_display_does_not_invalidate_review(isolated_browser):
                 target.parentElement.classList.add('has-file');
                 target.parentElement.querySelector('.filename').textContent = target.files[0].name;
                 target.parentElement.querySelector('.default-label').style.display = 'none';
+                document.querySelector('.resume-upload-working').hidden = false;
               };
             </script>
         """) if route.request.url == url and route.request.method == "GET" else route.abort())
@@ -428,6 +431,10 @@ def test_lever_attachment_display_does_not_invalidate_review(isolated_browser):
         upload.set_input_files({"name": "Example CV.pdf", "mimeType": "application/pdf", "buffer": b"PDF"})
         assert forms.form_review_signature(view) != expected
         assert forms.form_review_signature(view, attached_filename="Example CV.pdf") == expected
+        status = page.locator(".resume-upload-working")
+        status.evaluate("el => el.textContent = 'New consent required'")
+        assert forms.form_review_signature(view, attached_filename="Example CV.pdf") != expected
+        status.evaluate("el => el.textContent = 'Analyzing resume...'")
         assert forms.form_review_signature(view, attached_filename="Other.pdf") != expected
         page.locator("#privacy").evaluate("link => link.href = '/new-privacy'")
         assert forms.form_review_signature(view, attached_filename="Example CV.pdf") != expected

@@ -130,13 +130,22 @@ def form_review_signature(view, *, attached_filename=None):
                 link.innerText.trim() !== shown.innerText.trim()) return null;
             const index = [...(cv.form?.querySelectorAll('a[href]') || [])].indexOf(link);
             if (links[index]?.url === link.href && links[index]?.text === link.innerText) {
-                return {index, before: label.textContent, after: link.innerText};
+                const fieldLabel = cv.labels?.length === 1 ? cv.labels[0] : null;
+                const fieldWrapper = link.parentElement;
+                const status = fieldLabel?.contains(fieldWrapper)
+                    ? [...fieldWrapper.children].filter(el =>
+                        el.matches('.resume-upload-working,.resume-upload-failure,.resume-upload-success')
+                        && el.getClientRects().length > 0).map(el => el.innerText.trim())
+                    : [];
+                const known = ['Analyzing resume...', "Couldn't auto-read resume.", 'Success!'];
+                return {index, before: label.textContent, after: link.innerText,
+                    status: status.length === 1 && known.includes(status[0]) ? status[0] : ''};
             }
             return null;
         }""", {"links": links, "filename": attached_filename})
         if display:
             links[display["index"]]["text"] = display["before"]
-            suffix = " " + " ".join(display["after"].split())
+            suffix = " " + " ".join(f'{display["after"]} {display["status"]}'.split())
             for field in fields:
                 if field["key"] == "resume" and field["kind"] == "file" and field["label"].endswith(suffix):
                     field["label"] = field["label"].removesuffix(suffix) + " " + display["before"]

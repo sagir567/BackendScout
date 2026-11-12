@@ -1556,6 +1556,8 @@ recognizes only that display change on the known Lever widget after verifying
 the exact PDF checksum. Form destinations, consent links and question text
 still invalidate a review when they change. Reproduce the issue with a dummy
 PDF and synthetic browser routes before retrying any approved application.
+Lever also updates the file field with a short parsing status. Match only the
+known text of the specific upload widget, never arbitrary status or consent text.
 
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
