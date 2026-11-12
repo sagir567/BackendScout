@@ -312,23 +312,10 @@ class HybridPortalAdapter:
         try:
             if self.settings.portal_delivery_mode != "hybrid":
                 return result("needs_input", "feature_disabled", "Hybrid delivery is disabled.")
-            if package.tracker == TrackerName.PRODUCTION:
-                canaries = {s.strip() for s in self.settings.portal_canary_application_ids.split(",") if s.strip()}
-                # Enabling general production requires three distinct, successful reviewed canaries.
-                completed = []
-                for identifier in canaries:
-                    prior = self.store.latest_delivery(identifier, package.tracker)
-                    if not prior or prior["state"] != "submitted":
-                        continue
-                    with suppress(ValueError, OSError):
-                        receipt = json.loads(prior["receipt"])
-                        if receipt.get("engine") == "employer-hybrid":
-                            self.store.verified_artifact(prior["proof_path"], prior["proof_sha256"])
-                            completed.append(identifier)
-                if (self.settings.portal_hybrid_rollout == "test"
-                    or self.settings.portal_hybrid_rollout == "canary" and package.application_id not in canaries
-                    or self.settings.portal_hybrid_rollout == "enabled" and len(completed) < 3):
-                    return result("needs_input", "rollout_gate", "Production hybrid delivery awaits approved canary rollout.")
+            from backend_scout.portal_rollout import hybrid_delivery_allowed
+
+            if not hybrid_delivery_allowed(self.settings, self.store, package.application_id, package.tracker):
+                return result("needs_input", "rollout_gate", "Production hybrid delivery awaits approved canary rollout.")
             current = self.store.get_current(package.application_id, package.tracker)
             attempt = self.store.latest_delivery(package.application_id, package.tracker)
             if (current.package.fingerprint() != package.fingerprint()

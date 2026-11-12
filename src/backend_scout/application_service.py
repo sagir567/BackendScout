@@ -33,6 +33,7 @@ from backend_scout.delivery_readiness import (
 )
 from backend_scout.guided_submission import build_guided_candidate_facts
 from backend_scout.models import Job
+from backend_scout.portal_rollout import hybrid_delivery_allowed
 from backend_scout.runtime_health import workflow_health
 from backend_scout.task_queue import (
     QueuedTaskKind,
@@ -508,7 +509,8 @@ class ApplicationService:
             elif (self.settings.web_allow_delivery and route and not code
                   and row["status"] in {"discovered", "shortlisted", "review_ready"}
                   and not self.store.form_check_pending(row["application_id"], tracker)
-                  and readiness.state == "supported_after_approval"):
+                  and readiness.state == "supported_after_approval"
+                  and hybrid_delivery_allowed(self.settings, self.store, row["application_id"], tracker)):
                 bucket = "ready"
             elif (has_cv and self._manual_route(job, route_record, inspection)
                   and row["status"] in {"discovered", "shortlisted", "review_ready", "needs_input"}
@@ -1245,6 +1247,10 @@ class ApplicationService:
 
     def approve_and_queue(self, application_id, tracker, actor_id, fingerprint):
         self._authorize(actor_id)
+        if (self.settings.web_ready_to_apply and self._hybrid
+                and not hybrid_delivery_allowed(self.settings, self.store, application_id, tracker)):
+            return self._outcome(application_id, "rollout_gate",
+                                 "Production hybrid delivery awaits approved canary rollout.", status="blocked")
         if blocked := self._hybrid_blocked_outcome(application_id, tracker):
             return blocked
         if blocked := self._posting_blocked_outcome(application_id, tracker):

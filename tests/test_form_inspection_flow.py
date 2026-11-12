@@ -225,6 +225,20 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     assert service.approve_and_queue("example-job", T, "12345", "not-approved").status == "blocked"
 
 
+def test_production_review_does_not_record_approval_outside_rollout(hybrid):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    service.settings.portal_hybrid_rollout = "canary"
+    service.settings.portal_canary_application_ids = "other-job"
+    tracker = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    service.store.import_snapshot("example-job", tracker, job, "found")
+    result = service.approve_and_queue("example-job", tracker, "12345", "not-a-fingerprint")
+    assert result.reason_code == "rollout_gate"
+    assert service.store.get_application("example-job", tracker).current_fingerprint is None
+    assert not list_tasks(service.store.database_path)
+
+
 def test_hybrid_required_questions_block_until_confirmed_without_being_erased(hybrid):
     service, result, _ = hybrid
     result["questions"] = [{"key": "work_authorization", "label": "Work authorization?",
