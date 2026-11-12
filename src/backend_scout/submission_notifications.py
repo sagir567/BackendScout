@@ -329,7 +329,8 @@ def _notification_content(store: "ApplicationStore", claim: _Claim) -> tuple[byt
     if any(any(ord(char) < 32 or ord(char) == 127 for char in label) for label in labels):
         raise _Rejected("notification_caption_invalid")
     caption = (
-        f"Submission confirmed\nCompany: {package.company}\nRole: {package.role}\n"
+        f"{'Test submission confirmation' if claim.tracker == TrackerName.TEST else 'Submission confirmed'}\n"
+        f"Company: {package.company}\nRole: {package.role}\n"
         f"Exact CV: {package.cv_version}\nPDF SHA-256: {package.cv_sha256}\n"
         f"Package: {claim.fingerprint}\nTracker: {claim.tracker.value}"
     )

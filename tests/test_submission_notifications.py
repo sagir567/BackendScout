@@ -236,6 +236,7 @@ def test_success_records_ack_before_cleanup_and_only_notifies(fixture, monkeypat
     assert counts == notifications.NotificationDispatchCounts(claimed=1, acknowledged=1)
     row = rows(fixture)[0]
     assert (row["status"], row["message_id"], row["chat_id"]) == ("acknowledged", 71, 12345)
+    assert fixture.client.photos[0][2].startswith("Test submission confirmation\n")
     assert row["acknowledged_at"] == fixture.clock.now.isoformat()
     assert row["claim_token"] is row["lease_until"] is row["next_attempt_at"] is None
     chat_id, proof, caption, snapshot = fixture.client.photos[0]

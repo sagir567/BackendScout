@@ -1584,3 +1584,8 @@ An unchanged successful preflight can leave an already approved package back
 in review. Show an explicit resume action for that exact fingerprint. Do not
 queue work during inspection, require a new review if the package changed, and
 never resume a sending, confirmed, or uncertain attempt.
+
+For live notification acceptance, create a plainly synthetic receipt on an
+isolated test database and dispatch only its photo to the configured private
+owner chat. Verify the Telegram acknowledgement and that a second dispatch
+does not claim the record. This does not exercise a real employer submission.
