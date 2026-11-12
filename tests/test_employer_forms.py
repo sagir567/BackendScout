@@ -451,6 +451,19 @@ def test_browser_lever_checkbox_group_sets_only_exact_reviewed_choice(browser_fi
     assert page.evaluate("window.sent") == 0
 
 
+def test_browser_recognizes_required_second_attachment_without_upload(browser_fixture):
+    page, load, _ = browser_fixture
+    route = load("raft")
+    view = forms.find_application_form(page, route)
+    assert not forms.requires_additional_attachment(view)
+    view.file_control.evaluate("""el => el.closest('form').insertAdjacentHTML('beforeend',
+      '<label>Grade sheet<input type="file" name="grade_sheet" required></label>')""")
+    view = forms.find_application_form(page, route)
+    assert view is not None
+    assert forms.requires_additional_attachment(view)
+    assert page.evaluate("window.sent") == 0
+
+
 def test_browser_city_not_country_and_marketing_stays_off(browser_fixture):
     page, load, _ = browser_fixture
     view = forms.find_application_form(page, load("ibi"))

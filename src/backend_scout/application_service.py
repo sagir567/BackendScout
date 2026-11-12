@@ -175,7 +175,9 @@ class ApplicationService:
                 and route.application_url.startswith("https://")
                 and inspection.get("status") == "unavailable"
                 and inspection.get("job_application_url") == route.application_url
-                and inspection.get("reason_code") in {"browser_form_unidentified", "form_schema_unverified"}
+                and inspection.get("reason_code") in {
+                    "browser_form_unidentified", "form_schema_unverified", "additional_attachment_required",
+                }
                 and timedelta(0) <= datetime.now(UTC) - datetime.fromisoformat(route.checked_at)
                 <= timedelta(hours=24)):
             return route
@@ -793,7 +795,7 @@ class ApplicationService:
                 "message": result.get("message") or route.message,
                 "form_identified": form_identified,
             }
-            if route_passed and not passed:
+            if route_passed and not passed and observation["reason_code"] != "additional_attachment_required":
                 observation["reason_code"] = "form_schema_unverified" if form_identified else "browser_form_unidentified"
                 observation["message"] = (
                     "Browser preflight must record a valid form schema checksum before approval."

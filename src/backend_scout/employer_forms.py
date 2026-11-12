@@ -12,7 +12,7 @@ from backend_scout.package_portal import _identifier, _normal
 from backend_scout.submission import capture_guided_form
 
 RESUME = re.compile(r"\b(cv|resume|curriculum vitae)\b|קורות\s*חיים", re.IGNORECASE)
-OTHER_FILE = re.compile(r"cover|portfolio|transcript|מכתב|גיליון", re.IGNORECASE)
+OTHER_FILE = re.compile(r"cover|portfolio|transcript|grade\s*sheet|מכתב|גיליון", re.IGNORECASE)
 MARKETING = re.compile(
     r"marketing|newsletter|promotional|future opportunit|extended time|"
     r"שיווק|דיוור|עדכונים.*הטבות|משרות.*עתיד", re.IGNORECASE
@@ -157,6 +157,15 @@ def find_application_form(page, route):
                 continue
             candidates.append(ApplicationFormView(page, scope, container, upload, scope.url))
     return candidates[0] if len(candidates) == 1 else None
+
+
+def requires_additional_attachment(view):
+    """A CV-only package cannot satisfy a distinct required file field."""
+    return bool(view.file_control.evaluate("""cv => {
+        const scope = cv.closest('form') || cv.closest('fieldset');
+        return [...(scope?.querySelectorAll('input[type="file"]:not(:disabled)') || [])]
+          .some(el => el !== cv && (el.required || el.getAttribute('aria-required') === 'true'));
+    }"""))
 
 
 def _checked(control, desired, action):

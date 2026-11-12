@@ -36,6 +36,7 @@ from backend_scout.employer_forms import (
     proposed_notes,
     question,
     question_key,
+    requires_additional_attachment,
     unique_submit,
 )
 from backend_scout.guided_submission import (
@@ -166,6 +167,10 @@ class HybridPortalAdapter:
                                               verified_employer_hosts=hosts)
             view = (find_application_form(session.page, route)
                     if route.status == "verified" and route.reason_code != "greenhouse_embed_manual" else None)
+            if view and requires_additional_attachment(view):
+                return {"route": route.model_dump(mode="json"), "questions": [], "proposed_answers": {},
+                        "form_identified": False, "reason_code": "additional_attachment_required",
+                        "message": "The employer requires an additional file; apply on the official page."}
             questions, proposals, fields = [], {}, []
             if view:
                 from backend_scout.cv_service import load_career_evidence
@@ -372,6 +377,9 @@ class HybridPortalAdapter:
                 return result("needs_input", "form_review_changed", "The questions or consent links changed; inspect and review the updated package.")
             policy["stage"] = "fill"
             observe("filling", destination=route.application_url)
+            if requires_additional_attachment(view):
+                return result("needs_input", "additional_attachment_required",
+                              "The employer requires an additional file. No application was sent.")
             captured, pending = prepare_reviewed_fields(view, package, fill=True, action=action)
             for _ in range(2):
                 # Re-observe each cycle. A planner cannot approve new text or choices.
@@ -420,6 +428,9 @@ class HybridPortalAdapter:
             view = find_application_form(page, route)
             if not view or view.file_control.evaluate(_FILE_HASHES) != [package.cv_sha256]:
                 return result("needs_input", "cv_attachment", "The exact approved PDF was not retained by the form.")
+            if requires_additional_attachment(view):
+                return result("needs_input", "additional_attachment_required",
+                              "The employer now requires an additional file. No application was sent.")
             if expected_schema != form_review_signature(view):
                 return result("needs_input", "form_review_changed", "Questions changed after upload; inspect and review them before submitting.")
             _, pending = prepare_reviewed_fields(view, package_for_audit, fill=False)

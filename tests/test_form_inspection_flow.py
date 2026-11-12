@@ -207,7 +207,8 @@ def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hyb
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
 
 
-def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybrid):
+@pytest.mark.parametrize("reason", ["browser_form_unidentified", "additional_attachment_required"])
+def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybrid, reason):
     service, result, _ = hybrid
     service.settings.web_ready_to_apply = True
     pdf = service.cv_artifact("example-job", T)
@@ -215,6 +216,8 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     pdf.unlink()
     service.drafter = lambda *_: pdf.write_bytes(content)
     result.update(form_identified=False, proposed_answers={})
+    if reason == "additional_attachment_required":
+        result["reason_code"] = reason
     assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
     assert service.draft("example-job", T).reason_code == "cv_ready_route_pending"
