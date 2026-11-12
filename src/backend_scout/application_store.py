@@ -637,7 +637,7 @@ class ApplicationStore:
             app = self._application(db, application_id, tracker)
             current = self._current(db, app, fingerprint)
             if (
-                app["status"] not in {"approved", "needs_input", "blocked"}
+                app["status"] not in {"approved", "needs_input", "blocked", "review_ready"}
                 or not db.execute(
                     "SELECT 1 FROM application_approvals WHERE package_id=?", (current["id"],)
                 ).fetchone()

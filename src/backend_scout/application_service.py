@@ -687,14 +687,18 @@ class ApplicationService:
             tracker=tracker,
             inspection=self.store.latest_form_inspection(application_id, tracker) if self._hybrid else None,
             ).model_dump(mode="json")
+        attempt = self.store.latest_delivery(application_id, tracker)
         can_resume = bool(
             preview
             and preview["approved"]
             and not blocker
-            and item["status"] in {"approved", "needs_input", "blocked"}
+            and self.settings.web_allow_delivery
+            and item["status"] in {"approved", "needs_input", "blocked", "review_ready"}
+            and (attempt is None or attempt["state"] == "not_sent")
+            and (not self.settings.web_ready_to_apply or not self._hybrid
+                 or hybrid_delivery_allowed(self.settings, self.store, application_id, tracker))
         )
         submission = None
-        attempt = self.store.latest_delivery(application_id, tracker)
         if attempt and attempt["state"] == "submitted":
             try:
                 self.submission_proof(application_id, tracker)
@@ -1343,6 +1347,10 @@ class ApplicationService:
 
     def queue_delivery(self, application_id, tracker, actor_id, fingerprint):
         self._authorize(actor_id)
+        if (self.settings.web_ready_to_apply and self._hybrid
+                and not hybrid_delivery_allowed(self.settings, self.store, application_id, tracker)):
+            return self._outcome(application_id, "rollout_gate",
+                                 "Production hybrid delivery awaits approved canary rollout.", status="blocked")
         if blocked := self._hybrid_blocked_outcome(application_id, tracker):
             return blocked
         if blocked := self._posting_blocked_outcome(application_id, tracker):

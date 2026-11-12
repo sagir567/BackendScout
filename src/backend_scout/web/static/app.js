@@ -805,11 +805,12 @@ function renderDetail() {
   const streamlined = state.overview?.ready_to_apply === true;
   const manual = streamlined && item.workspace_bucket === 'manual';
   const ready = streamlined && item.workspace_bucket === 'ready';
+  const reviewed = detail.package?.approved === true;
   root.innerHTML = `<div class="detail-inner">${back}
     <header class="detail-heading"><p class="detail-company">${missing(item.company, 'Company not listed')}</p><h2 id="detail-title" class="detail-title" tabindex="-1">${missing(item.title, 'Role not listed')}</h2><p class="detail-location">${missing(item.location, 'Location not listed')}</p><div class="detail-status">${stageBadge(item)}${scoreMarkup(item)}</div></header>
     <dl class="facts-grid"><div><dt>Required experience</dt><dd>${missing(experience(item))}</dd></div><div><dt>Work mode</dt><dd>${missing(workMode(item))}</dd></div><div><dt>Salary</dt><dd>${missing(salary(item))}</dd></div><div><dt>Added</dt><dd>${escapeHTML(dateText(item.created_at))}</dd></div></dl>
     ${manual ? `<section class="workflow-section"><h2>Manual application</h2><p>${missing(detail.form_inspection?.message, 'The employer form is not supported for automatic submission.')}</p><div class="link-row">${externalLink(item.cv_url, 'View CV', { localOnly: true })}${official}</div></section>` : ''}
-    ${ready ? `<section class="workflow-section"><div class="primary-actions">${actionButton('approve', 'Apply with this CV', guards.approve, 'button-primary', 'Approving...')}<button id="request-changes" class="button" type="button">Request CV changes</button></div>${revisionMarkup(detail, guards)}</section>` : ''}
+    ${ready ? `<section class="workflow-section"><div class="primary-actions">${reviewed ? actionButton('deliver', 'Resume delivery', guards.deliver, 'button-primary', 'Resuming...') : actionButton('approve', 'Apply with this CV', guards.approve, 'button-primary', 'Approving...')}<button id="request-changes" class="button" type="button">Request CV changes</button></div>${revisionMarkup(detail, guards)}</section>` : ''}
     ${!streamlined ? workflowMarkup(detail, guards) + deliveryReadinessMarkup(detail, guards) + answersMarkup(detail, guards) : ''}
     ${!streamlined || ready ? packageMarkup(detail, guards) : ''}
     <section class="detail-section" aria-labelledby="job-facts-heading"><div class="section-heading"><h2 id="job-facts-heading">Role &amp; fit</h2></div><p class="prose">${missing(item.match_reason, 'Match reason not provided.')}</p>

@@ -414,6 +414,28 @@ def test_hybrid_unchanged_or_timestamp_only_preflight_preserves_exact_approval(h
     assert service.detail("example-job", T)["item"]["delivery_readiness"]["state"] == "supported_after_approval"
 
 
+def test_unchanged_recheck_of_a_not_sent_attempt_can_resume_exact_package(hybrid):
+    service, _, _ = hybrid
+    aid = "example-job"
+    service.inspect_form(aid, T, "12345")
+    package = service.preview_package(aid, T)[0]
+    fingerprint = package.fingerprint()
+    queued = service.approve_and_queue(aid, T, "12345", fingerprint)
+    attempt = service.store.begin_attempt(aid, T, fingerprint, "fixture-first-attempt")
+    service.store.finish_attempt(attempt.attempt_id, "not_sent", "Stopped before submit.")
+    mark_task_status(queued.task_id, QueuedTaskStatus.BLOCKED, path=service.store.database_path)
+    service.store.set_state(aid, T, "needs_input", code="form_review_changed")
+    assert service.inspect_form(aid, T, "12345").status == "succeeded"
+    detail = service.detail(aid, T)
+    assert detail["item"]["status"] == "review_ready"
+    assert detail["can_resume"] and detail["package"]["fingerprint"] == fingerprint
+    assert service.store.attempt_count(aid, T) == 1
+    with pytest.raises(ApplicationConflict):
+        service.queue_delivery(aid, T, "12345", "0" * 64)
+    outcome = service.queue_delivery(aid, T, "12345", fingerprint)
+    assert outcome.reason_code == "queued" and outcome.task_id != queued.task_id
+
+
 def test_route_alone_and_unidentified_form_do_not_claim_browser_readiness(hybrid):
     service, result, _ = hybrid
     service.inspect_form("example-job", T, "12345")

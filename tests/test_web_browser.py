@@ -298,6 +298,15 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             assert len(queued) == 1
             assert queued[0].payload["fingerprint"] == fingerprint
             assert service.store.package_approved("example-job", tracker, fingerprint)
+            attempt = service.store.begin_attempt("example-job", tracker, fingerprint, "fixture-attempt")
+            service.store.finish_attempt(attempt.attempt_id, "not_sent", "Stopped before submit.")
+            mark_task_status(queued[0].task_id, QueuedTaskStatus.BLOCKED,
+                             path=settings.workflow_database_path)
+            service.store.set_state("example-job", tracker, "needs_input", code="form_review_changed")
+            assert service.inspect_form("example-job", tracker, "12345").status == "succeeded"
+            page.locator("#refresh-button").click()
+            expect(page.get_by_role("button", name="Resume delivery", exact=True)).to_be_enabled()
+            expect(page.get_by_role("button", name="Apply with this CV", exact=True)).to_have_count(0)
             assert not streamlined_errors
             context.close()
             browser.close()

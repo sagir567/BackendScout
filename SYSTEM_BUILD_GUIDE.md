@@ -1579,3 +1579,8 @@ The setup command uses the same parser as the collector and only saves the
 credential after validating the result envelope. An empty search proves access
 but does not exercise record mapping; require a nonempty live result before
 claiming end-to-end compatibility.
+
+An unchanged successful preflight can leave an already approved package back
+in review. Show an explicit resume action for that exact fingerprint. Do not
+queue work during inspection, require a new review if the package changed, and
+never resume a sending, confirmed, or uncertain attempt.
