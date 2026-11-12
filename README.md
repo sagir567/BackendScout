@@ -7,6 +7,8 @@ worker process is still loaded.
 The experimental `WEB_READY_TO_APPLY` flag defaults to off. It separates
 ready-to-approve, manual, and historical applications from internal preparation.
 The Job Space credential probe is `backend-scout collect job-space-connect`.
+It checks that the collector can read the response before saving the key in the
+OS keyring. A successful probe with zero results does not validate job fields.
 It saves a validated key in the OS keyring; scheduled Job Space ingestion is
 not enabled by that command. `JOB_SPACE_COLLECTION_ENABLED` defaults to off;
 enable only after confirming the live API response matches the collector.

@@ -1,6 +1,9 @@
 import httpx
 import pytest
+from typer.testing import CliRunner
 
+from backend_scout import job_space
+from backend_scout.cli import app
 from backend_scout.job_space import (
     JobSpaceError,
     fetch_job_space_jobs,
@@ -55,3 +58,18 @@ def test_discovery_preserves_listing_and_employer_urls_separately():
 def test_unknown_discovery_schema_fails_closed():
     with pytest.raises(JobSpaceError, match="unrecognized"):
         parse_job_space_jobs({"unknown": []})
+
+
+@pytest.mark.parametrize(("payload", "exit_code"), [
+    ({"unknown": []}, 1),
+    ({"jobs": [{"title": "Job without a verified candidate URL"}]}, 1),
+    ({"jobs": []}, 0),
+])
+def test_connect_validates_collector_contract_before_saving(monkeypatch, payload, exit_code):
+    saved = []
+    monkeypatch.setattr(job_space, "fetch_job_space_jobs", lambda *args, **kwargs: payload)
+    monkeypatch.setattr(job_space, "JOB_SPACE_CREDENTIAL", type("Store", (), {"save": saved.append}))
+    result = CliRunner().invoke(app, ["collect", "job-space-connect"], input="fixture-credential\n")
+    assert result.exit_code == exit_code, result.output
+    assert saved == ([] if exit_code else ["fixture-credential"])
+    assert "fixture-credential" not in result.output

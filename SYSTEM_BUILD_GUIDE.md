@@ -1573,3 +1573,9 @@ Run the same isolated workspace flow in WebKit with
 `uv run playwright install webkit` and
 `BACKENDSCOUT_BROWSER_SMOKE=1 BACKENDSCOUT_WEBKIT_SMOKE=1 uv run pytest tests/test_web_browser.py`.
 This supplements, but does not replace, the live Safari check over Tailscale.
+
+Before enabling Job Space, run `backend-scout collect job-space-connect`.
+The setup command uses the same parser as the collector and only saves the
+credential after validating the result envelope. An empty search proves access
+but does not exercise record mapping; require a nonempty live result before
+claiming end-to-end compatibility.

@@ -651,22 +651,30 @@ def collect_preferences_check(
 @collect_app.command("job-space-connect")
 def collect_job_space_connect() -> None:
     """Verify a Job Space key and save it locally in the OS keyring."""
+    from keyring.errors import KeyringError
+
     from backend_scout.job_space import (
         JOB_SPACE_CREDENTIAL,
         JobSpaceError,
         fetch_job_space_jobs,
         job_space_response_shape,
+        parse_job_space_jobs,
     )
 
     key = typer.prompt("Job Space personal API key", hide_input=True)
     try:
         with httpx.Client(timeout=12, trust_env=False) as client:
             payload = fetch_job_space_jobs(client, key, query="python")
+        jobs = parse_job_space_jobs(payload)
     except JobSpaceError as exc:
         console.print(str(exc))
         raise typer.Exit(1) from exc
-    JOB_SPACE_CREDENTIAL.save(key)
-    console.print_json(data=job_space_response_shape(payload))
+    try:
+        JOB_SPACE_CREDENTIAL.save(key)
+    except (KeyringError, OSError, RuntimeError) as exc:
+        console.print("Job Space credential could not be saved to the OS keyring.")
+        raise typer.Exit(1) from exc
+    console.print_json(data={**job_space_response_shape(payload), "recognized_jobs": len(jobs)})
 
 
 @collect_app.command("run")
