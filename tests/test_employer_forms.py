@@ -434,6 +434,23 @@ def test_browser_footer_and_custom_questions_remain_isolated(browser_fixture):
     assert page.evaluate("window.sent") == 0
 
 
+def test_browser_lever_checkbox_group_sets_only_exact_reviewed_choice(browser_fixture):
+    page, load, _ = browser_fixture
+    view = forms.find_application_form(page, load("raft"))
+    view.file_control.evaluate("""el => el.closest('form').insertAdjacentHTML('beforeend',
+      '<ul><li class="application-question custom-question"><div class="application-label">Professional Python experience?</div>'
+      + '<label><input type="checkbox" name="cards[example][field0]" checked>At least two years</label>'
+      + '<label><input type="checkbox" name="cards[example][field0]">Less than two years</label></li></ul>')""")
+    choices = page.locator('input[name="cards[example][field0]"]')
+    _, pending = forms.prepare_reviewed_fields(
+        view, reviewed_package(**{"cards[example][field0]": "Less than two years"}), fill=True,
+    )
+    assert not any(item["key"] == "cards[example][field0]" for item in pending)
+    assert not choices.nth(0).is_checked()
+    assert choices.nth(1).is_checked()
+    assert page.evaluate("window.sent") == 0
+
+
 def test_browser_city_not_country_and_marketing_stays_off(browser_fixture):
     page, load, _ = browser_fixture
     view = forms.find_application_form(page, load("ibi"))

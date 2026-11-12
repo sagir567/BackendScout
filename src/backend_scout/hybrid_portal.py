@@ -31,6 +31,7 @@ from backend_scout.config import TrackerName
 from backend_scout.employer_forms import (
     find_application_form,
     form_review_signature,
+    lever_choice_groups,
     prepare_reviewed_fields,
     proposed_notes,
     question,
@@ -172,13 +173,16 @@ class HybridPortalAdapter:
                 captured = capture_guided_form(view)
                 fields = [field.model_dump(mode="json") for field in captured.snapshot.fields]
                 radio_questions = {}
+                checkbox_groups = lever_choice_groups(captured)
                 for field in captured.snapshot.fields:
                     if field.kind.value != "file":
                         control = captured.controls[field.field_id]
                         item = question(field, control)
-                        if field.kind.value == "radio":
+                        if field.kind.value == "radio" or item["key"] in checkbox_groups:
                             group = radio_questions.setdefault(item["key"], item | {"options": []})
                             group["options"].append(field.label)
+                            group["required"] |= item["required"]
+                            group["sensitive"] |= item["sensitive"]
                         else:
                             questions.append(item)
                 questions.extend(radio_questions.values())

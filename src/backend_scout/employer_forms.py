@@ -91,6 +91,18 @@ def question(field, control):
     }
 
 
+def lever_choice_groups(captured):
+    """Recognize Lever cards whose repeated checkbox name represents one question."""
+    groups = {}
+    for field in captured.snapshot.fields:
+        if field.kind == GuidedControlKind.CHECKBOX:
+            control = captured.controls[field.field_id]
+            key = question_key(field, control)
+            if re.fullmatch(r"cards\[[A-Za-z0-9-]+\]\[field\d+\]", key):
+                groups.setdefault(key, []).append(field)
+    return {key for key, fields in groups.items() if len(fields) > 1}
+
+
 def form_review_signature(view):
     """Bind question meaning and consent links, excluding changing field values."""
     captured = capture_guided_form(view)
@@ -172,6 +184,7 @@ def _checked(control, desired, action):
 
 def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
     captured = capture_guided_form(view)
+    checkbox_groups = lever_choice_groups(captured)
     supplied = {_normal(answer.key): answer.value for answer in package.answers}
     identity = {answer.key: answer.value for answer in package.answers
                 if answer.key.startswith("identity.")}
@@ -181,7 +194,9 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
     for field in captured.snapshot.fields:
         if field.kind not in {GuidedControlKind.RADIO, GuidedControlKind.FILE}:
             control = captured.controls[field.field_id]
-            by_key.setdefault(question_key(field, control), []).append((field, control))
+            key = question_key(field, control)
+            if key not in checkbox_groups:
+                by_key.setdefault(key, []).append((field, control))
     duplicates = [pair for pairs in by_key.values() if len(pairs) > 1 for pair in pairs]
     if duplicates:
         return captured, [question(field, control) | {"key": "ambiguous:" + field.field_id}
@@ -203,7 +218,7 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
             matches = {IDENTITY[_identifier(k)] for k in keys if _identifier(k) in IDENTITY}
             if len(matches) == 1:
                 expected = identity.get("identity." + next(iter(matches)))
-        if field.kind == GuidedControlKind.RADIO:
+        if field.kind == GuidedControlKind.RADIO or question_key(field, control) in checkbox_groups:
             group = control.get_attribute("name") or question_key(field, control)
             radio_groups.setdefault(group, []).append((field, control, expected))
             continue
@@ -251,20 +266,27 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
             if current != expected:
                 pending.append(question(field, control))
     for choices in radio_groups.values():
+        prompt = question(choices[0][0], choices[0][1]) | {
+            "options": [field.label for field, _, _ in choices],
+            "required": any(field.required for field, _, _ in choices),
+        }
         values = {expected for _, _, expected in choices if expected is not None}
         if len(values) != 1:
             if any(f.required or f.current_value_present for f, _, _ in choices):
-                pending.append(question(choices[0][0], choices[0][1]))
+                pending.append(prompt)
             continue
         expected = next(iter(values))
         targets = [c for f, c, _ in choices if expected in {f.label, c.get_attribute("value")}]
         if len(targets) != 1:
-            pending.append(question(choices[0][0], choices[0][1]))
+            pending.append(prompt)
             continue
         if fill:
+            for field, control, _ in choices:
+                if field.kind == GuidedControlKind.CHECKBOX and control is not targets[0] and control.is_checked():
+                    _checked(control, False, action)
             _checked(targets[0], True, action)
-        if not targets[0].is_checked():
-            pending.append(question(choices[0][0], choices[0][1]))
+        if not targets[0].is_checked() or any(c is not targets[0] and c.is_checked() for _, c, _ in choices):
+            pending.append(prompt)
     # A rerender may introduce new required controls after the captured snapshot.
     if not pending:
         invalid = view.locator('input:invalid:not([type="file"]),textarea:invalid,select:invalid')
