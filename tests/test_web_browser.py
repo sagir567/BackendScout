@@ -235,11 +235,14 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             assert service.inspect_form("example-job", tracker, "12345").status == "succeeded"
             context = browser.new_context(viewport={"width": 390, "height": 844})
             page = context.new_page()
-            page.add_init_script("""() => {
+            page.add_init_script("""(() => {
                 const interval = window.setInterval.bind(window);
-                window.setInterval = (fn, delay, ...args) =>
-                    delay === 2500 ? 0 : interval(fn, delay, ...args);
-            }""")
+                window.setInterval = (fn, delay, ...args) => {
+                    if (delay !== 2500) return interval(fn, delay, ...args);
+                    window.resumeFixturePolling = () => interval(fn, delay, ...args);
+                    return 0;
+                };
+            })()""")
             page.goto(origin + "?application=example-job")
             page.get_by_label("Pairing code", exact=True).fill(sessions.issue_pairing_code("12345"))
             page.get_by_role("button", name="Pair browser", exact=True).click()
@@ -256,6 +259,16 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             }""")
             expect(check_form).to_be_enabled()
             expect(page.get_by_role("link", name="View CV", exact=True)).to_be_visible()
+            page.evaluate("delete document.hidden")
+            check_form.click()
+            expect(page.get_by_role("button", name="Checking form...", exact=True)).to_be_disabled()
+            pending = [task for task in list_tasks(settings.workflow_database_path)
+                       if task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT
+                       and task.status == QueuedTaskStatus.QUEUED]
+            assert len(pending) == 1
+            mark_task_status(pending[0].task_id, QueuedTaskStatus.DONE, path=settings.workflow_database_path)
+            page.evaluate("window.resumeFixturePolling()")
+            expect(check_form).to_be_enabled(timeout=10_000)
 
             settings.web_ready_to_apply = True
             service.store.import_snapshot("unverified-job", tracker, job, "found")
