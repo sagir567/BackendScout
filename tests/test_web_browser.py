@@ -241,7 +241,10 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
                      if task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT]
             assert len(tasks) == 1
             mark_task_status(tasks[0].task_id, QueuedTaskStatus.DONE, path=settings.workflow_database_path)
-            page.evaluate("window.dispatchEvent(new Event('focus'))")
+            page.evaluate("""() => {
+                Object.defineProperty(document, 'hidden', {value: true, configurable: true});
+                window.dispatchEvent(new Event('focus'));
+            }""")
             expect(check_form).to_be_enabled()
             expect(page.get_by_role("link", name="View CV", exact=True)).to_be_visible()
 

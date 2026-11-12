@@ -1139,14 +1139,17 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
 
 function refreshPendingWork() {
-  if (document.hidden || !state.session || state.mutation || state.refreshing || state.overviewLoading || state.detailLoading) return;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (!state.session || state.mutation || state.refreshing || state.overviewLoading || state.detailLoading) return;
+  if (document.activeElement?.matches('#detail-pane input, #detail-pane textarea, #detail-pane select')) return;
+  // Finish watching a selected task even when its tab is in the background.
+  // Inactive queues still skip overview polling.
+  if (document.hidden && !state.selectedId) return;
   const pending = state.selectedId
     ? activeDeliveryStages.has(normalizedStage(state.detail?.item)) || state.queued.has(state.selectedId) || state.detail?.form_check_pending
     : items().some((item) => activeDeliveryStages.has(normalizedStage(item)));
   if (pending && state.selectedId) void loadDetail({ quiet: true });
   else if (pending) void loadOverview({ quiet: true });
-  else if (state.overview?.ready_to_apply && Date.now() - lastQuietOverview >= 30000) {
+  else if (!document.hidden && state.overview?.ready_to_apply && Date.now() - lastQuietOverview >= 30000) {
     lastQuietOverview = Date.now();
     void loadOverview({ quiet: true });
   }
