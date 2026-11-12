@@ -1,4 +1,4 @@
-"""Opt-in, isolated browser acceptance: BACKENDSCOUT_BROWSER_SMOKE=1 pytest this file."""
+"""Opt-in isolated acceptance; BACKENDSCOUT_WEBKIT_SMOKE=1 adds WebKit."""
 
 import os
 import socket
@@ -44,7 +44,16 @@ def fixture_pdf():
     return content + f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n".encode()
 
 
-def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
+@pytest.mark.parametrize("engine", [
+    "chromium",
+    pytest.param(
+        "webkit",
+        marks=pytest.mark.skipif(
+            os.getenv("BACKENDSCOUT_WEBKIT_SMOKE") != "1", reason="Opt-in isolated WebKit smoke"
+        ),
+    ),
+])
+def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
     service = review_service
     pdf = service.cv_artifact("example-job", TrackerName.TEST)
     pdf.write_bytes(fixture_pdf())
@@ -78,7 +87,7 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path):
     output.mkdir(parents=True, exist_ok=True)
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = getattr(playwright, engine).launch(headless=True)
             for width, height in [(360, 800), (390, 844), (1280, 900)]:
                 context = browser.new_context(viewport={"width": width, "height": height})
                 page = context.new_page()

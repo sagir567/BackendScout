@@ -1569,3 +1569,7 @@ inspection on the test database, and return focus to the workspace. The
 selected detail must update without a navigation, while focused text fields
 defer refresh. The streamlined view must not bind handlers to the legacy
 details editor, and refresh errors must not leave the mutation lock set.
+Run the same isolated workspace flow in WebKit with
+`uv run playwright install webkit` and
+`BACKENDSCOUT_BROWSER_SMOKE=1 BACKENDSCOUT_WEBKIT_SMOKE=1 uv run pytest tests/test_web_browser.py`.
+This supplements, but does not replace, the live Safari check over Tailscale.
