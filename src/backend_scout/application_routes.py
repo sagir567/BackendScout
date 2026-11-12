@@ -57,6 +57,7 @@ _ATS = {
     "jobs.eu.lever.co": "lever",
     "boards.greenhouse.io": "greenhouse",
     "job-boards.greenhouse.io": "greenhouse",
+    "job-boards.eu.greenhouse.io": "greenhouse",
     "boards.eu.greenhouse.io": "greenhouse",
     "comeet.com": "comeet",
     "www.comeet.com": "comeet",
@@ -186,6 +187,30 @@ def _binding(url: str) -> tuple[str, str, str] | None:
         if match:
             return provider, parsed.hostname or "", match[1]
     return None
+
+
+def ats_job_identity(url: str | None) -> tuple[str, str, str] | None:
+    """Recognize a public ATS posting or apply alias, not an arbitrary redirect."""
+    if not url:
+        return None
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme != "https" or parsed.port not in {None, 443}
+                or parsed.username is not None or parsed.password is not None):
+            return None
+        provider = _ATS.get(parsed.hostname or "")
+    except ValueError:
+        return None
+    slug = r"[A-Za-z0-9_-]+"
+    uid = r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
+    patterns = {
+        "greenhouse": rf"/{slug}/jobs/\d+/?",
+        "lever": rf"/{slug}/{uid}(?:/apply)?/?",
+        "ashby": rf"/{slug}/{uid}(?:/application)?/?",
+    }
+    if provider not in patterns or not re.fullmatch(patterns[provider], parsed.path):
+        return None
+    return _binding(url)
 
 
 def _safe(url: str, tracker: str, *, widget: bool = False) -> bool:

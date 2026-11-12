@@ -715,6 +715,14 @@ def collect_run(
     source_counts: dict[str, int] = {}
     failures: list[str] = []
     indeed_report: IndeedEmailCollection | None = None
+    for target in (item for item in targets.companies if item.enabled):
+        try:
+            source_jobs = collect_public_jobs(target)
+            collected.extend(source_jobs)
+            source_counts[target.name] = len(source_jobs)
+            successful_sources += 1
+        except (httpx.HTTPError, TypeError, ValueError) as exc:
+            failures.append(f"{target.name}: {exc}")
     if settings.job_space_collection_enabled:
         from backend_scout.job_space import JobSpaceError, collect_job_space_jobs
 
@@ -725,14 +733,6 @@ def collect_run(
             successful_sources += 1
         except JobSpaceError as exc:
             failures.append(f"Job Space: {exc}")
-    for target in (item for item in targets.companies if item.enabled):
-        try:
-            source_jobs = collect_public_jobs(target)
-            collected.extend(source_jobs)
-            source_counts[target.name] = len(source_jobs)
-            successful_sources += 1
-        except (httpx.HTTPError, TypeError, ValueError) as exc:
-            failures.append(f"{target.name}: {exc}")
     if include_indeed_email or preferences.include_secrethunter_email:
         try:
             # One bounded mailbox read for both sources, not two overlapping scans.

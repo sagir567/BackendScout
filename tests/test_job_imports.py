@@ -148,3 +148,15 @@ def test_unique_scored_jobs_skips_duplicate_job_identities() -> None:
 
     assert len(scored_jobs) == 2
     assert len(unique_jobs) == 1
+
+
+def test_cross_source_dedupe_uses_exact_lever_job_not_similar_role_title():
+    base = "https://jobs.eu.lever.co/acme/01234567-1234-1234-1234-123456789abc"
+    job = load_manual_job_import(Path("examples/manual_job.example.yaml")).jobs[0]
+    direct = job.model_copy(update={"source": "lever", "source_url": base, "application_url": base})
+    mirror = job.model_copy(update={"source": "job_space", "source_url": "https://jobs.ti-space.com/jobs/123",
+                                    "application_url": base + "/apply?utm_source=jobspace"})
+    another = direct.model_copy(update={"application_url": base.replace("01234567", "abcdef01"),
+                                        "source_url": base.replace("01234567", "abcdef01")})
+    assert job_dedupe_key(direct) == job_dedupe_key(mirror)
+    assert job_dedupe_key(direct) != job_dedupe_key(another)

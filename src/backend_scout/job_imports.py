@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from backend_scout.application_routes import ats_job_identity
 from backend_scout.matcher import ScoredJob, score_jobs
 from backend_scout.models import CandidateProfile, Job, ManualJobImport
 from backend_scout.yaml_files import load_yaml_mapping
@@ -26,6 +27,10 @@ def job_with_match_result(job: Job, scored_job: ScoredJob) -> Job:
 
 
 def job_dedupe_key(job: Job) -> str:
+    destination = ats_job_identity(job.application_url)
+    source = ats_job_identity(job.source_url)
+    if (identity := destination or source) and not (destination and source and destination != source):
+        return "ats|" + "|".join(identity)
     return "|".join(
         [
             _normalize_job_identity_part(job.source),
