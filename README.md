@@ -428,7 +428,7 @@ directory under `~/Library/Application Support`, rewrites runtime-only artifact
 paths, preserves operational state across redeployments, and loads all agents:
 
 ```bash
-uv --cache-dir .uv-cache run --no-editable backend-scout system runtime deploy --load
+uv --cache-dir .uv-cache run --no-editable --reinstall-package backend-scout backend-scout system runtime deploy --load
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime status
 uv --cache-dir .uv-cache run --no-editable backend-scout system runtime doctor
 uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
@@ -436,7 +436,9 @@ uv --cache-dir .uv-cache run --no-editable backend-scout system launchd status
 
 Every service runs through the same project-local `.venv` and `uv` cache.
 This Git repository remains the development source of truth; rerun the deploy
-command after a tested code or private-config change.
+command after a tested code or private-config change. The reinstall flag
+ensures the deploy command itself uses the current checkout rather than a
+previously installed non-editable build.
 
 Once a checkout is deployed, commands run from that checkout adopt the same
 canonical private archive, browser profile, proof directory, and SQLite database
