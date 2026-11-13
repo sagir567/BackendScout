@@ -504,6 +504,7 @@ async function loadDetail({ quiet = false } = {}) {
   try {
     const detail = await api(`/api/applications/${encodeURIComponent(id)}`);
     if (epoch !== state.epoch || request !== state.detailRequest || state.selectedId !== id) return;
+    if (quiet && detailEditorFocused()) return;
     if (!detail?.item || String(detail.item.id) !== id) throw new Error('The server returned an incomplete application. Refresh the review.');
     state.detail = detail;
     const stage = normalizedStage(detail.item);
@@ -1139,9 +1140,13 @@ window.addEventListener('keydown', (event) => {
 // A restored page must not retain a previous session's private review in the DOM.
 window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
 
+function detailEditorFocused() {
+  return document.activeElement?.matches('#detail-pane input, #detail-pane textarea, #detail-pane select');
+}
+
 function refreshPendingWork() {
   if (!state.session || state.mutation || state.refreshing || state.overviewLoading || state.detailLoading) return;
-  if (document.activeElement?.matches('#detail-pane input, #detail-pane textarea, #detail-pane select')) return;
+  if (detailEditorFocused()) return;
   // Finish watching a selected task even when its tab is in the background.
   // Inactive queues still skip overview polling.
   if (document.hidden && !state.selectedId) return;
