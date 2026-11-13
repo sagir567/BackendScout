@@ -1559,6 +1559,13 @@ PDF and synthetic browser routes before retrying any approved application.
 Lever also updates the file field with a short parsing status. Match only the
 known text of the specific upload widget, never arbitrary status or consent text.
 
+Greenhouse custom question menus are scoped to the exact accessible listbox
+owned by a recognized question. Open and dismiss them during preflight to bind
+their labels into the package checksum. Delivery selects the exact approved
+label and verifies the committed visible choice; it never types a substitute.
+If a required dropdown does not expose verifiable choices, mark the route
+for manual review. Keep the read-only request guard active while opening menus.
+
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
 onboarding works without Notion, an available worker, or a paid model call.

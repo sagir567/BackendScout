@@ -104,16 +104,76 @@ def lever_choice_groups(captured):
     return {key for key, fields in groups.items() if len(fields) > 1}
 
 
-def form_review_signature(view, *, attached_filename=None):
+def _greenhouse_question_id(view, control):
+    key = control.get_attribute("id") or ""
+    if (urlsplit(view.url).hostname in {"job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
+            and re.fullmatch(r"question_[0-9]+", key)
+            and control.get_attribute("role") == "combobox"):
+        return key
+    return None
+
+
+def greenhouse_choices(view, control, *, action=lambda: None, choose=None):
+    """Open only the known Greenhouse custom-question widget, not arbitrary controls."""
+    key = _greenhouse_question_id(view, control)
+    if key is None or control.get_attribute("aria-expanded") != "false":
+        return []
+    action()
+    control.click(timeout=2000)
+    try:
+        list_id = f"react-select-{key}-listbox"
+        if control.get_attribute("aria-controls") != list_id:
+            return []
+        menu = view.frame.locator(f'[id="{list_id}"][role="listbox"]')
+        if menu.count() != 1 or not menu.is_visible():
+            return []
+        options = menu.get_by_role("option")
+        labels = options.all_inner_texts()
+        if not labels or len(labels) > 50 or len(set(labels)) != len(labels) or any(
+            not label or len(label) > 1000 for label in labels
+        ):
+            return []
+        if choose is not None:
+            if choose not in labels:
+                return []
+            target = menu.get_by_role("option", name=choose, exact=True)
+            if target.count() != 1:
+                return []
+            action()
+            target.click(timeout=2000)
+        return labels
+    finally:
+        if control.get_attribute("aria-expanded") == "true":
+            action()
+            control.press("Escape", timeout=2000)
+
+
+def _greenhouse_selected(control):
+    return control.evaluate("""el => {
+        const box = el.closest('.select__control');
+        const labels = box?.querySelectorAll('.select__single-value');
+        return el.getAttribute('aria-expanded') === 'false' && labels?.length === 1
+            ? labels[0].innerText : '';
+    }""")
+
+
+def form_review_signature(view, *, attached_filename=None, action=lambda: None,
+                          captured=None, observed_choices=None):
     """Bind question meaning and consent links, excluding changing field values."""
-    captured = capture_guided_form(view)
+    if captured is None:
+        captured = capture_guided_form(view)
     fields = []
     for field in captured.snapshot.fields:
         control = captured.controls[field.field_id]
+        options = field.options
+        if field.kind == GuidedControlKind.COMBOBOX:
+            options = (greenhouse_choices(view, control, action=action)
+                       if observed_choices is None else observed_choices[field.field_id])
         fields.append({
             "key": question_key(field, control), "label": field.label,
             "kind": field.kind.value, "required": field.required,
-            "options": field.options, "sensitive": field.sensitive,
+            "options": options,
+            "sensitive": field.sensitive,
         })
     links = view.locator("a[href]").evaluate_all("els=>els.map(e=>({text:e.innerText,url:e.href}))")
     if attached_filename and re.fullmatch(r"jobs(?:\.eu)?\.lever\.co", urlsplit(view.url).hostname or ""):
@@ -288,11 +348,17 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
                 pending.append(question(field, control))
             continue
         if expected is None:
-            if field.required or field.current_value_present:
+            if (field.required or field.current_value_present
+                    or field.kind == GuidedControlKind.COMBOBOX
+                    and _greenhouse_question_id(view, control) and _greenhouse_selected(control)):
                 pending.append(question(field, control))
             continue
         if field.kind == GuidedControlKind.COMBOBOX:
-            pending.append(question(field, control))
+            recognized = _greenhouse_question_id(view, control)
+            if fill and recognized and not _greenhouse_selected(control):
+                greenhouse_choices(view, control, action=action, choose=expected)
+            if not recognized or _greenhouse_selected(control) != expected:
+                pending.append(question(field, control))
         elif field.kind == GuidedControlKind.SELECT:
             if fill and not field.current_value_present and expected in field.options:
                 action()

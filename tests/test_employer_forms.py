@@ -445,6 +445,79 @@ def test_lever_attachment_display_does_not_invalidate_review(isolated_browser):
         context.close()
 
 
+def test_greenhouse_custom_question_binds_choices_and_audits_selection(isolated_browser):
+    url = "https://job-boards.eu.greenhouse.io/example/jobs/123"
+    context = isolated_browser.new_context(service_workers="block")
+    try:
+        page = context.new_page()
+        context.route("**/*", lambda route: route.fulfill(content_type="text/html", body="""
+          <form>
+            <label for="question_123">Years of experience</label>
+            <div class="select__control">
+              <input id="question_123" role="combobox" aria-expanded="false" aria-required="true">
+              <div id="selection"></div>
+            </div>
+            <label>Resume <input type="file" name="resume"></label>
+          </form>
+          <script>
+            const input = document.querySelector('input[role=combobox]');
+            const id = 'react-select-question_123-listbox';
+            function close() {
+              document.getElementById(id)?.remove();
+              input.removeAttribute('aria-controls');
+              input.setAttribute('aria-expanded', 'false');
+            }
+            window.labels = ['1', '2'];
+            input.onclick = () => {
+              const menu = document.createElement('div');
+              menu.id = id;
+              menu.setAttribute('role', 'listbox');
+              for (const label of window.labels) {
+                const option = document.createElement('div');
+                option.setAttribute('role', 'option');
+                option.textContent = label;
+                option.onclick = () => {
+                  const selection = document.querySelector('#selection');
+                  selection.className = 'select__single-value';
+                  selection.textContent = label;
+                  close();
+                };
+                menu.append(option);
+              }
+              input.after(menu);
+              input.setAttribute('aria-controls', id);
+              input.setAttribute('aria-expanded', 'true');
+            };
+            input.onkeydown = e => { if (e.key === 'Escape') close(); };
+          </script>
+        """) if route.request.url == url and route.request.method == "GET" else route.abort())
+        page.goto(url)
+        upload = page.locator("input[type=file]")
+        view = forms.ApplicationFormView(page, page.main_frame, page.locator("form"), upload, url)
+        control = page.get_by_role("combobox")
+        expected = forms.form_review_signature(view)
+        assert forms.greenhouse_choices(view, control) == ["1", "2"]
+        captured = capture_guided_form(view)
+        field = next(f for f in captured.snapshot.fields if f.kind == GuidedControlKind.COMBOBOX)
+        assert forms.form_review_signature(
+            view, captured=captured, observed_choices={field.field_id: ["1", "2"]},
+            action=lambda: pytest.fail("Preflight must reuse observed choices"),
+        ) == expected
+        assert page.locator("#selection").inner_text() == ""
+        _, pending = forms.prepare_reviewed_fields(view, reviewed_package(question_123="0"), fill=True)
+        assert pending and page.locator("#selection").inner_text() == ""
+        package = reviewed_package(question_123="2")
+        assert forms.prepare_reviewed_fields(view, package, fill=True)[1] == []
+        assert forms.prepare_reviewed_fields(view, package, fill=False)[1] == []
+        assert forms.form_review_signature(view) == expected
+        page.evaluate("window.labels = ['1', '3']")
+        assert forms.form_review_signature(view) != expected
+        page.locator("#selection").evaluate("el => el.textContent = '1'")
+        assert forms.prepare_reviewed_fields(view, package, fill=False)[1]
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("name", ["raft", "ibi", "skyhawk", "richkid", "comeet-form"])
 def test_browser_fixture_selection_and_no_submission(browser_fixture, name):
     page, load, _ = browser_fixture

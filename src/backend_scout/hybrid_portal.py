@@ -31,6 +31,7 @@ from backend_scout.config import TrackerName
 from backend_scout.employer_forms import (
     find_application_form,
     form_review_signature,
+    greenhouse_choices,
     lever_choice_groups,
     prepare_reviewed_fields,
     proposed_notes,
@@ -165,6 +166,21 @@ class HybridPortalAdapter:
                     hosts = tuple(configured)
             route = resolve_application_route(job, session.page, tracker=tracker,
                                               verified_employer_hosts=hosts)
+            if route.status == "verified":
+                def read_only(intercept):
+                    request = intercept.request
+                    if (request.method in {"GET", "HEAD"}
+                            and safe_public_url(request.url, tracker)
+                            and (not request.is_navigation_request()
+                                 or route_allows_url(route, request.url))):
+                        intercept.fallback()
+                    else:
+                        intercept.abort()
+
+                session.context.route("**/*", read_only)
+                if route.adapter_name == "greenhouse":
+                    with suppress(PlaywrightError):
+                        session.page.wait_for_load_state("load", timeout=4000)
             view = (find_application_form(session.page, route)
                     if route.status == "verified" and route.reason_code != "greenhouse_embed_manual" else None)
             if view and requires_additional_attachment(view):
@@ -178,11 +194,21 @@ class HybridPortalAdapter:
                 captured = capture_guided_form(view)
                 fields = [field.model_dump(mode="json") for field in captured.snapshot.fields]
                 radio_questions = {}
+                observed_choices = {}
                 checkbox_groups = lever_choice_groups(captured)
                 for field in captured.snapshot.fields:
                     if field.kind.value != "file":
                         control = captured.controls[field.field_id]
                         item = question(field, control)
+                        if field.kind.value == "combobox":
+                            with suppress(PlaywrightError):
+                                item["options"] = greenhouse_choices(view, control)
+                            observed_choices[field.field_id] = item["options"]
+                            if route.adapter_name == "greenhouse" and item["required"] and not item["options"]:
+                                return {"route": route.model_dump(mode="json"), "questions": [],
+                                        "proposed_answers": {}, "form_identified": False,
+                                        "reason_code": "form_choices_unverified",
+                                        "message": "Required dropdown choices could not be verified; use the official form."}
                         if field.kind.value == "radio" or item["key"] in checkbox_groups:
                             group = radio_questions.setdefault(item["key"], item | {"options": []})
                             group["options"].append(field.label)
@@ -193,7 +219,9 @@ class HybridPortalAdapter:
                 questions.extend(radio_questions.values())
                 with suppress(OSError, ValueError):
                     proposals = proposed_notes(load_career_evidence(), job, view)
-                proposals["review.form_schema_sha256"] = form_review_signature(view)
+                proposals["review.form_schema_sha256"] = form_review_signature(
+                    view, captured=captured, observed_choices=observed_choices,
+                )
             return {"route": route.model_dump(mode="json"), "questions": questions,
                     "fields": fields, "proposed_answers": proposals,
                     "form_identified": view is not None,
@@ -373,7 +401,7 @@ class HybridPortalAdapter:
             if view is None:
                 return result("needs_input", "application_form_missing", "No unique CV application form is ready; the session remains open.")
             expected_schema = next((a.value for a in package.answers if a.key == "review.form_schema_sha256"), None)
-            if expected_schema != form_review_signature(view):
+            if expected_schema != form_review_signature(view, action=action):
                 return result("needs_input", "form_review_changed", "The questions or consent links changed; inspect and review the updated package.")
             policy["stage"] = "fill"
             observe("filling", destination=route.application_url)
@@ -431,7 +459,7 @@ class HybridPortalAdapter:
             if requires_additional_attachment(view):
                 return result("needs_input", "additional_attachment_required",
                               "The employer now requires an additional file. No application was sent.")
-            if expected_schema != form_review_signature(view, attached_filename=cv_path.name):
+            if expected_schema != form_review_signature(view, attached_filename=cv_path.name, action=action):
                 return result("needs_input", "form_review_changed", "Questions changed after upload; inspect and review them before submitting.")
             _, pending = prepare_reviewed_fields(view, package_for_audit, fill=False)
             if pending:
