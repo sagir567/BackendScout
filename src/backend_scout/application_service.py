@@ -735,7 +735,8 @@ class ApplicationService:
             "browser_observation": item["browser_observation"],
         }
 
-    def request_form_inspection(self, application_id, tracker, actor_id, *, tailor_after=False) -> OperationOutcome:
+    def request_form_inspection(self, application_id, tracker, actor_id, *, tailor_after=False,
+                                background_preparation=False) -> OperationOutcome:
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
         from backend_scout.portal_adapters import adapter_for_url
@@ -750,9 +751,12 @@ class ApplicationService:
                                  "A public HTTPS posting is needed for browser preflight." if self._hybrid
                                  else "Public form inspection currently supports active Greenhouse postings only.",
                                  status="blocked")
+        payload = self._task_context(record, actor_id) | {"actor_id": actor_id, "tailor_after": tailor_after}
+        if background_preparation:
+            payload["background_preparation"] = True
         task = enqueue_task(
             QueuedTaskKind.PACKAGE_FORM_INSPECT, tracker,
-            self._task_context(record, actor_id) | {"actor_id": actor_id, "tailor_after": tailor_after},
+            payload,
             self.store.database_path,
         )
         return self._outcome(application_id, "queued", "Public form check queued; no personal data will be sent.",
@@ -1106,7 +1110,10 @@ class ApplicationService:
             if self._verified_route(application_id, tracker) is None and (
                 not self._has_requirements(record.job) or record.current_fingerprint
             ):
-                return self.request_form_inspection(application_id, tracker, actor_id, tailor_after=True)
+                return self.request_form_inspection(
+                    application_id, tracker, actor_id, tailor_after=True,
+                    background_preparation=background_preparation,
+                )
             if record.current_fingerprint and record.status in {"needs_input", "blocked"}:
                 return self._outcome(application_id, "review_ready", "Review the existing PDF and remaining portal answers.")
         if blocked := self._posting_blocked_outcome(application_id, tracker):

@@ -79,6 +79,17 @@ def test_public_check_is_queued_deduplicated_and_not_an_approval(review_service)
         review_service.request_form_inspection("example-job", T, "unauthorized")
 
 
+def test_background_tailoring_preserves_notification_policy_when_preflight_is_needed(hybrid):
+    service, _, _ = hybrid
+    job = service.store.get_application("example-job", T).job
+    service.store.revise_job("example-job", T, job.model_copy(update={"description": "Posting details pending."}))
+    outcome = service.request_tailoring("example-job", T, "12345", background_preparation=True)
+    task, = list_tasks(service.store.database_path)
+    assert outcome.task_id == task.task_id and task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT
+    assert task.payload["tailor_after"] is True
+    assert task.payload["background_preparation"] is True
+
+
 def test_worker_observation_is_persisted_without_cv_or_delivery_changes(review_service, monkeypatch):
     job = greenhouse_job(review_service)
 

@@ -1575,6 +1575,10 @@ Apply disclosure outside any form. It ignores the same-job social iframe and
 requires the revealed application iframe to match the exact tenant and job.
 The result exposes the official posting for manual application, not delivery.
 
+Pass the background preparation flag through a queued preflight when tailoring
+must verify the posting first; the later CV task retains the same notification
+policy as a draft queued directly.
+
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
 onboarding works without Notion, an available worker, or a paid model call.
