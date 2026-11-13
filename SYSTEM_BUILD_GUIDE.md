@@ -1589,7 +1589,9 @@ expires after five minutes, and is never embedded in a URL.
 For browser acceptance, suspend periodic polling, complete a queued form
 inspection on the test database, and return focus to the workspace. The
 selected detail must update without a navigation, while focused text fields
-defer refresh even when editing begins while a response is in flight. The streamlined view must not bind handlers to the legacy
+defer refresh even when editing begins while a response is in flight. Leaving
+the editor checks for completed work without waiting for the polling interval.
+The streamlined view must not bind handlers to the legacy
 details editor, and refresh errors must not leave the mutation lock set.
 Run the same isolated workspace flow in WebKit with
 `uv run playwright install webkit` and

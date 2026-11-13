@@ -1164,4 +1164,9 @@ let lastQuietOverview = Date.now();
 window.setInterval(refreshPendingWork, 2500);
 window.addEventListener('focus', refreshPendingWork);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPendingWork(); });
+document.addEventListener('focusout', (event) => {
+  if (event.target.matches('#detail-pane input, #detail-pane textarea, #detail-pane select')) {
+    window.setTimeout(refreshPendingWork, 0);
+  }
+});
 void start();

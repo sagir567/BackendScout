@@ -269,7 +269,6 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             page.get_by_role("button", name="Request changes", exact=True).click()
             feedback = page.get_by_label("Requested changes", exact=True)
             feedback.fill("Keep my unsent feedback.")
-            feedback.blur()
             mark_task_status(pending[0].task_id, QueuedTaskStatus.DONE, path=settings.workflow_database_path)
             detail_url = origin + "/api/applications/example-job"
 
@@ -279,12 +278,11 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
 
             page.route(detail_url, focus_editor_while_request_is_in_flight, times=1)
             with page.expect_response(lambda response: response.url == detail_url):
-                page.evaluate("window.dispatchEvent(new Event('focus'))")
+                feedback.blur()
             expect(feedback).to_be_focused()
             expect(feedback).to_have_value("Keep my unsent feedback.")
             expect(page.get_by_role("button", name="Checking form...", exact=True)).to_be_disabled()
             feedback.blur()
-            page.evaluate("window.resumeFixturePolling()")
             expect(check_form).to_be_enabled(timeout=10_000)
             expect(feedback).to_have_value("Keep my unsent feedback.")
 
