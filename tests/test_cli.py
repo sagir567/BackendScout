@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Self
 
@@ -19,6 +20,19 @@ from backend_scout.submission import BrowserPreparationResult
 from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_task, list_tasks
 
 runner = CliRunner()
+
+
+def test_worker_skips_stale_scheduled_mailbox_scan(monkeypatch, tmp_path):
+    from backend_scout import cli
+
+    path = tmp_path / "workflow.sqlite3"
+    task = enqueue_task(
+        QueuedTaskKind.MAILBOX_SCAN, TrackerName.PRODUCTION,
+        {"scheduled_for": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}, path,
+    )
+    monkeypatch.setattr(cli, "gmail_watch_once", lambda **_: pytest.fail("Stale scan must not call Gmail"))
+    cli._process_claimed_task(task, path)
+    assert list_tasks(path)[0].status == QueuedTaskStatus.CANCELLED
 
 
 def write_profile(path: Path) -> None:

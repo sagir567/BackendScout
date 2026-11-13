@@ -57,6 +57,7 @@ def workflow_health(database_path: Path, now: datetime | None = None) -> dict:
                 ).fetchone()
                 outcome = db.execute(
                     "SELECT status FROM tasks WHERE kind=? AND tracker='production' "
+                    "AND NOT (status='cancelled' AND last_error IS 'Superseded scheduled mailbox interval.') "
                     "AND (status NOT IN ('queued', 'running') OR last_error IS NOT NULL) "
                     "ORDER BY updated_at DESC, rowid DESC LIMIT 1",
                     (kind,),

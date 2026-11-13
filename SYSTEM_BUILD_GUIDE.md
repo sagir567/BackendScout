@@ -1566,6 +1566,10 @@ label and verifies the committed visible choice; it never types a substitute.
 If a required dropdown does not expose verifiable choices, mark the route
 for manual review. Keep the read-only request guard active while opening menus.
 
+The mailbox scans overlapping recent mail. Cancel scheduled scans that are
+already a full interval old instead of replaying a burst after a restart.
+Health ignores those cancellations but still requires a recent real success.
+
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
 onboarding works without Notion, an available worker, or a paid model call.

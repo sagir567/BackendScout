@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 from collections import Counter
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -1435,6 +1436,13 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
             if scout_result is False:
                 blocked_reason = "No job source could be checked; scouting is unavailable."
         elif task.kind == QueuedTaskKind.MAILBOX_SCAN:
+            scheduled_for = task.payload.get("scheduled_for")
+            if scheduled_for:
+                scheduled = datetime.fromisoformat(scheduled_for)
+                if scheduled.tzinfo is not None and datetime.now(UTC) - scheduled >= timedelta(minutes=15):
+                    mark_task_status(task.task_id, QueuedTaskStatus.CANCELLED,
+                                     last_error="Superseded scheduled mailbox interval.", path=queue_path)
+                    return
             mailbox_result = gmail_watch_once(
                 write_notion=True,
                 send_digest=True,
