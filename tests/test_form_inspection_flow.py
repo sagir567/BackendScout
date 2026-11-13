@@ -235,7 +235,10 @@ def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hyb
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
 
 
-@pytest.mark.parametrize("reason", ["browser_form_unidentified", "additional_attachment_required"])
+@pytest.mark.parametrize("reason", [
+    "browser_form_unidentified", "additional_attachment_required",
+    "form_choices_unverified", "comeet_reveal_manual",
+])
 def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybrid, reason):
     service, result, _ = hybrid
     service.settings.web_ready_to_apply = True
@@ -244,7 +247,7 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     pdf.unlink()
     service.drafter = lambda *_: pdf.write_bytes(content)
     result.update(form_identified=False, proposed_answers={})
-    if reason == "additional_attachment_required":
+    if reason != "browser_form_unidentified":
         result["reason_code"] = reason
     assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
@@ -254,6 +257,8 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     assert detail["item"]["official_url"] == result["route"]["application_url"]
     assert detail["package"] is None
     assert service.approve_and_queue("example-job", T, "12345", "not-approved").status == "blocked"
+    assert not any(task.kind == QueuedTaskKind.PACKAGE_DELIVER
+                   for task in list_tasks(service.store.database_path))
 
 
 def test_production_review_does_not_record_approval_outside_rollout(hybrid):
