@@ -1570,6 +1570,11 @@ The mailbox scans overlapping recent mail. Cancel scheduled scans that are
 already a full interval old instead of replaying a burst after a restart.
 Health ignores those cancellations but still requires a recent real success.
 
+On a verified Comeet posting, the read-only resolver can open the known
+Apply disclosure outside any form. It ignores the same-job social iframe and
+requires the revealed application iframe to match the exact tenant and job.
+The result exposes the official posting for manual application, not delivery.
+
 Live Telegram testing caught a separate usability issue: help fell through to
 the AI assistant queue. Route `/help` and `/start` to a static command menu so
 onboarding works without Notion, an available worker, or a paid model call.

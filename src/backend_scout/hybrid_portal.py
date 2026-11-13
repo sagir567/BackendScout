@@ -181,6 +181,10 @@ class HybridPortalAdapter:
                 if route.adapter_name == "greenhouse":
                     with suppress(PlaywrightError):
                         session.page.wait_for_load_state("load", timeout=4000)
+            if route.reason_code == "comeet_reveal_manual":
+                return {"route": route.model_dump(mode="json"), "questions": [], "proposed_answers": {},
+                        "form_identified": False, "reason_code": "comeet_reveal_manual",
+                        "message": "Open the embedded Comeet form on the official posting to apply."}
             view = (find_application_form(session.page, route)
                     if route.status == "verified" and route.reason_code != "greenhouse_embed_manual" else None)
             if view and requires_additional_attachment(view):

@@ -728,6 +728,50 @@ def test_direct_official_comeet_posting_apply_link_keeps_job_binding():
     assert route.adapter_name == "comeet"
 
 
+@pytest.mark.parametrize(("position", "expected"), [
+    ("AB.123", "comeet_reveal_manual"), ("OTHER", "application_route_missing"),
+])
+def test_comeet_reveal_only_accepts_exact_widget(position, expected):
+    url = "https://www.comeet.com/jobs/acme/12.345/backend-engineer/AB.123"
+    social = "https://www.comeet.co/jobs/12.345/AB.123/social?token=public-widget"
+    page = FakePage({url: html(f'<iframe src="{social}"></iframe>')})
+    clicks = []
+
+    class Locator:
+        def __init__(self, reveal):
+            self.reveal = reveal
+
+        def count(self):
+            return 1
+
+        def is_visible(self):
+            return True
+
+        def evaluate(self, _):
+            return False
+
+        def click(self, **_):
+            assert self.reveal and page.handler is not None
+            assert not page.request(url, method="POST")
+            clicks.append(True)
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, **_):
+            assert not self.reveal and clicks
+
+        def get_attribute(self, _):
+            return f"https://www.comeet.co/jobs/12.345/{position}/apply?token=public-widget"
+
+    page.locator = lambda selector: Locator(selector.startswith("button"))
+    route = resolve_application_route(job(url), page)
+    assert clicks == [True]
+    assert route.reason_code == expected
+    assert route.application_url == (url if position == "AB.123" else None)
+
+
 @pytest.mark.parametrize(
     "field,value", [("company", "Other"), ("title", "Wrong Role"), ("identifier", "456")]
 )

@@ -664,6 +664,15 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
             ]
             frames = [urljoin(current, src) for src in view["frames"]]
             frames = [src for src in frames if not _non_application_frame(src)]
+            if binding and binding[0] == "comeet":
+                frames = [
+                    src for src in frames
+                    if not (
+                        _ATS.get(urlsplit(src).hostname or "") == "comeet"
+                        and urlsplit(src).path.casefold()
+                        == f"/jobs/{binding[1]}/{binding[2]}/social"
+                    )
+                ]
             embedded = bool(
                 employer == current and expected and len(frames) == 1
                 and _greenhouse_embed_for_job(frames[0], job.company, expected[2])
@@ -756,6 +765,22 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                     current,
                 )
             if not candidates:
+                if not unsafe_link and binding and binding[0] == "comeet" and host in {
+                    "comeet.com", "www.comeet.com",
+                } and hasattr(page, "locator"):
+                    reveal = page.locator('button#showApplyForm[type="button"], button#showApplyForm:not([type])')
+                    if reveal.count() == 1 and reveal.is_visible() and not reveal.evaluate("button => Boolean(button.form)"):
+                        reveal.click(timeout=2500)
+                        frame = page.locator('#jobFormWrapper iframe[src*="/apply"]')
+                        frame.first.wait_for(state="attached", timeout=3000)
+                        if frame.count() == 1 and page.url == current:
+                            target = urljoin(current, frame.get_attribute("src") or "")
+                            if _binding(target) == binding and _safe(target, tracker, widget=True):
+                                return result(
+                                    "verified", "comeet_reveal_manual",
+                                    "The verified posting opens an embedded Comeet form for the exact role.",
+                                    current,
+                                )
                 reason = "unsafe_apply_link" if unsafe_link else "application_route_missing"
                 return result(
                     "needs_input",
