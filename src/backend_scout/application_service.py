@@ -1046,7 +1046,7 @@ class ApplicationService:
 
     def telegram_preparation_question(self, application_id, tracker, actor_id):
         self._authorize(actor_id)
-        if not self.settings.web_ready_to_apply or not self._hybrid:
+        if not self._hybrid:
             return None
         record = self._record(application_id, tracker)
         meta = self.store.metadata(application_id, tracker)

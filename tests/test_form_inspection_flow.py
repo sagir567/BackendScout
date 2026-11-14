@@ -304,9 +304,10 @@ def test_hybrid_required_questions_block_until_confirmed_without_being_erased(hy
     assert service.approve_and_queue("example-job", T, "12345", updated).reason_code == "queued"
 
 
-def test_telegram_answers_unlock_current_package_without_approving(hybrid):
+@pytest.mark.parametrize("ready_view", [True, False])
+def test_telegram_answers_unlock_current_package_without_approving(hybrid, ready_view):
     service, result, _ = hybrid
-    service.settings.web_ready_to_apply = True
+    service.settings.web_ready_to_apply = ready_view
     result["questions"] = [
         {"key": key, "label": label, "required": True, "sensitive": True, "options": ["yes", "no"]}
         for key, label in [("onsite", "Can you work onsite?"), ("relocation", "Can you relocate?")]
@@ -324,7 +325,8 @@ def test_telegram_answers_unlock_current_package_without_approving(hybrid):
     assert second[0] != first[0]
     service.answer_telegram_preparation("example-job", T, "12345", second[0], "no")
     detail = service.detail("example-job", T)
-    assert detail["item"]["workspace_bucket"] == "ready"
+    if ready_view:
+        assert detail["item"]["workspace_bucket"] == "ready"
     assert detail["package"]["approved"] is False
     assert not any(task.kind == QueuedTaskKind.PACKAGE_DELIVER for task in list_tasks(service.store.database_path))
 
