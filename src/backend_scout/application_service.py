@@ -31,7 +31,10 @@ from backend_scout.delivery_readiness import (
     assess_delivery_readiness,
     posting_observation_blocker,
 )
-from backend_scout.guided_submission import build_guided_candidate_facts
+from backend_scout.guided_submission import (
+    build_guided_candidate_facts,
+    is_human_verification_field,
+)
 from backend_scout.models import Job
 from backend_scout.portal_rollout import hybrid_delivery_allowed
 from backend_scout.runtime_health import workflow_health
@@ -1057,9 +1060,10 @@ class ApplicationService:
         if not pending or not isinstance(pending[0], dict):
             return None
         question = pending[0]
-        if re.search(
+        field_text = f'{question["key"]} {question["label"]}'
+        if is_human_verification_field(field_text) or re.search(
             r"password|secret|token|captcha|verification.code|privacy|consent|terms|agreement|marketing",
-            f'{question["key"]} {question["label"]}', re.IGNORECASE,
+            field_text, re.IGNORECASE,
         ):
             return None
         binding = json.dumps([application_id, tracker.value, record.job.application_url,

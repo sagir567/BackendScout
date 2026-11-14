@@ -331,10 +331,16 @@ def test_telegram_answers_unlock_current_package_without_approving(hybrid, ready
     assert not any(task.kind == QueuedTaskKind.PACKAGE_DELIVER for task in list_tasks(service.store.database_path))
 
 
-def test_telegram_preparation_does_not_request_portal_consent(hybrid):
+@pytest.mark.parametrize(("key", "label"), [
+    ("legal", "Accept the terms?"),
+    ("field_12", "Enter the one-time code"),
+    ("security_code", "Enter the number"),
+    ("otp", "Enter the number"),
+])
+def test_telegram_preparation_does_not_request_portal_consent_or_codes(hybrid, key, label):
     service, result, _ = hybrid
     service.settings.web_ready_to_apply = True
-    result["questions"] = [{"key": "legal", "label": "Accept the terms?",
+    result["questions"] = [{"key": key, "label": label,
                              "required": True, "sensitive": True, "options": ["yes", "no"]}]
     assert service.inspect_form("example-job", T, "12345").reason_code == "portal_input_required"
     assert service.telegram_preparation_question("example-job", T, "12345") is None

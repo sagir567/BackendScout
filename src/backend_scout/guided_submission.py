@@ -146,8 +146,10 @@ class GuidedPlanUnavailableError(RuntimeError):
 
 
 def is_human_verification_field(label: str) -> bool:
-    normalized = " ".join(label.casefold().split())
-    return any(marker in normalized for marker in HUMAN_VERIFICATION_FIELD_MARKERS)
+    normalized = " ".join(label.casefold().replace("_", " ").replace("-", " ").split())
+    return any(
+        marker.replace("-", " ") in normalized for marker in HUMAN_VERIFICATION_FIELD_MARKERS
+    )
 
 
 def is_sensitive_form_field(label: str) -> bool:

@@ -1613,6 +1613,7 @@ hydration change that inserts another input. Keep the observed widget bound to
 its unique ID and require its exact option list before package approval.
 Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
+Verification fields such as one-time codes are not requested in Telegram.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the
