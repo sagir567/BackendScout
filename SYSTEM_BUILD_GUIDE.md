@@ -1591,6 +1591,9 @@ inspection on the test database, and return focus to the workspace. The
 selected detail must update without a navigation, while focused text fields
 defer refresh even when editing begins while a response is in flight. Leaving
 the editor checks for completed work without waiting for the polling interval.
+An idle selected card also checks for external state changes every 30 seconds
+while visible. An unchanged response must release any busy controls without
+replacing the PDF or editor.
 The streamlined view must not bind handlers to the legacy
 details editor, and refresh errors must not leave the mutation lock set.
 Run the same isolated workspace flow in WebKit with

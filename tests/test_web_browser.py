@@ -285,6 +285,14 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             feedback.blur()
             expect(check_form).to_be_enabled(timeout=10_000)
             expect(feedback).to_have_value("Keep my unsent feedback.")
+            service.store.set_state("example-job", tracker, "needs_input")
+            page.evaluate("""() => {
+                const now = Date.now.bind(Date);
+                Date.now = () => now() + 31000;
+                window.dispatchEvent(new Event('focus'));
+            }""")
+            expect(page.locator("#detail-pane").get_by_text("Needs your input", exact=True)).to_be_visible()
+            service.store.set_state("example-job", tracker, "review_ready")
 
             settings.web_ready_to_apply = True
             service.store.import_snapshot("unverified-job", tracker, job, "found")

@@ -526,7 +526,7 @@ async function loadDetail({ quiet = false } = {}) {
       if (!quiet || JSON.stringify(previous) !== JSON.stringify(state.detail)) {
         renderDetail();
         renderResults();
-      }
+      } else updateBusyUI();
     }
   }
 }
@@ -1155,9 +1155,11 @@ function refreshPendingWork() {
     : items().some((item) => activeDeliveryStages.has(normalizedStage(item)));
   if (pending && state.selectedId) void loadDetail({ quiet: true });
   else if (pending) void loadOverview({ quiet: true });
-  else if (!document.hidden && state.overview?.ready_to_apply && Date.now() - lastQuietOverview >= 30000) {
+  else if (!document.hidden && (state.selectedId || state.overview?.ready_to_apply)
+           && Date.now() - lastQuietOverview >= 30000) {
     lastQuietOverview = Date.now();
-    void loadOverview({ quiet: true });
+    if (state.selectedId) void loadDetail({ quiet: true });
+    if (state.overview?.ready_to_apply) void loadOverview({ quiet: true });
   }
 }
 let lastQuietOverview = Date.now();
