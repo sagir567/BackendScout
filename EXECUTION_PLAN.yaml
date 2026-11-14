@@ -33,7 +33,7 @@ tasks:
       - path: tests/test_web_browser.py
         result: Chromium and WebKit refresh a completed inspection on browser focus or after leaving the editor, even with interval polling suspended; in-flight refreshes preserve unsent feedback.
       - path: tests/test_application_routes.py
-        result: Product application links no longer compete with a resume form; a real recruitment link still does. Live Elspec preflight remains unsupported because the upload form lacks explicit application context.
+        result: Product application links no longer compete with a resume form; a real recruitment link still does. A same-page resume form without explicit application context is manual-only, with no approval package.
   - id: P15
     track: personal
     title: Verify employer-first routes and inspect real forms before review

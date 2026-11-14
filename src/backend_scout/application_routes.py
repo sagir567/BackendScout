@@ -746,13 +746,29 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                         "There is no unique trusted application form.",
                     )
                 form = forms[0]
+                action = urljoin(current, form["action"])
                 if not form["resume"] or not form["application"]:
+                    if (
+                        form["resume"]
+                        and not _ATS.get(host)
+                        and _safe(action, tracker)
+                        and _origin(action) == _origin(current)
+                        and urlsplit(action).path == urlsplit(current).path
+                        and {
+                            key: values for key, values in parse_qs(urlsplit(action).query).items()
+                            if key not in {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"}
+                        } == parse_qs(urlsplit(current).query)
+                    ):
+                        return result(
+                            "verified", "resume_form_manual",
+                            "The official posting has a resume form without explicit application context.",
+                            current,
+                        )
                     return result(
                         "needs_input",
                         "application_context_missing",
                         "A unique resume application form was not established.",
                     )
-                action = urljoin(current, form["action"])
                 if (
                     not _safe(action, tracker, widget=action in widgets)
                     or _origin(action) != _origin(current)

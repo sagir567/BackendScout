@@ -764,6 +764,8 @@ Public forms with a company-brand/domain mismatch can use an operator-verified
 exact-host alias in ignored `config/employer_domains.private.yaml`; see the
 fictional example. A web page or model cannot add aliases or grant submission
 approval. Telegram review links open the specific application after owner login.
+An exact official posting with a unique resume form but no explicit application
+context can be shown under manual review; it cannot authorize browser delivery.
 Email-only roles and new cookie consents remain explicit separate review steps;
 three prepared CVs do not count as three successful portal canaries.
 

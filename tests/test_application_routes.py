@@ -420,7 +420,7 @@ def test_deceptive_hosts_do_not_gain_employer_authority(url):
             "untrusted_form_action",
         ),
         ('<form id="application"><button>Apply</button></form>', "application_context_missing"),
-        ('<form><input name="resume" type="file"></form>', "application_context_missing"),
+        ('<form action="/contact"><input name="resume" type="file"></form>', "application_context_missing"),
     ],
 )
 def test_ambiguous_or_untrusted_forms_and_links(extra, code):
@@ -434,6 +434,18 @@ def test_product_application_nav_link_does_not_compete_with_resume_form():
     route = resolve_application_route(job(), FakePage({EMPLOYER: html(markup)}))
     assert route.status == "verified"
     assert route.application_url == EMPLOYER
+
+
+@pytest.mark.parametrize(("action", "expected"), [
+    ("#resume", "resume_form_manual"),
+    ("?utm_source=fixture#resume", "resume_form_manual"),
+    ("?position=other#resume", "application_context_missing"),
+])
+def test_resume_form_without_application_context_exposes_official_page_for_manual_review(action, expected):
+    markup = f'<form action="{action}"><input name="resume" type="file"></form>'
+    route = resolve_application_route(job(), FakePage({EMPLOYER: html(markup)}))
+    assert route.reason_code == expected
+    assert route.application_url == (EMPLOYER if expected == "resume_form_manual" else None)
 
 
 def test_job_application_label_still_competes_with_resume_form():

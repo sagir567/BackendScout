@@ -1601,6 +1601,9 @@ This supplements, but does not replace, the live Safari check over Tailscale.
 For route regressions, distinguish a product's mobile application link from
 a recruiting link. Removing the false match must not make a generic or
 ambiguous upload form eligible for delivery.
+The live Elspec posting is a manual-only example: the form action returns to
+the exact vacancy page, with a marketing query tag and anchor. A different
+position query is not equivalent and stays blocked.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the

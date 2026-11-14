@@ -178,7 +178,7 @@ class ApplicationService:
                 and inspection.get("reason_code") in {
                     "browser_form_unidentified", "form_schema_unverified", "additional_attachment_required",
                     "form_choices_unverified",
-                    "comeet_reveal_manual",
+                    "comeet_reveal_manual", "resume_form_manual",
                 }
                 and timedelta(0) <= datetime.now(UTC) - datetime.fromisoformat(route.checked_at)
                 <= timedelta(hours=24)):
@@ -867,6 +867,7 @@ class ApplicationService:
             }
             if route_passed and not passed and observation["reason_code"] not in {
                 "additional_attachment_required", "form_choices_unverified", "comeet_reveal_manual",
+                "resume_form_manual",
             }:
                 observation["reason_code"] = "form_schema_unverified" if form_identified else "browser_form_unidentified"
                 observation["message"] = (

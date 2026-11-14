@@ -248,7 +248,7 @@ def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hyb
 
 @pytest.mark.parametrize("reason", [
     "browser_form_unidentified", "additional_attachment_required",
-    "form_choices_unverified", "comeet_reveal_manual",
+    "form_choices_unverified", "comeet_reveal_manual", "resume_form_manual",
 ])
 def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybrid, reason):
     service, result, _ = hybrid
