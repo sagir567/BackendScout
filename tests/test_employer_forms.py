@@ -468,7 +468,12 @@ def test_greenhouse_custom_question_binds_choices_and_audits_selection(isolated_
               input.setAttribute('aria-expanded', 'false');
             }
             window.labels = ['1', '2'];
+            window.ignoredOpeningClicks = 1;
             input.onclick = () => {
+              if (window.ignoredOpeningClicks > 0) {
+                window.ignoredOpeningClicks--;
+                return;
+              }
               const menu = document.createElement('div');
               menu.id = id;
               menu.setAttribute('role', 'listbox');
@@ -499,6 +504,13 @@ def test_greenhouse_custom_question_binds_choices_and_audits_selection(isolated_
         assert forms.greenhouse_choices(view, control) == ["1", "2"]
         captured = capture_guided_form(view)
         field = next(f for f in captured.snapshot.fields if f.kind == GuidedControlKind.COMBOBOX)
+        page.locator("form").evaluate("""form => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            form.prepend(hidden);
+        }""")
+        assert captured.controls[field.field_id].get_attribute("id") == "question_123"
+        page.locator('input[type="hidden"]').evaluate("element => element.remove()")
         assert forms.form_review_signature(
             view, captured=captured, observed_choices={field.field_id: ["1", "2"]},
             action=lambda: pytest.fail("Preflight must reuse observed choices"),

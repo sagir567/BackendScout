@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from backend_scout.guided_submission import GuidedControlKind, is_sensitive_form_field
 from backend_scout.package_portal import _identifier, _normal
@@ -118,9 +119,19 @@ def greenhouse_choices(view, control, *, action=lambda: None, choose=None):
     key = _greenhouse_question_id(view, control)
     if key is None or control.get_attribute("aria-expanded") != "false":
         return []
-    action()
-    control.click(timeout=2000)
     try:
+        expanded = view.frame.locator(f'[id="{key}"][aria-expanded="true"]')
+        for _ in range(3):
+            if control.get_attribute("aria-expanded") != "false":
+                break
+            action()
+            control.click(timeout=2000)
+            try:
+                expanded.wait_for(state="attached", timeout=900)
+                break
+            except PlaywrightTimeout:
+                # The server-rendered field may be visible before React handles clicks.
+                continue
         list_id = f"react-select-{key}-listbox"
         if control.get_attribute("aria-controls") != list_id:
             return []

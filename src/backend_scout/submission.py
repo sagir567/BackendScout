@@ -417,6 +417,7 @@ def capture_guided_form(page) -> CapturedGuidedForm:
                             tag: element.tagName.toLowerCase(),
                             type: (element.getAttribute('type') || 'text').toLowerCase(),
                             role: (element.getAttribute('role') || '').toLowerCase(),
+                            id: element.id,
                             label: labels[0]
                                 || element.getAttribute('aria-label')
                                 || element.getAttribute('placeholder')
@@ -460,6 +461,12 @@ def capture_guided_form(page) -> CapturedGuidedForm:
                         sensitive=is_sensitive_form_field(label),
                     )
                 )
+                if kind == GuidedControlKind.COMBOBOX and re.fullmatch(
+                    r"[A-Za-z_][A-Za-z0-9_-]*", str(metadata.get("id") or "")
+                ):
+                    by_id = scope.locator(f'input[id="{metadata["id"]}"][role="combobox"]')
+                    if by_id.count() == 1:
+                        control = by_id
                 controls[field_id] = control
             except (PlaywrightError, TypeError, ValueError) as exc:
                 LOGGER.debug("Could not inspect a form control for guided mapping: %s", exc)

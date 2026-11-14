@@ -1604,6 +1604,9 @@ ambiguous upload form eligible for delivery.
 The live Elspec posting is a manual-only example: the form action returns to
 the exact vacancy page, with a marketing query tag and anchor. A different
 position query is not equivalent and stays blocked.
+For Greenhouse, test a rendered dropdown that ignores its first click and a
+hydration change that inserts another input. Keep the observed widget bound to
+its unique ID and require its exact option list before package approval.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the

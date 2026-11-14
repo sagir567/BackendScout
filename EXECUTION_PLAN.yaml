@@ -30,6 +30,8 @@ tasks:
         result: A stale browser inspection is unhealthy until the matching lane claims it.
       - path: tests/test_employer_forms.py
         result: Isolated Chromium preserves exact approval on Lever attachment display changes, but not on privacy-link or form-destination changes.
+      - path: tests/test_employer_forms.py
+        result: Chromium tolerates delayed Greenhouse widget activation and inserted controls; live read-only WeDev preflight verified all three required dropdowns without choosing answers.
       - path: tests/test_web_browser.py
         result: Chromium and WebKit refresh a completed inspection on browser focus or after leaving the editor, even with interval polling suspended; in-flight refreshes preserve unsent feedback.
       - path: tests/test_application_routes.py
