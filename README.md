@@ -206,8 +206,9 @@ the browser on missing input, and requires a new visible receipt plus a painted
 PNG before recording success. Workday/custom dropdowns, sign-in and unsupported
 forms may still require input; this is not a universal automatic-apply claim.
 Local reviews continue during a Notion outage. A leased, retrying outbox updates
-existing tracker pages without replaying the application; durable notification
-delivery is still a remaining migration task.
+existing tracker pages without replaying the application. A separate durable
+outbox retries verified submission screenshots to the private Telegram chat,
+without reopening employer delivery. Routine task messages are not in that outbox.
 
 ## Workflow
 

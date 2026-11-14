@@ -198,8 +198,9 @@ a verified mapping is available.
 Schema version 3 adds leases, claim tokens and backoff to the Notion projection
 outbox. Successful projection overwrites the current page properties, not an
 employer action or an append-only duplicate audit. Page parent/tracker and proof
-checksums are validated. Current Telegram file notifications are best-effort
-after marking the local task; durable notification replay remains P04 work.
+checksums are validated. Verified submission screenshots use a separate leased
+Telegram outbox, written with the local receipt. Retrying that outbox cannot
+replay employer delivery. Routine task messages remain best-effort.
 
 For portal acceptance, run `BACKENDSCOUT_BROWSER_SMOKE=1` against
 `tests/test_package_portal.py` too. Every HTTPS request is intercepted in an

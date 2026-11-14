@@ -242,7 +242,9 @@ tasks:
       - Remote status alone cannot authorize submission.
     evidence:
       - path: tests/test_application_outbox.py
-        result: Schema-v3 leased Notion projection coalesces snapshots, backs off failures and checks tracker parent and receipt artifacts. Durable notification delivery remains unfinished; current artifact notifications are best-effort after local task completion.
+        result: Schema-v3 leased Notion projection coalesces snapshots, backs off failures and checks tracker parent and receipt artifacts.
+      - path: tests/test_submission_notifications.py
+        result: Verified portal proof notifications are transactional, retried independently and acknowledged durably. Routine task messages remain best-effort; live employer canary evidence is pending.
   - id: P05
     track: personal
     title: One approval for the exact current application package
