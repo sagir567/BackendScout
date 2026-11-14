@@ -429,6 +429,19 @@ def test_ambiguous_or_untrusted_forms_and_links(extra, code):
     assert route.reason_code == code
 
 
+def test_product_application_nav_link_does_not_compete_with_resume_form():
+    markup = '<a href="/products/mobile-app/">Power Quality Mobile Application</a>' + FORM
+    route = resolve_application_route(job(), FakePage({EMPLOYER: html(markup)}))
+    assert route.status == "verified"
+    assert route.application_url == EMPLOYER
+
+
+def test_job_application_label_still_competes_with_resume_form():
+    markup = '<a href="/vacancy/123">Job application</a>' + FORM
+    route = resolve_application_route(job(), FakePage({EMPLOYER: html(markup)}))
+    assert route.reason_code == "ambiguous_forms"
+
+
 @pytest.mark.parametrize(
     "url",
     [

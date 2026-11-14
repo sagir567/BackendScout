@@ -1598,6 +1598,10 @@ Run the same isolated workspace flow in WebKit with
 `BACKENDSCOUT_BROWSER_SMOKE=1 BACKENDSCOUT_WEBKIT_SMOKE=1 uv run pytest tests/test_web_browser.py`.
 This supplements, but does not replace, the live Safari check over Tailscale.
 
+For route regressions, distinguish a product's mobile application link from
+a recruiting link. Removing the false match must not make a generic or
+ambiguous upload form eligible for delivery.
+
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the
 credential after validating the result envelope. An empty search proves access

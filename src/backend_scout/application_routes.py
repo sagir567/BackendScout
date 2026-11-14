@@ -74,7 +74,12 @@ _SECRET = re.compile(
     r"token|secret|password|credential|session|auth|api.?key|signature|jwt|bearer", re.IGNORECASE
 )
 _ID_KEYS = {"jobid", "job_id", "positionid", "position_id", "position_uid", "uid", "gh_jid"}
-_APPLY = re.compile(r"\b(?:apply|application)\b", re.IGNORECASE)
+_APPLY_LABEL = re.compile(
+    r"\bapply\b|^\s*application\s*$|\b(?:job application|application form|"
+    r"submit (?:an? |your )?application)\b",
+    re.IGNORECASE,
+)
+_APPLY_PATH = re.compile(r"(?:^|[/_-])(?:apply|application)(?=[/_-]|$)", re.IGNORECASE)
 _CLOSED = re.compile(
     r"\b(?:this (?:job|position|vacancy) (?:is |has been )?(?:closed|filled|no longer available)|"
     r"(?:we are |we're )no longer accepting applications)\b",
@@ -660,7 +665,7 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
             urls = [
                 link["url"]
                 for link in view["links"]
-                if _APPLY.search(link["label"]) or _APPLY.search(urlsplit(link["url"]).path)
+                if _APPLY_LABEL.search(link["label"]) or _APPLY_PATH.search(urlsplit(link["url"]).path)
             ]
             frames = [urljoin(current, src) for src in view["frames"]]
             frames = [src for src in frames if not _non_application_frame(src)]
