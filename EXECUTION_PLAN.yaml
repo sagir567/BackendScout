@@ -52,6 +52,8 @@ tasks:
       - path: tests/test_application_routes.py
         result: Offline provenance identity spoofed-domain and both Comeet domain regressions pass.
       - path: tests/test_form_inspection_flow.py
+        result: Private Telegram answers advance the verified form one question at a time with the web preview disabled; stale replies are rejected and the last reply queues drafting only.
+      - path: tests/test_form_inspection_flow.py
         result: Preflight schema binding changed-consent invalidation and preserved CV approval regressions pass.
   - id: P16
     track: personal

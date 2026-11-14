@@ -342,12 +342,14 @@ def test_telegram_preparation_does_not_request_portal_consent(hybrid):
 
 def test_private_telegram_update_resumes_preparation_without_approval(hybrid, monkeypatch):
     service, result, _ = hybrid
-    service.settings.web_ready_to_apply = True
+    service.settings.web_ready_to_apply = False
     page = "deadbeef-0000-4000-8000-000000000001"
     job = service.store.get_application("example-job", T).job
     service.store.import_snapshot(page, T, job, "found")
-    result["questions"] = [{"key": "onsite", "label": "Can you work onsite?",
-                             "required": True, "sensitive": True, "options": ["yes", "no"]}]
+    result["questions"] = [
+        {"key": key, "label": label, "required": True, "sensitive": True, "options": ["yes", "no"]}
+        for key, label in [("onsite", "Can you work onsite?"), ("relocation", "Can you relocate?")]
+    ]
     assert service.inspect_form(page, T, "12345").reason_code == "portal_input_required"
     token = service.telegram_preparation_question(page, T, "12345")[0]
     monkeypatch.setattr("backend_scout.application_service.build_application_service", lambda _: service)
@@ -357,15 +359,23 @@ def test_private_telegram_update_resumes_preparation_without_approval(hybrid, mo
         def send_message(self, chat_id, text, **_):
             messages.append((chat_id, text))
 
-    def update(chat_id, sender=12345):
+    def update(chat_id, sender=12345, answer_token=token):
         return {"message": {"chat": {"id": chat_id}, "from": {"id": sender},
-                            "text": f"/answer_{page} {token} yes"}}
+                            "text": f"/answer_{page} {answer_token} yes"}}
 
     assert process_telegram_update(Telegram(), None, update(-12345), {12345}) is None
     assert process_telegram_update(Telegram(), None, update(12345, 678), {12345}) is None
     assert not messages and not list_tasks(service.store.database_path)
     assert process_telegram_update(Telegram(), None, update(12345), {12345}) == "preparation_answer_processed"
-    assert len(messages) == 1 and "no application was approved" in messages[0][1]
+    assert len(messages) == 1 and "Can you relocate?" in messages[0][1]
+    assert not list_tasks(service.store.database_path)
+    next_token = service.telegram_preparation_question(page, T, "12345")[0]
+    with pytest.raises(ApplicationConflict):
+        process_telegram_update(Telegram(), None, update(12345), {12345})
+    assert process_telegram_update(
+        Telegram(), None, update(12345, answer_token=next_token), {12345},
+    ) == "preparation_answer_processed"
+    assert len(messages) == 2 and "no application was approved" in messages[1][1]
     assert [task.kind for task in list_tasks(service.store.database_path)] == [QueuedTaskKind.PACKAGE_CV_DRAFT]
 
 
