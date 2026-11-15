@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="BackendScout is Sagi Yosef Azulay’s local-first job-search agent, built around human review and durable workflows.">
+<meta name="theme-color" content="#141714">
+<title>BackendScout | Engineering Case Study</title>
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><nav class="wrap" aria-label="Main navigation"><a class="brand" href="./"><img src="mark.svg" alt="" width="29" height="29">BackendScout</a><a class="source" href="https://github.com/sagir567/BackendScout">Source on GitHub <span aria-hidden="true">↗</span></a></nav></header>
+<main>
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow"><span class="signal"></span> ENGINEERING CASE STUDY</p>
+    <h1>BackendScout</h1>
+    <p class="lede">A local-first job-search agent with human review built into the workflow.</p>
+    <p class="byline">Built by Sagi Yosef Azulay</p>
+    <a class="cta" href="#architecture">Explore the architecture <span aria-hidden="true">↓</span></a>
+  </div>
+</section>
+<section class="wrap section" id="architecture">
+  <p class="eyebrow">01 / WORKFLOW</p>
+  <h2>From discovery to a reviewed application</h2>
+  <ol class="steps">
+    <li><span>01</span><h3>Discover</h3><p>Collect listings, remove duplicates, and distinguish discovery links from official application destinations.</p></li>
+    <li><span>02</span><h3>Prepare</h3><p>Score fit transparently and draft a role-specific CV from verified career evidence.</p></li>
+    <li><span>03</span><h3>Review</h3><p>Bind approval to the exact CV version, destination, and answers. A changed package requires fresh review.</p></li>
+    <li><span>04</span><h3>Track</h3><p>Track receipts and employer replies. An uncertain submission stays locked against automatic retry.</p></li>
+  </ol>
+</section>
+<section class="system">
+  <div class="wrap section system-grid">
+    <div><p class="eyebrow">02 / SYSTEM DESIGN</p><h2>Local state.<br>Explicit approvals.</h2><p>I built BackendScout to make my own job search more systematic and to learn how to build agents that can recover from failures without repeating consequential actions.</p></div>
+    <dl>
+      <div><dt>Python · FastAPI</dt><dd>Private review workspace and shared application services.</dd></div>
+      <div><dt>SQLite · DBOS</dt><dd>Application state, durable tasks, and recovery.</dd></div>
+      <div><dt>Playwright · OpenAI</dt><dd>Form inspection for supported routes and evidence-backed CV drafting.</dd></div>
+      <div><dt>Gmail · Telegram · Notion</dt><dd>Employer replies, private alerts, and a synchronized tracker.</dd></div>
+    </dl>
+  </div>
+</section>
+<section class="wrap section status"><p class="eyebrow">03 / PROJECT STATUS</p><h2>Built and tested locally</h2><p>Employer form support varies by route. Automatic submission is limited to routes that pass preflight and exact-package approval; unsupported routes remain manual. Cloud deployment is not presented as an existing capability.</p><a href="https://github.com/sagir567/BackendScout">Read the project documentation <span aria-hidden="true">↗</span></a></section>
+</main>
+<footer><div class="wrap foot"><a class="brand" href="./"><img src="mark.svg" alt="" width="24" height="24">BackendScout</a><nav aria-label="Site policies"><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a></nav></div></footer>
+</body>
+</html>
