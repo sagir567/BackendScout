@@ -193,7 +193,7 @@ class ApplicationService:
         from backend_scout.package_portal import _identifier
 
         meta = self.store.metadata(application_id, tracker)
-        confirmed = json.loads(meta.get("answers_json") or "{}")
+        confirmed = self._confirmed_form_answers(self._record(application_id, tracker).job, meta)
         answers = json.loads(meta.get("proposed_answers_json") or "{}") | confirmed
         pending, identity = [], None
         for question in json.loads(meta.get("questions_json") or "[]"):
@@ -214,6 +214,30 @@ class ApplicationService:
             if not answer.strip() or (options and answer not in options):
                 pending.append(question)
         return pending
+
+    @staticmethod
+    def _confirmed_form_answers(job, meta):
+        confirmed = json.loads(meta.get("answers_json") or "{}")
+        if not re.search(r"\bjunior\b|ג['\u05f3]?וניור", job.title, re.IGNORECASE):
+            return confirmed
+        from backend_scout.candidate_profile import load_candidate_profile
+
+        try:
+            salary = load_candidate_profile().junior_salary_expectation_nis
+        except (OSError, ValueError):
+            return confirmed
+        if salary is None:
+            return confirmed
+        for question in json.loads(meta.get("questions_json") or "[]"):
+            if not isinstance(question, dict) or question.get("options"):
+                continue
+            label = question["label"]
+            if re.fullmatch(r"(?:What are your )?monthly salary expectations?[?* ]*",
+                            label, re.IGNORECASE) and re.search(
+                                r"\bIsrael\b|ישראל", job.location or "", re.IGNORECASE
+                            ):
+                confirmed.setdefault(question["key"], str(salary))
+        return confirmed
 
     def _hybrid_blocked_outcome(self, application_id, tracker, *, check_pending=True):
         if not self._hybrid:
@@ -480,7 +504,7 @@ class ApplicationService:
             sensitive = {q["key"] for q in json.loads(meta.get("questions_json") or "[]")
                          if isinstance(q, dict) and q.get("sensitive")}
             proposed = {key: value for key, value in proposed.items() if key not in sensitive}
-        answers = proposed | json.loads(meta.get("answers_json") or "{}")
+        answers = proposed | self._confirmed_form_answers(job, meta)
         if self._hybrid:
             answers.update({key: value for key, value in proposed.items() if key.casefold().startswith("review.")})
         identity = build_guided_candidate_facts(self.identity_loader(), path, None)

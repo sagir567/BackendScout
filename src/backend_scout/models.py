@@ -193,6 +193,7 @@ class CandidateProfile(BaseModel):
     target_roles: list[str] = Field(min_length=1)
     target_locations: list[str] = Field(default_factory=list)
     salary_floor_nis: int = Field(ge=0)
+    junior_salary_expectation_nis: int | None = Field(default=None, gt=0)
     work_preferences: WorkPreferences = Field(default_factory=WorkPreferences)
     seniority: SeniorityPreference = Field(default_factory=SeniorityPreference)
     core_skills: list[str] = Field(min_length=1)

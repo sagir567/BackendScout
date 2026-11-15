@@ -15,6 +15,28 @@ from backend_scout.telegram import process_telegram_update
 T = TrackerName.TEST
 
 
+def test_junior_salary_default_only_applies_to_matching_local_monthly_question(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend_scout.application_service import ApplicationService
+
+    monkeypatch.setattr(
+        "backend_scout.candidate_profile.load_candidate_profile",
+        lambda: SimpleNamespace(junior_salary_expectation_nis=15000),
+    )
+    job = SimpleNamespace(title="Junior Backend Engineer", location="Tel Aviv, Israel")
+    meta = {"questions_json": json.dumps([
+        {"key": "salary", "label": "What are your monthly salary expectations?*"},
+        {"key": "annual", "label": "Annual salary expectations"},
+    ])}
+    assert ApplicationService._confirmed_form_answers(job, meta) == {"salary": "15000"}
+    assert ApplicationService._confirmed_form_answers(
+        job, meta | {"answers_json": '{"salary":"17000"}'}
+    ) == {"salary": "17000"}
+    job.title = "Senior Backend Engineer"
+    assert ApplicationService._confirmed_form_answers(job, meta) == {}
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", lambda *_: pytest.fail("No real network calls"))

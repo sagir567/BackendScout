@@ -265,6 +265,15 @@ class HybridPortalAdapter:
                     policy["writes"] += 1
             if verification:
                 allowed = read or policy["stage"] == "human"
+            parsed = urlsplit(url)
+            if (
+                route.adapter_name == "greenhouse" and request.method == "GET" and not navigation
+                and request.resource_type in {"fetch", "xhr"} and policy["stage"] == "read"
+                and parsed.netloc == "job-boards.cdn.greenhouse.io" and not parsed.query
+                and re.fullmatch(r"/locales/[a-zA-Z-]+/[a-zA-Z0-9_.-]+\.json", parsed.path)
+                and safe_public_url(url, route._tracker)
+            ):
+                allowed = True
             if not allowed and read and not navigation:
                 static = getattr(request, "resource_type", "") in {"script", "stylesheet", "image", "font", "media"}
                 if static and policy["stage"] == "read" and safe_public_url(url, route._tracker):
