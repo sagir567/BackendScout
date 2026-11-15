@@ -470,6 +470,9 @@ class ApplicationService:
             raise ApplicationConflict("Verify the official HTTPS application URL before approval")
         if not self._has_requirements(job):
             raise ApplicationConflict("Full job requirements must be reviewed before approval")
+        return self._assemble_package(application_id, tracker, job, destination)
+
+    def _assemble_package(self, application_id, tracker, job, destination):
         manifest, path = self._manifest(application_id, tracker)
         meta = self.store.metadata(application_id, tracker)
         proposed = json.loads(meta.get("proposed_answers_json") or "{}")
@@ -939,10 +942,17 @@ class ApplicationService:
             self.store.set_proposed_answers(application_id, tracker, proposed)
         self.store.set_questions(application_id, tracker, questions)
         pending = self._pending_questions(application_id, tracker)
+        fingerprint = self._record(application_id, tracker).current_fingerprint
+        if passed and not pending and fingerprint is None and self._has_requirements(job):
+            try:
+                preview, _ = self._assemble_package(application_id, tracker, job, route.application_url)
+                fingerprint = preview.fingerprint()
+            except (OSError, ValueError):
+                pass
         observation.update({
             "passed": bool(passed and form_identified and not pending),
             "application_url": route.application_url,
-            "package_fingerprint": self._record(application_id, tracker).current_fingerprint,
+            "package_fingerprint": fingerprint,
             "adapter": route.adapter_name, "checked_at": route.checked_at,
             "blockers": [q["key"] if isinstance(q, dict) else q for q in pending]
                         or ([] if passed else [observation["reason_code"]]),

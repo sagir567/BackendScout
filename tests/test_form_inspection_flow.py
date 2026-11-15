@@ -180,7 +180,8 @@ def test_hybrid_worker_chains_authorized_tailoring_and_preserves_schema_answer(h
     assert detail["item"]["verified_route"]["application_url"] == package.official_destination
     assert detail["item"]["browser_observation"]["phase"] == "preflight"
     assert detail["browser_observation"]["details"]["field_signature"] == result["field_signature"]
-    assert detail["item"]["delivery_readiness"]["state"] != "supported_after_approval"
+    assert detail["item"]["delivery_readiness"]["state"] == "supported_after_approval"
+    assert detail["package"]["approved"] is False
 
 
 def test_hybrid_inspection_without_tailor_after_does_not_queue_paid_draft(hybrid):
@@ -438,6 +439,9 @@ def test_hybrid_unchanged_or_timestamp_only_preflight_preserves_exact_approval(h
     service, result, _ = hybrid
     service.inspect_form("example-job", T, "12345")
     package = service.preview_package("example-job", T)[0]
+    initial = service.store.latest_form_inspection("example-job", T)
+    assert initial["package_fingerprint"] == package.fingerprint()
+    assert not service.store.package_approved("example-job", T, package.fingerprint())
     service.approve_and_queue("example-job", T, "12345", package.fingerprint())
     result["route"]["checked_at"] = datetime.now(UTC).isoformat()
     assert service.inspect_form("example-job", T, "12345").status == "succeeded"

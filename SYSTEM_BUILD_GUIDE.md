@@ -1611,6 +1611,8 @@ position query is not equivalent and stays blocked.
 For Greenhouse, test a rendered dropdown that ignores its first click and a
 hydration change that inserts another input. Keep the observed widget bound to
 its unique ID and require its exact option list before package approval.
+A successful recheck of an existing draft records the exact preview
+fingerprint even before approval; it does not create an approval or attempt.
 Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
 Verification fields such as one-time codes are not requested in Telegram.
