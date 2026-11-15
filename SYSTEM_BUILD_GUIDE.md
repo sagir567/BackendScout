@@ -1628,6 +1628,8 @@ Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
 Mailbox digests include only clear, matched status transitions. The workspace
 imports those transitions without granting approval or replaying delivery.
+Scheduled scouting sends new job cards but skips healthy run summaries.
+Manual scouting keeps its summary unless explicitly run with `--quiet-summary`.
 Both workspace views use unresolved questions to gate approval, not the full
 list of observed fields.
 Verification fields such as one-time codes are not requested in Telegram.

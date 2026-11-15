@@ -704,6 +704,9 @@ def collect_run(
             help="Include jobs discovered in recent Indeed recommendation emails.",
         ),
     ] = True,
+    quiet_summary: Annotated[
+        bool, typer.Option("--quiet-summary", help="Skip routine Telegram run summaries when sources respond.")
+    ] = False,
 ) -> bool:
     """Collect, filter, score, and optionally sync Israel-relevant jobs."""
     if send_digest and not write_notion:
@@ -843,7 +846,7 @@ def collect_run(
                 else:
                     page = existing_page
                 digest_pages.append(page)
-            if send_digest:
+            if send_digest and (not quiet_summary or digest_pages or resend_pending or not successful_sources):
                 tracker_counts.update(
                     application_digest_item_from_page(page).status.value
                     for page in query_all_pages(notion_client, data_source_id)
@@ -858,23 +861,24 @@ def collect_run(
                     if digest_pages:
                         items = [application_digest_item_from_page(page) for page in digest_pages]
                         send_digest_messages(telegram_client, notion_client, resolved_chat_id, items, tracker)
-                    telegram_client.send_message(
-                        resolved_chat_id,
-                        _format_scout_run_summary(
-                            tracker=tracker,
-                            collected=len(collected),
-                            israel_relevant=len(israel_relevant),
-                            shortlisted=len(shortlist),
-                            created=len(created_pages),
-                            already_tracked=updated_pages,
-                            failures=failures,
-                            indeed_report=indeed_report,
-                            sources_available=successful_sources > 0,
-                            tracker_counts=tracker_counts,
-                            filter_counts=filter_counts,
-                            source_counts=source_counts,
-                        ),
-                    )
+                    if not quiet_summary or not successful_sources:
+                        telegram_client.send_message(
+                            resolved_chat_id,
+                            _format_scout_run_summary(
+                                tracker=tracker,
+                                collected=len(collected),
+                                israel_relevant=len(israel_relevant),
+                                shortlisted=len(shortlist),
+                                created=len(created_pages),
+                                already_tracked=updated_pages,
+                                failures=failures,
+                                indeed_report=indeed_report,
+                                sources_available=successful_sources > 0,
+                                tracker_counts=tracker_counts,
+                                filter_counts=filter_counts,
+                                source_counts=source_counts,
+                            ),
+                        )
     except Exception as exc:
         console.print("[red]Public collection sync failed[/red]")
         console.print(str(exc))
@@ -1435,6 +1439,7 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                 send_digest=True,
                 chat_id=task.payload.get("chat_id"),
                 tracker=task.tracker,
+                quiet_summary=bool(task.payload.get("scheduled_for")),
             )
             if scout_result is False:
                 blocked_reason = "No job source could be checked; scouting is unavailable."

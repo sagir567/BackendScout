@@ -560,12 +560,13 @@ github_repositories: []
     assert output_path.is_file()
 
 
-def test_tasks_worker_once_runs_queued_scout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_tasks_worker_once_runs_queued_scout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scheduled) -> None:
     queue_path = tmp_path / "tasks.json"
     task = enqueue_task(
         QueuedTaskKind.SCOUT_TODAY,
         TrackerName.PRODUCTION,
-        {"chat_id": 12345},
+        {"chat_id": 12345} | ({"scheduled_for": "2026-11-15T06:00:00Z"} if scheduled else {}),
         queue_path,
     )
     calls = []
@@ -580,6 +581,7 @@ def test_tasks_worker_once_runs_queued_scout(monkeypatch: pytest.MonkeyPatch, tm
             "send_digest": True,
             "chat_id": 12345,
             "tracker": TrackerName.PRODUCTION,
+            "quiet_summary": scheduled,
         }
     ]
     assert list_tasks(queue_path)[0].status == QueuedTaskStatus.DONE
@@ -950,12 +952,14 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
     (ApplicationStatus.CV_DRAFTED, True, False),
     (ApplicationStatus.SUBMITTED, True, False),
 ])
-def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
+@pytest.mark.parametrize("quiet_summary", [False, True])
+def test_collect_run_preserves_job_cards_and_can_hide_routine_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     existing_status,
     resend_pending,
     delivered,
+    quiet_summary,
 ) -> None:
     profile_path = tmp_path / "candidate_profile.yaml"
     write_profile(profile_path)
@@ -1073,14 +1077,18 @@ def test_collect_run_includes_indeed_email_and_always_sends_run_summary(
             "production",
             "--write-notion",
             "--send-digest",
-        ] + (["--resend-pending"] if resend_pending else []),
+        ] + (["--resend-pending"] if resend_pending else [])
+        + (["--quiet-summary"] if quiet_summary else []),
     )
 
     assert result.exit_code == 0, result.output
     assert digest_pages == (["page-indeed"] if delivered else [])
-    assert f"New matching jobs: {0 if existing_page else 1}" in sent_messages[0]
-    assert "Indeed email: 1 messages, 1 jobs parsed" in sent_messages[0]
-    assert "Collector warnings: 1" in sent_messages[0]
+    if quiet_summary:
+        assert sent_messages == []
+    else:
+        assert f"New matching jobs: {0 if existing_page else 1}" in sent_messages[0]
+        assert "Indeed email: 1 messages, 1 jobs parsed" in sent_messages[0]
+        assert "Collector warnings: 1" in sent_messages[0]
     assert "Job Space rate limit reached" in result.output
     if existing_page:
         assert existing_page["properties"]["Status"]["status"]["name"] == existing_status.value
