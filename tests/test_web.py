@@ -31,8 +31,10 @@ def pair(client, sessions):
     return {"Origin": ORIGIN, "X-CSRF-Token": response.json()["csrf_token"]}
 
 
-@pytest.mark.parametrize("catch_up", [False, True])
-def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, monkeypatch, tmp_path, catch_up):
+@pytest.mark.parametrize("catch_up,telegram_outage", [(False, False), (True, False), (False, True)])
+def test_employer_mail_updates_notion_telegram_and_authenticated_history(
+    web, monkeypatch, tmp_path, catch_up, telegram_outage
+):
     client, sessions, service = web
     pair(client, sessions)
     tracker = TrackerName.TEST
@@ -66,6 +68,8 @@ def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, mo
     class Telegram(Transport):
         def send_message(self, chat_id, message):
             assert chat_id == 12345
+            if telegram_outage and len(inbox) <= 2:
+                raise RuntimeError("Telegram offline")
             digests.append(message)
 
     monkeypatch.setattr(cli, "NotionClient", Notion)
@@ -89,17 +93,24 @@ def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, mo
                                         date_header="", snippet=body, received_at_ms=len(inbox) + 1))
         if catch_up and expected == ApplicationStatus.INTERVIEW:
             continue
-        scan()
+        if telegram_outage:
+            with pytest.raises(RuntimeError, match="Telegram offline"):
+                scan()
+        else:
+            scan()
         status, record = records[-1]
         assert status == expected and f"Gmail message ID: {message_id}" in record
-        assert expected.value in digests[-1]
+        if not telegram_outage:
+            assert expected.value in digests[-1]
         service.sync_projection(tracker, "12345")
         item = client.get("/api/overview").json()["items"][0]
         assert (item["workspace_bucket"], item["status"]) == ("history", expected.value)
+    if telegram_outage:
+        inbox.append(inbox[0])
     scan()
     assert [stage for stage, _ in records] == [ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED]
-    assert len(digests) == (1 if catch_up else 2)
-    assert "interview" not in digests[-1]
+    assert len(digests) == (1 if catch_up or telegram_outage else 2)
+    assert ("interview" in digests[-1]) == telegram_outage
 
 
 def test_private_data_and_artifacts_require_owner_session(web):

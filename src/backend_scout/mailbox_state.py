@@ -16,11 +16,32 @@ GMAIL_AUTH_ALERT_COOLDOWN = timedelta(hours=24)
 
 def save_pending_mailbox_digest(path: Path, chat_id: int, message: str) -> None:
     """Keep only the rendered notification, never the source email."""
+    batches = load_pending_mailbox_digests(path, chat_id)
+    if batches and len(batches[-1] + "\n\n" + message) <= 4000:
+        batches[-1] += "\n\n" + message
+    else:
+        batches.append(message)
+    write_pending_mailbox_digests(path, chat_id, batches)
+
+
+def load_pending_mailbox_digests(path: Path, chat_id: int) -> list[str]:
+    if not path.exists():
+        return []
+    pending = json.loads(path.read_text(encoding="utf-8"))
+    if pending["chat_id"] != chat_id:
+        raise ValueError("Pending mailbox digest belongs to a different Telegram chat.")
+    return pending["messages"] if "messages" in pending else [pending["message"]]
+
+
+def write_pending_mailbox_digests(path: Path, chat_id: int, batches: list[str]) -> None:
+    if not batches:
+        path.unlink(missing_ok=True)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
         temporary = Path(file.name)
         try:
-            json.dump({"chat_id": chat_id, "message": message}, file)
+            json.dump({"chat_id": chat_id, "messages": batches}, file)
             file.close()
             temporary.replace(path)
         finally:
