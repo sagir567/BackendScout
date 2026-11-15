@@ -2353,6 +2353,7 @@ def gmail_watch_once(
         console.print("[green]Mailbox scan complete: no relevant application messages.[/green]")
         return
     matched_updates = updates
+    changed_updates = []
 
     if write_notion or send_digest:
         if not settings.notion_api_key:
@@ -2371,32 +2372,43 @@ def gmail_watch_once(
                     (message, classification, match_message_to_application(message, applications))
                     for message, classification, _application in updates
                 ]
-                if write_notion:
-                    for message, classification, application in matched_updates:
-                        if application is None or classification.status is None:
-                            continue
-                        if can_transition_application_status(application.status, classification.status):
+                current_statuses = {}
+                for message, classification, application in matched_updates:
+                    if application is None or classification.status is None or classification.confidence != "clear":
+                        continue
+                    page_id = application.notion_page_id
+                    current = current_statuses.get(page_id, application.status)
+                    if current not in {
+                        ApplicationStatus.SUBMITTED, ApplicationStatus.RECRUITER_REPLY,
+                        ApplicationStatus.ASSESSMENT, ApplicationStatus.INTERVIEW,
+                        ApplicationStatus.OFFER,
+                    } or current == classification.status:
+                        continue
+                    if can_transition_application_status(current, classification.status):
+                        if write_notion:
                             notion_client.update_application_status(
-                                application.notion_page_id,
+                                page_id,
                                 classification.status,
                             )
                             notion_client.append_submission_record(
-                                application.notion_page_id,
+                                page_id,
                                 format_mailbox_audit_record(message, classification),
                             )
+                        current_statuses[page_id] = classification.status
+                        changed_updates.append((message, classification, application))
         except Exception as exc:
             console.print("[red]Mailbox tracker update failed[/red]")
             console.print(str(exc))
             raise typer.Exit(1) from exc
 
     _print_mailbox_updates(matched_updates)
-    if send_digest and matched_updates:
+    if send_digest and changed_updates:
         if not settings.telegram_bot_token:
             console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
             raise typer.Exit(1)
         resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
         with TelegramClient(settings.telegram_bot_token) as telegram_client:
-            telegram_client.send_message(resolved_chat_id, format_mailbox_digest(matched_updates))
+            telegram_client.send_message(resolved_chat_id, format_mailbox_digest(changed_updates))
         console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
     if write_notion or send_digest:
         mark_messages_processed(messages, state_path)

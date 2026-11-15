@@ -49,6 +49,20 @@ def state(store):
         return db.execute("SELECT status FROM applications ORDER BY id").fetchall()
 
 
+def test_mailbox_tracker_progress_projects_to_claimed_web_record(store):
+    job = Job(source="manual", source_url="https://example.com/job", company="Example",
+              title="Backend Engineer", description="Build and maintain backend systems.")
+    store.import_snapshot("example-job", TrackerName.TEST, job, "submitted")
+    with sqlite3.connect(store.database_path) as db:
+        db.execute("UPDATE application_metadata SET claimed=1")
+    store.import_snapshot("example-job", TrackerName.TEST, job, "interview")
+    assert state(store) == [("interview",)]
+    store.import_snapshot("example-job", TrackerName.TEST, job, "submitted")
+    assert state(store) == [("interview",)]
+    store.import_snapshot("example-job", TrackerName.TEST, job, "rejected")
+    assert state(store) == [("rejected",)]
+
+
 def test_versions_immutability_and_stale_approval(store):
     first = approve(store)
     second = first.model_copy(update={"cv_version": "v2"})

@@ -50,6 +50,11 @@ def test_classify_gmail_message_detects_rejection() -> None:
     assert not classification.needs_immediate_attention
 
 
+def test_rejection_that_mentions_interview_remains_rejection():
+    message = _message("Interview follow-up", "After the interview, we decided not to proceed.")
+    assert classify_gmail_message(message).status == ApplicationStatus.REJECTED
+
+
 def test_classify_gmail_message_leaves_ambiguous_mail_for_review() -> None:
     classification = classify_gmail_message(_message("Talent team", "We reviewed your candidate profile."))
 
@@ -108,6 +113,11 @@ def test_match_message_to_application_uses_company_or_role_words() -> None:
 
     assert match_message_to_application(_message("Infinidat application received", ""), [application]) == application
     assert match_message_to_application(_message("Junior Software Developer update", ""), [application]) == application
+    other = application.model_copy(update={"notion_page_id": "other", "title": "QA Engineer"})
+    assert match_message_to_application(_message("Infinidat update", ""), [application, other]) is None
+    assert match_message_to_application(
+        _message("Infinidat - Junior Software Developer", ""), [other, application]
+    ) == application
 
 
 def test_format_mailbox_digest_summarizes_updates() -> None:

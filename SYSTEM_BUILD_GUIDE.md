@@ -1626,6 +1626,8 @@ A successful recheck of an existing draft records the exact preview
 fingerprint even before approval; it does not create an approval or attempt.
 Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
+Mailbox digests include only clear, matched status transitions. The workspace
+imports those transitions without granting approval or replaying delivery.
 Both workspace views use unresolved questions to gate approval, not the full
 list of observed fields.
 Verification fields such as one-time codes are not requested in Telegram.

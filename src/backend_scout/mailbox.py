@@ -66,6 +66,15 @@ class MailClassification(BaseModel):
 def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
     haystack = _message_search_text(message)
     recruitment_context = is_recruitment_related_message(message)
+    if recruitment_context and _contains_any(
+        haystack,
+        ("not moving forward", "decided not to proceed", "not selected", "rejection",
+         "won't be moving forward", "will not be moving forward", "לא נוכל להמשיך", "לא נתקדם"),
+    ):
+        return MailClassification(
+            message_id=message.message_id, status=ApplicationStatus.REJECTED,
+            confidence="clear", reason="Rejection language detected.",
+        )
     if _contains_any(
         haystack,
         ("job offer", "employment offer", "offer letter", "employment agreement", "contract offer"),
@@ -98,16 +107,6 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             confidence="clear",
             reason="Assessment or coding-challenge language detected.",
             needs_immediate_attention=True,
-        )
-    if recruitment_context and _contains_any(
-        haystack,
-        ("not moving forward", "decided not to proceed", "unfortunately", "not selected", "rejection"),
-    ):
-        return MailClassification(
-            message_id=message.message_id,
-            status=ApplicationStatus.REJECTED,
-            confidence="clear",
-            reason="Rejection language detected.",
         )
     if _contains_any(
         haystack,
@@ -157,15 +156,13 @@ def match_message_to_application(
     applications: list[ApplicationDigestItem],
 ) -> ApplicationDigestItem | None:
     haystack = _message_search_text(message)
-    for application in applications:
-        company = application.company.casefold()
-        title = application.title.casefold()
-        title_words = [word for word in title.replace("-", " ").split() if len(word) >= 4]
-        if company in haystack:
-            return application
-        if title_words and sum(1 for word in title_words if word in haystack) >= min(2, len(title_words)):
-            return application
-    return None
+    company_matches = [a for a in applications if a.company.casefold() in haystack]
+    if len(company_matches) == 1:
+        return company_matches[0]
+    title_matches = [
+        a for a in (company_matches or applications) if a.title.casefold() in haystack
+    ]
+    return title_matches[0] if len(title_matches) == 1 else None
 
 
 def format_mailbox_digest(

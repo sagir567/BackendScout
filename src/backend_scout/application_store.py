@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from backend_scout.application_package import ApplicationPackage
 from backend_scout.config import TrackerName
-from backend_scout.models import Job
+from backend_scout.models import ApplicationStatus, Job, can_transition_application_status
 
 SCHEMA_VERSION = 5
 
@@ -344,7 +344,12 @@ class ApplicationStore:
             ).fetchone()
             if meta and meta["claimed"]:
                 # Observation can warn about external completion, but cannot replace local review content.
-                if legacy_status in {"closed", "rejected"} and app["status"] not in {
+                if app["status"] in historical - {"closed", "rejected"} and legacy_status in historical:
+                    if can_transition_application_status(
+                        ApplicationStatus(app["status"]), ApplicationStatus(legacy_status)
+                    ):
+                        db.execute("UPDATE applications SET status=? WHERE id=?", (legacy_status, app["id"]))
+                elif legacy_status in {"closed", "rejected"} and app["status"] not in {
                     "sending",
                     "submitted",
                     "submission_unknown",
