@@ -387,6 +387,19 @@ def test_historical_submission_without_local_proof_stays_retryable(projection):
     assert rows(projection)[0]["last_error"] == "projection_submission_proof_missing"
 
 
+def test_projection_does_not_overwrite_newer_employer_stage(projection):
+    submit(projection)
+    projection.client.retrieve_page.side_effect = lambda page_id: {
+        "id": page_id,
+        "parent": {"type": "data_source_id", "data_source_id": "test-source"},
+        "properties": {"Status": {"status": {"name": "interview"}}},
+    }
+    assert dispatch(projection).projected == 1
+    projection.client.update_job_page.assert_called_once()
+    projection.client.record_submission.assert_not_called()
+    projection.client.update_application_status.assert_not_called()
+
+
 def submit_email(projection, damage=None):
     register(projection)
     package = ApplicationPackage(

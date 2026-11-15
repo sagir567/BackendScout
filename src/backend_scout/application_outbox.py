@@ -19,7 +19,7 @@ from backend_scout.application_package import ApplicationPackage
 from backend_scout.application_urls import application_entry_url
 from backend_scout.config import Settings, TrackerName
 from backend_scout.cv_artifacts import sha256_file
-from backend_scout.models import ApplicationStatus, Job
+from backend_scout.models import ApplicationStatus, Job, can_transition_application_status
 from backend_scout.notion import NotionClient
 
 MAX_ATTEMPTS = 5
@@ -400,6 +400,15 @@ def _project(database: Path, claim: _Claim, settings: Settings, tracker: Tracker
             raise _ProjectionError("projection_page_parent_mismatch")
         _renew(database, claim)
         client.update_job_page(page_id, job)
+        remote_name = page.get("properties", {}).get("Status", {}).get("status", {}).get("name")
+        employer_stages = {
+            ApplicationStatus.RECRUITER_REPLY, ApplicationStatus.ASSESSMENT,
+            ApplicationStatus.INTERVIEW, ApplicationStatus.OFFER, ApplicationStatus.REJECTED,
+        }
+        if remote_name in employer_stages and not can_transition_application_status(
+            ApplicationStatus(remote_name), status
+        ):
+            return
         _renew(database, claim)
         if submission:
             client.record_submission(
