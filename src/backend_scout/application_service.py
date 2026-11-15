@@ -726,7 +726,7 @@ class ApplicationService:
             "questions": json.loads(meta.get("questions_json") or "[]"),
             "pending_questions": (
                 self._pending_questions(application_id, tracker)
-                if self.settings.web_ready_to_apply and self._hybrid and item["status"] not in HISTORICAL
+                if self._hybrid and item["status"] not in HISTORICAL
                 else None
             ),
             "delivery_enabled": self.settings.web_allow_delivery,

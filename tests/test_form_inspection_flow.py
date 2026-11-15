@@ -326,6 +326,8 @@ def test_telegram_answers_unlock_current_package_without_approving(hybrid, ready
     assert second[0] != first[0]
     service.answer_telegram_preparation("example-job", T, "12345", second[0], "no")
     detail = service.detail("example-job", T)
+    assert len(detail["questions"]) == 2
+    assert detail["pending_questions"] == []
     if ready_view:
         assert detail["item"]["workspace_bucket"] == "ready"
     assert detail["package"]["approved"] is False
