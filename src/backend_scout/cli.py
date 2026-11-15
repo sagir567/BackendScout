@@ -105,6 +105,7 @@ from backend_scout.mailbox_state import (
     gmail_auth_alert_path,
     mark_gmail_auth_alert_sent,
     mark_messages_processed,
+    save_pending_mailbox_digest,
     unseen_messages,
 )
 from backend_scout.matcher import ScoredJob, score_jobs
@@ -2324,6 +2325,14 @@ def gmail_watch_once(
     """Inspect Gmail for employer replies and optionally update the tracker."""
     settings = Settings()
     auth_alert_path = gmail_auth_alert_path(state_path)
+    pending_digest = state_path.with_name(f"{state_path.name}.{tracker.value}.telegram.json")
+    resolved_chat_id = None
+    if send_digest:
+        if not settings.telegram_bot_token:
+            console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
+            raise typer.Exit(1)
+        resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
+        _deliver_pending_mailbox_digest(pending_digest, resolved_chat_id, settings)
     try:
         fetched_messages = list_recent_messages(query, max_results)
     except Exception as exc:
@@ -2402,18 +2411,30 @@ def gmail_watch_once(
             console.print("[red]Mailbox tracker update failed[/red]")
             console.print(str(exc))
             raise typer.Exit(1) from exc
+        finally:
+            if resolved_chat_id is not None and changed_updates:
+                save_pending_mailbox_digest(
+                    pending_digest, resolved_chat_id, format_mailbox_digest(changed_updates)
+                )
 
     _print_mailbox_updates(matched_updates)
-    if send_digest and changed_updates:
-        if not settings.telegram_bot_token:
-            console.print("[red]Missing TELEGRAM_BOT_TOKEN in .env[/red]")
-            raise typer.Exit(1)
-        resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
-        with TelegramClient(settings.telegram_bot_token) as telegram_client:
-            telegram_client.send_message(resolved_chat_id, format_mailbox_digest(changed_updates))
-        console.print(f"[green]Sent mailbox digest to chat {resolved_chat_id}.[/green]")
     if write_notion or send_digest:
         mark_messages_processed(messages, state_path)
+    if resolved_chat_id is not None and changed_updates:
+        _deliver_pending_mailbox_digest(pending_digest, resolved_chat_id, settings)
+
+
+def _deliver_pending_mailbox_digest(path: Path, chat_id: int, settings: Settings) -> None:
+    if not path.exists():
+        return
+    pending = json.loads(path.read_text(encoding="utf-8"))
+    if pending["chat_id"] != chat_id:
+        console.print("[red]Pending mailbox digest belongs to a different Telegram chat.[/red]")
+        raise typer.Exit(1)
+    with TelegramClient(settings.telegram_bot_token) as telegram_client:
+        telegram_client.send_message(chat_id, pending["message"])
+    path.unlink()
+    console.print("[green]Sent mailbox digest to Telegram.[/green]")
 
 
 @contacts_app.command("discover")

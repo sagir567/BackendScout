@@ -5,12 +5,26 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from backend_scout.gmail import GmailMessageSummary
 
 DEFAULT_MAILBOX_STATE_PATH = Path("data/mailbox/processed_status_messages.json")
 MAX_PROCESSED_MESSAGE_IDS = 5_000
 GMAIL_AUTH_ALERT_COOLDOWN = timedelta(hours=24)
+
+
+def save_pending_mailbox_digest(path: Path, chat_id: int, message: str) -> None:
+    """Keep only the rendered notification, never the source email."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+        temporary = Path(file.name)
+        try:
+            json.dump({"chat_id": chat_id, "message": message}, file)
+            file.close()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def unseen_messages(

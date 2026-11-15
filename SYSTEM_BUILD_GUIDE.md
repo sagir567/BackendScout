@@ -1570,6 +1570,11 @@ for manual review. Keep the read-only request guard active while opening menus.
 The mailbox scans overlapping recent mail. Cancel scheduled scans that are
 already a full interval old instead of replaying a burst after a restart.
 Health ignores those cancellations but still requires a recent real success.
+Before sending a batch of mailbox updates to Telegram, save the rendered digest
+locally. The next scan retries it even when no fresh email is found, without
+repeating the Notion status update. Delete the pending digest only after Telegram
+acknowledges the call. An ambiguous network failure may repeat the notification,
+but never sends another application.
 
 On a verified Comeet posting, the read-only resolver can open the known
 Apply disclosure outside any form. It ignores the same-job social iframe and

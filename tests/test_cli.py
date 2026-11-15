@@ -882,9 +882,11 @@ def test_gmail_watch_once_reports_expired_oauth_only_once(
     assert "authorization expired" in sent_messages[0]
 
 
+@pytest.mark.parametrize("telegram_failure", [False, True])
 def test_gmail_watch_once_writeback_updates_status_and_audit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    telegram_failure: bool,
 ) -> None:
     updated_statuses = []
     appended_records = []
@@ -927,19 +929,44 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
             return {"id": page_id}
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
+    sent = []
+    if telegram_failure:
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
 
-    result = runner.invoke(
-        app,
-        [
-            "gmail",
-            "watch-once",
-            "--write-notion",
-            "--state-path",
-            str(tmp_path / "mailbox.json"),
-        ],
-    )
+        class FakeTelegramClient:
+            def __init__(self, _token: str) -> None:
+                pass
 
-    assert result.exit_code == 0
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                pass
+
+            def send_message(self, chat_id: int, message: str) -> None:
+                sent.append((chat_id, message))
+                if len(sent) == 1:
+                    raise RuntimeError("Telegram unavailable")
+
+        monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+
+    state_path = tmp_path / "mailbox.json"
+    command = ["gmail", "watch-once", "--write-notion", "--state-path", str(state_path)]
+    if telegram_failure:
+        command += ["--send-digest", "--chat-id", "12345"]
+
+    result = runner.invoke(app, command)
+    if telegram_failure:
+        assert result.exit_code == 1
+        assert isinstance(result.exception, RuntimeError)
+        assert runner.invoke(app, command).exit_code == 0
+        assert runner.invoke(app, command).exit_code == 0
+        assert len(sent) == 2
+        assert sent[0] == sent[1]
+        assert "assessment" in sent[1][1]
+        assert not list(tmp_path.glob("*.telegram.json"))
+    else:
+        assert result.exit_code == 0
     assert updated_statuses == [("page-1", ApplicationStatus.ASSESSMENT)]
     assert appended_records[0][0] == "page-1"
     assert "Gmail message ID: msg-1" in appended_records[0][1]
