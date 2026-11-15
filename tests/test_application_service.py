@@ -46,6 +46,20 @@ def test_imported_remote_cv_approval_never_authorizes_delivery(review_service):
     assert not is_ledger_owned(service.store.database_path, "example-job", T)
 
 
+def test_rollout_gate_prevents_approval_and_queueing_in_legacy_web_view(hybrid_ready, monkeypatch):
+    service = hybrid_ready
+    service.settings.web_ready_to_apply = False
+    monkeypatch.setattr("backend_scout.application_service.hybrid_delivery_allowed", lambda *_: False)
+    detail = service.detail("example-job", T)
+    fingerprint = detail["package"]["fingerprint"]
+    assert detail["package_blocker"]["reason_code"] == "rollout_gate"
+    assert not detail["can_resume"]
+    assert service.approve_and_queue("example-job", T, "12345", fingerprint).reason_code == "rollout_gate"
+    assert service.queue_delivery("example-job", T, "12345", fingerprint).reason_code == "rollout_gate"
+    assert not service.store.package_approved("example-job", T, fingerprint)
+    assert not list_tasks(service.store.database_path)
+
+
 def test_preview_does_not_claim_or_mutate_review_authority(review_service):
     service = review_service
     detail = service.detail("example-job", T)

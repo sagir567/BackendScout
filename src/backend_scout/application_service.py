@@ -705,6 +705,10 @@ class ApplicationService:
         blocker = (({"reason_code": hybrid_blocker.reason_code, "message": hybrid_blocker.message}
                     if hybrid_blocker else None)
                    or self._posting_blocker(application_id, tracker) or blocker)
+        if preview and not blocker:
+            rollout = self._rollout_blocker(application_id, tracker)
+            if rollout:
+                blocker = {"reason_code": rollout.reason_code, "message": rollout.message}
         meta = self.store.metadata(application_id, tracker)
         readiness_job = self._record(application_id, tracker).job
         if self._hybrid and item["verified_route"]:
@@ -727,8 +731,6 @@ class ApplicationService:
             and self.settings.web_allow_delivery
             and item["status"] in {"approved", "needs_input", "blocked", "review_ready"}
             and (attempt is None or attempt["state"] == "not_sent")
-            and (not self.settings.web_ready_to_apply or not self._hybrid
-                 or hybrid_delivery_allowed(self.settings, self.store, application_id, tracker))
         )
         submission = None
         if attempt and attempt["state"] == "submitted":
@@ -1366,12 +1368,17 @@ class ApplicationService:
             fingerprint=package.fingerprint(),
         )
 
-    def approve_and_queue(self, application_id, tracker, actor_id, fingerprint):
-        self._authorize(actor_id)
-        if (self.settings.web_ready_to_apply and self._hybrid
+    def _rollout_blocker(self, application_id, tracker):
+        if (self._hybrid
                 and not hybrid_delivery_allowed(self.settings, self.store, application_id, tracker)):
             return self._outcome(application_id, "rollout_gate",
                                  "Production hybrid delivery awaits approved canary rollout.", status="blocked")
+        return None
+
+    def approve_and_queue(self, application_id, tracker, actor_id, fingerprint):
+        self._authorize(actor_id)
+        if blocked := self._rollout_blocker(application_id, tracker):
+            return blocked
         if blocked := self._hybrid_blocked_outcome(application_id, tracker):
             return blocked
         if blocked := self._posting_blocked_outcome(application_id, tracker):
@@ -1397,10 +1404,8 @@ class ApplicationService:
 
     def queue_delivery(self, application_id, tracker, actor_id, fingerprint):
         self._authorize(actor_id)
-        if (self.settings.web_ready_to_apply and self._hybrid
-                and not hybrid_delivery_allowed(self.settings, self.store, application_id, tracker)):
-            return self._outcome(application_id, "rollout_gate",
-                                 "Production hybrid delivery awaits approved canary rollout.", status="blocked")
+        if blocked := self._rollout_blocker(application_id, tracker):
+            return blocked
         if blocked := self._hybrid_blocked_outcome(application_id, tracker):
             return blocked
         if blocked := self._posting_blocked_outcome(application_id, tracker):
