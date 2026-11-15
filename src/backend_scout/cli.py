@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 import typer
@@ -1407,7 +1407,10 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                 blocked_reason = outcome.message
             if outcome.status == "retryable_failure":
                 raise ValueError(outcome.reason_code)
-            completion_message = f"{_task_label(task)}: {outcome.message}\nWorkspace: {settings.web_public_origin}"
+            application_link = f"{settings.web_public_origin.rstrip('/')}/?" + urlencode(
+                {"application": _payload_string(task.payload, "page_id")}
+            )
+            completion_message = f"{_task_label(task)}: {outcome.message}\nApplication: {application_link}"
             if outcome.reason_code == "portal_input_required" and task.kind in {
                 QueuedTaskKind.PACKAGE_CV_DRAFT, QueuedTaskKind.PACKAGE_FORM_INSPECT,
             }:
@@ -1420,7 +1423,8 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                         completion_message = question[2]
                     elif task.payload.get("background_preparation") is True:
                         completion_message = None
-            elif task.payload.get("background_preparation") is True:
+            elif (task.payload.get("background_preparation") is True
+                  or task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT and outcome.status == "succeeded"):
                 completion_message = None
             console.print_json(data=outcome.model_dump(mode="json"))
         elif task.kind == QueuedTaskKind.APPLICATION_SYNC:

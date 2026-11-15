@@ -22,6 +22,30 @@ from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_t
 runner = CliRunner()
 
 
+@pytest.mark.parametrize("status", ["succeeded", "blocked"])
+def test_form_inspection_alerts_only_on_blocker_with_deep_link(monkeypatch, tmp_path, status, review_service):
+    from types import SimpleNamespace
+
+    from backend_scout import cli
+
+    path = tmp_path / "workflow.sqlite3"
+    task = enqueue_task(QueuedTaskKind.PACKAGE_FORM_INSPECT, TrackerName.PRODUCTION,
+                        {"page_id": "example-job", "actor_id": "12345"}, path)
+    outcome = cli.OperationOutcome(status=status, reason_code="fixture", message="Review result",
+                                   application_id="example-job", correlation_id="fixture")
+    monkeypatch.setattr(cli, "Settings", lambda: review_service.settings)
+    monkeypatch.setattr(cli, "build_application_service",
+                        lambda *_, **__: SimpleNamespace(inspect_form=lambda *_, **__: outcome))
+    alerts = []
+    monkeypatch.setattr(cli, "_send_task_telegram_message", lambda _task, message: alerts.append(message))
+    cli._process_claimed_task(task, path)
+    assert list_tasks(path)[0].status.value == ("done" if status == "succeeded" else "blocked")
+    if status == "blocked":
+        assert len(alerts) == 1 and "/?application=example-job" in alerts[0]
+    else:
+        assert not alerts
+
+
 def test_worker_skips_stale_scheduled_mailbox_scan(monkeypatch, tmp_path):
     from backend_scout import cli
 
