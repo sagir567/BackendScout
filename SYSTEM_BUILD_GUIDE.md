@@ -1613,6 +1613,8 @@ hydration change that inserts another input. Keep the observed widget bound to
 its unique ID and require its exact option list before package approval.
 Hydrate the Greenhouse widget before taking either review snapshot, and exclude
 the phone widget's country-search input from the application field list.
+After attaching, re-read the live fields and choices without reopening a
+dropdown solely to hydrate the already active form.
 Allow Greenhouse public locale JSON only during the read stage. Save a
 full-page pre-submit screenshot privately after validating the exact fields
 and attachment; store the receipt screenshots separately after confirmation.
