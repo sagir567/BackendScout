@@ -1613,7 +1613,11 @@ hydration change that inserts another input. Keep the observed widget bound to
 its unique ID and require its exact option list before package approval.
 Hydrate the Greenhouse widget before taking either review snapshot, and exclude
 the phone widget's country-search input from the application field list.
-Allow Greenhouse public locale JSON only during the read stage. Store an
+Allow Greenhouse public locale JSON only during the read stage. Save a
+full-page pre-submit screenshot privately after validating the exact fields
+and attachment; store the receipt screenshots separately after confirmation.
+The pre-submit capture can contain personal data and stays in the proof archive.
+Store an
 optional owner-confirmed junior monthly salary expectation separately from
 the scoring floor; an explicit application answer wins.
 A successful recheck of an existing draft records the exact preview

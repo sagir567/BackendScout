@@ -337,6 +337,9 @@ def test_five_employer_forms_send_exact_file_once_and_save_receipt(review_servic
         proof = Path(result.screenshot_path)
         assert hashlib.sha256(proof.read_bytes()).hexdigest() == result.screenshot_sha256
         assert Path(result.receipt_details["full_proof_path"]).is_file()
+        before = Path(result.receipt_details["before_proof_path"])
+        assert before.is_file()
+        assert hashlib.sha256(before.read_bytes()).hexdigest() == result.receipt_details["before_proof_sha256"]
         review_service.store.finish_attempt(attempt.attempt_id, "submitted", json.dumps(result.receipt_details),
                                            str(proof.relative_to(review_service.store.private_root)))
         # Restart cannot claim a second external submission for this application.

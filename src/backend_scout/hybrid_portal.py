@@ -498,8 +498,14 @@ class HybridPortalAdapter:
                 or not route_allows_url(route, view.frame.url)
                 or view.file_control.evaluate(_FILE_HASHES) != [package.cv_sha256]):
                 return result("needs_input", "form_changed", "The destination or attachment changed before submission.")
-            observe("ready_to_submit", destination=route.application_url, cv_sha256=package.cv_sha256)
             action()
+            before_path = proof_path.with_name(proof_path.stem + "-before.png")
+            before = page.screenshot(full_page=True, type="png")
+            _validate_png(before)
+            _save_proof(before_path, before)
+            before_sha256 = hashlib.sha256(before).hexdigest()
+            observe("ready_to_submit", destination=route.application_url, cv_sha256=package.cv_sha256,
+                    before_proof_path=str(before_path), before_proof_sha256=before_sha256)
             clicked = True  # Even a transport timeout after this line is uncertain.
             policy.update(stage="send", writes=0)
             button.click(timeout=10_000, no_wait_after=True)
@@ -533,6 +539,8 @@ class HybridPortalAdapter:
                                "cv_version": package.cv_version,
                                "fingerprint": package.fingerprint(), "cv_sha256": package.cv_sha256,
                                "proof_sha256": hashlib.sha256(raw).hexdigest(),
+                               "before_proof_path": str(before_path),
+                               "before_proof_sha256": before_sha256,
                                "full_proof_path": str(full_path),
                                "full_proof_sha256": hashlib.sha256(full).hexdigest()}
                     return result("submitted", "visible_receipt", "The employer visibly confirmed receipt; proof is saved.",
