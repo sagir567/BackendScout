@@ -73,7 +73,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
     recruitment_context = is_recruitment_related_message(message)
     if recruitment_context and _contains_any(
         haystack,
-        ("not moving forward", "decided not to proceed", "not selected", "rejection",
+        ("not moving forward", "decided not to proceed", "decided not to move forward",
+         "not selected", "rejection",
          "won't be moving forward", "will not be moving forward", "לא נוכל להמשיך",
          "לא נתקדם", "החלטנו שלא להמשיך", "בחרנו שלא להתקדם"),
     ):
@@ -96,7 +97,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
     if recruitment_context and _contains_any(
         haystack,
         ("schedule a call", "schedule an interview", "schedule your interview", "interview invitation",
-         "invite you to interview", "invite you for an interview", "interview confirmed",
+         "invite you to interview", "invite you to an interview", "invite you for an interview",
+         "interview confirmed",
          "was selected for an interview",
          "calendly", "זימון לראיון", "לתאם ראיון", "להזמין אותך לראיון"),
     ):

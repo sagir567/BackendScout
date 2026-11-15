@@ -1,7 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from backend_scout import cli, notion
 from backend_scout.config import TrackerName
+from backend_scout.gmail import GmailMessageSummary
+from backend_scout.models import ApplicationStatus
 from backend_scout.web.app import create_app
 from backend_scout.web_sessions import OwnerSessionStore
 
@@ -26,6 +29,72 @@ def pair(client, sessions):
     response = client.post("/api/pair", json={"code": code}, headers={"Origin": ORIGIN})
     assert response.status_code == 200, response.text
     return {"Origin": ORIGIN, "X-CSRF-Token": response.json()["csrf_token"]}
+
+
+def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, monkeypatch, tmp_path):
+    client, sessions, service = web
+    pair(client, sessions)
+    tracker = TrackerName.TEST
+    job = service.store.get_application("example-job", tracker).job
+    service.settings.notion_api_key = "fixture"
+    service.settings.notion_test_applications_data_source_id = "fixture-source"
+    service.settings.telegram_bot_token = "fixture"
+    monkeypatch.setattr(cli, "Settings", lambda: service.settings)
+    status = ApplicationStatus.SUBMITTED
+    records, digests, inbox = [], [], []
+
+    class Transport:
+        def __init__(self, *_args):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+    class Notion(Transport):
+        def query_data_source(self, source, _payload):
+            assert source == "fixture-source"
+            return {"results": [{"id": "example-job", "properties": notion.build_job_page_properties(job, status)}]}
+
+        def append_submission_record(self, page_id, record, *, status):
+            assert page_id == "example-job"
+            records.append((status, record))
+
+    class Telegram(Transport):
+        def send_message(self, chat_id, message):
+            assert chat_id == 12345
+            digests.append(message)
+
+    monkeypatch.setattr(cli, "NotionClient", Notion)
+    monkeypatch.setattr(notion, "NotionClient", Notion)
+    monkeypatch.setattr(cli, "TelegramClient", Telegram)
+    monkeypatch.setattr(cli, "list_recent_messages", lambda *_: list(inbox))
+    checkpoint = tmp_path / "mailbox.json"
+
+    def scan():
+        cli.gmail_watch_once(write_notion=True, send_digest=True, chat_id=12345,
+                            tracker=tracker, state_path=checkpoint)
+
+    for message_id, subject, body, expected in (
+        ("interview", "Example Backend Engineer interview",
+         "We would like to invite you to an interview.", ApplicationStatus.INTERVIEW),
+        ("rejection", "Example Backend Engineer application update",
+         "We have decided not to move forward with your application.", ApplicationStatus.REJECTED),
+    ):
+        inbox.append(GmailMessageSummary(message_id=message_id, thread_id=message_id,
+                                        from_header="jobs@example.test", subject=subject,
+                                        date_header="", snippet=body))
+        scan()
+        status, record = records[-1]
+        assert status == expected and f"Gmail message ID: {message_id}" in record
+        assert expected.value in digests[-1]
+        service.sync_projection(tracker, "12345")
+        item = client.get("/api/overview").json()["items"][0]
+        assert (item["workspace_bucket"], item["status"]) == ("history", expected.value)
+    scan()
+    assert len(records) == len(digests) == 2
 
 
 def test_private_data_and_artifacts_require_owner_session(web):

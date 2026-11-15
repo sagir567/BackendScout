@@ -1575,6 +1575,10 @@ locally. The next scan retries it even when no fresh email is found, without
 repeating the Notion status update. Delete the pending digest only after Telegram
 acknowledges the call. An ambiguous network failure may repeat the notification,
 but never sends another application.
+Verify classification changes through the full mailbox path: mock external
+transports, write the observed stage to the Notion fixture, then run the real
+projection sync and assert the stage in the paired web workspace. Replay the
+same input to check that no additional Telegram message is sent.
 
 On a verified Comeet posting, the read-only resolver can open the known
 Apply disclosure outside any form. It ignores the same-job social iframe and

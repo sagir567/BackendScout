@@ -75,6 +75,7 @@ the second command checks Gmail separately. Expired Gmail authorization needs
 `backend-scout gmail connect`; public job-board scouting can continue meanwhile.
 If Telegram is temporarily unavailable, the inbox watcher retries the saved
 status digest on its next run without repeating the tracker updates.
+Employer status updates appear in the web workspace after its next Notion sync.
 
 ## What It Does
 
