@@ -55,6 +55,18 @@ def test_rejection_that_mentions_interview_remains_rejection():
     assert classify_gmail_message(message).status == ApplicationStatus.REJECTED
 
 
+def test_confirmation_mentioning_possible_interview_is_not_an_invitation():
+    message = _message("Application received", "If selected, we will contact you for an interview.")
+    assert classify_gmail_message(message).status == ApplicationStatus.RECRUITER_REPLY
+
+
+def test_hebrew_application_rejection_and_interview():
+    rejected = _message("עדכון לגבי מועמדות", "החלטנו שלא להמשיך בתהליך.")
+    interview = _message("זימון לראיון", "נשמח לפגוש אותך ביום ראשון.")
+    assert classify_gmail_message(rejected).status == ApplicationStatus.REJECTED
+    assert classify_gmail_message(interview).status == ApplicationStatus.INTERVIEW
+
+
 def test_classify_gmail_message_leaves_ambiguous_mail_for_review() -> None:
     classification = classify_gmail_message(_message("Talent team", "We reviewed your candidate profile."))
 

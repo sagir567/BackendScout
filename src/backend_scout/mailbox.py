@@ -12,7 +12,8 @@ from backend_scout.models import ApplicationDigestItem, ApplicationStatus
 
 DEFAULT_MAILBOX_QUERY = (
     'newer_than:30d (subject:(application OR applied OR interview OR assessment OR "coding challenge" '
-    'OR "job offer" OR "offer letter" OR rejection OR recruiter OR hiring OR candidate) '
+    'OR "job offer" OR "offer letter" OR rejection OR recruiter OR hiring OR candidate '
+    'OR מועמדות OR ראיון OR "מבחן בית" OR "הצעת עבודה") '
     'OR from:(greenhouse.io OR lever.co OR comeet.com OR ashbyhq.com OR workday.com '
     'OR smartrecruiters.com))'
 )
@@ -38,6 +39,10 @@ _RECRUITMENT_CONTEXT_TERMS = (
     "coding challenge",
     "take-home",
     "take home",
+    "מועמדות",
+    "ראיון",
+    "מבחן בית",
+    "הצעת עבודה",
 )
 _RECRUITMENT_SENDER_TERMS = (
     "careers@",
@@ -69,7 +74,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
     if recruitment_context and _contains_any(
         haystack,
         ("not moving forward", "decided not to proceed", "not selected", "rejection",
-         "won't be moving forward", "will not be moving forward", "לא נוכל להמשיך", "לא נתקדם"),
+         "won't be moving forward", "will not be moving forward", "לא נוכל להמשיך",
+         "לא נתקדם", "החלטנו שלא להמשיך", "בחרנו שלא להתקדם"),
     ):
         return MailClassification(
             message_id=message.message_id, status=ApplicationStatus.REJECTED,
@@ -77,8 +83,9 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
         )
     if _contains_any(
         haystack,
-        ("job offer", "employment offer", "offer letter", "employment agreement", "contract offer"),
-    ) or (recruitment_context and "offer" in haystack):
+        ("job offer", "employment offer", "offer letter", "employment agreement", "contract offer",
+         "הצעת עבודה"),
+    ):
         return MailClassification(
             message_id=message.message_id,
             status=ApplicationStatus.OFFER,
@@ -88,7 +95,10 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
         )
     if recruitment_context and _contains_any(
         haystack,
-        ("interview", "schedule a call", "schedule an interview", "calendly", "meet with"),
+        ("schedule a call", "schedule an interview", "schedule your interview", "interview invitation",
+         "invite you to interview", "invite you for an interview", "interview confirmed",
+         "was selected for an interview",
+         "calendly", "זימון לראיון", "לתאם ראיון", "להזמין אותך לראיון"),
     ):
         return MailClassification(
             message_id=message.message_id,
@@ -99,7 +109,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
         )
     if recruitment_context and _contains_any(
         haystack,
-        ("assessment", "coding challenge", "home assignment", "take home", "hackerrank", "codility"),
+        ("assessment", "coding challenge", "home assignment", "take home", "hackerrank", "codility",
+         "מבחן בית", "מטלת בית"),
     ):
         return MailClassification(
             message_id=message.message_id,
@@ -110,7 +121,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
         )
     if _contains_any(
         haystack,
-        ("application received", "received your application", "thank you for applying", "thanks for applying"),
+        ("application received", "received your application", "thank you for applying", "thanks for applying",
+         "קיבלנו את מועמדותך", "מועמדותך התקבלה"),
     ):
         return MailClassification(
             message_id=message.message_id,
