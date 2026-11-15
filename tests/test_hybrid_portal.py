@@ -284,6 +284,35 @@ def test_rejected_browser_value_reports_field_without_disclosing_it(review_servi
         driver.stop()
 
 
+@pytest.mark.skipif(os.getenv("BACKENDSCOUT_BROWSER_SMOKE") != "1", reason="Opt-in isolated Chromium")
+def test_form_plugin_revalidates_the_same_approved_value(review_service, tmp_path):
+    package, _, route = configure(review_service)
+    route._tracker = "test"
+    url = package.official_destination
+    markup = """<form><label>Last name<input name="last_name" required
+        oninput="this.setCustomValidity('Needs change event')"
+        onchange="this.setCustomValidity(this.value === 'Fixture' ? '' : 'Rejected')"></label>
+        <label>Email<input type="email" name="email"></label>
+        <label>Resume<input type="file" name="resume"></label><button>Apply</button></form>"""
+    manager, driver, requests = browser(tmp_path, {url: markup})
+    try:
+        session = manager.acquire("revalidate", "test", url, "0" * 64, "inspection", navigate=False)
+        session.page.goto(url)
+        view = find_application_form(session.page, route)
+        for value in ("Fixture", "Other"):
+            view.locator('[name="last_name"]').fill("")
+            reviewed = package.model_copy(update={"answers": (
+                ReviewedAnswer(key="identity.last_name", value=value),
+            )})
+            _, pending = prepare_reviewed_fields(view, reviewed, fill=True)
+            assert bool(pending) == (value == "Other")
+            assert view.locator('[name="last_name"]').input_value() == value
+        assert set(requests) == {url}
+    finally:
+        manager.close()
+        driver.stop()
+
+
 @pytest.mark.parametrize("variant", VARIANTS)
 @pytest.mark.skipif(os.getenv("BACKENDSCOUT_BROWSER_SMOKE") != "1", reason="Opt-in isolated Chromium")
 def test_browser_preflight_resolves_observed_route_without_entering_candidate_data(review_service, tmp_path, monkeypatch, variant):

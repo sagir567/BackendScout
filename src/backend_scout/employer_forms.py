@@ -395,6 +395,12 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
                 current = control.input_value(timeout=2000)
             if current != expected:
                 pending.append(question(field, control))
+            elif fill and control.evaluate("el => el.validity.customError"):
+                # Some form plugins cache an error from an earlier field event.
+                # Let the employer re-check the same approved value; never clear
+                # its error or modify the value ourselves.
+                action()
+                control.dispatch_event("change")
     for choices in radio_groups.values():
         prompt = question(choices[0][0], choices[0][1]) | {
             "options": [field.label for field, _, _ in choices],
