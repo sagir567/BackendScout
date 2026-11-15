@@ -28,7 +28,7 @@ IDENTITY = {
     "last name": "last_name", "family name": "last_name", "surname": "last_name",
     "שם משפחה": "last_name", "email": "email", "email address": "email",
     "e mail": "email", "כתובת אימייל": "email", 'כתובת דוא"ל': "email",
-    "אימייל": "email", 'דוא"ל': "email", "phone": "phone", "mobile": "phone",
+    "אימייל": "email", "מייל": "email", 'דוא"ל': "email", "phone": "phone", "mobile": "phone",
     "phone number": "phone", "טלפון": "phone", "טלפון נייד": "phone",
     "linkedin": "linkedin", "linkedin url": "linkedin", "linkedin profile": "linkedin",
     "city": "city", "residence city": "city", "עיר מגורים": "city",
@@ -268,7 +268,7 @@ def find_application_form(page, route):
             if not RESUME.search(meta["label"]) and not RESUME.search(context):
                 continue
             if (container.locator('input[type="email"], input[name*="email" i]').count() == 0
-                and not re.search(r"email|אימייל|דוא", context, re.IGNORECASE)):
+                and not re.search(r"email|מייל|דוא", context, re.IGNORECASE)):
                 continue
             candidates.append(ApplicationFormView(page, scope, container, upload, scope.url))
     return candidates[0] if len(candidates) == 1 else None

@@ -230,6 +230,30 @@ def approve_observed_schema(service, manager, package, path, route):
     return package
 
 
+@pytest.mark.parametrize("submit_label,verified", [("הגשת מועמדות", True), ("שליחת הודעה", False)])
+@pytest.mark.skipif(os.getenv("BACKENDSCOUT_BROWSER_SMOKE") != "1", reason="Opt-in isolated Chromium")
+def test_hebrew_employer_form_preflight(review_service, tmp_path, monkeypatch, submit_label, verified):
+    configure(review_service)
+    job = review_service.store.get_application("example-job", TrackerName.TEST).job
+    markup = f"""<meta charset="utf-8"><header>{job.company}</header><h1>{job.title}</h1>
+        <form><label>מייל<input name="contact" required></label>
+        <label>קורות חיים<input type="file" name="attachment" required></label>
+        <button type="submit">{submit_label}</button></form>"""
+    manager, driver, requests = browser(tmp_path, {job.application_url: markup})
+    monkeypatch.setattr("backend_scout.cv_service.load_career_evidence",
+                        lambda: SimpleNamespace(experience=[]))
+    try:
+        inspection = HybridPortalAdapter(manager, review_service.settings, store=review_service.store).inspect(
+            job, TrackerName.TEST
+        )
+        assert inspection["form_identified"] is verified, inspection["route"]
+        assert bool(inspection["proposed_answers"].get("review.form_schema_sha256")) is verified
+        assert set(requests) == {job.application_url}
+    finally:
+        manager.close()
+        driver.stop()
+
+
 @pytest.mark.parametrize("variant", VARIANTS)
 @pytest.mark.skipif(os.getenv("BACKENDSCOUT_BROWSER_SMOKE") != "1", reason="Opt-in isolated Chromium")
 def test_browser_preflight_resolves_observed_route_without_entering_candidate_data(review_service, tmp_path, monkeypatch, variant):

@@ -344,9 +344,14 @@ _INSPECT = r"""() => {
       .map(e => e.getAttribute('src')),
     forms: [...document.forms].filter(visible).map(f => ({
       action: f.getAttribute('action') || '',
-      application: /\b(apply|application)\b/i.test(text(f) + ' ' + f.id),
+      application: /\b(apply|application)\b/i.test(text(f) + ' ' + f.id) ||
+        [...f.querySelectorAll('button[type=submit],button:not([type]),input[type=submit]')]
+          .filter(e => visible(e) && !e.disabled)
+          .some(e => /^(הגשת מועמדות|להגשת מועמדות|שליחת מועמדות)$/.test(
+            (text(e) || e.getAttribute('value') || e.getAttribute('aria-label') || '')
+              .trim().replace(/\s+/g, ' '))),
       resume: [...f.querySelectorAll('input[type=file]:not(:disabled)')].filter(e =>
-        /resume|\bcv\b|\.pdf|\.doc|application\/pdf/i.test([e.name, e.id, e.accept,
+        /resume|\bcv\b|\.pdf|\.doc|application\/pdf|קורות\s*חיים/i.test([e.name, e.id, e.accept,
           e.getAttribute('aria-label'), ...[...e.labels || []].map(text)].join(' '))).length === 1,
       ids: [...f.querySelectorAll('input[type=hidden]')].filter(e =>
         /^(job_?id|position_?id|position_uid|gh_jid)$/i.test(e.name)).map(e => e.value)
