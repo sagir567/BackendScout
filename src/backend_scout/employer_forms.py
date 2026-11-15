@@ -419,8 +419,24 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
             pending.append(prompt)
     # A rerender may introduce new required controls after the captured snapshot.
     if not pending:
+        for field in captured.snapshot.fields:
+            if field.kind == GuidedControlKind.FILE:
+                continue
+            control = captured.controls[field.field_id]
+            if not control.is_visible() or not control.evaluate("el => el.matches(':invalid')"):
+                continue
+            reason = control.evaluate("""el => {
+                const labels = {valueMissing:'missing value', typeMismatch:'invalid input type',
+                    patternMismatch:'format rejected', tooLong:'value too long', tooShort:'value too short',
+                    rangeOverflow:'above maximum', rangeUnderflow:'below minimum',
+                    stepMismatch:'unsupported increment', badInput:'invalid input', customError:'site validation'};
+                return Object.keys(labels).filter(key => el.validity[key]).map(key => labels[key]).join(', ');
+            }""")
+            item = question(field, control)
+            pending.append(item | {"label": f"{item['label'][:1900]} ({reason or 'input rejected'})",
+                                   "required": True})
         invalid = view.locator('input:invalid:not([type="file"]),textarea:invalid,select:invalid')
-        if any(invalid.nth(i).is_visible() for i in range(invalid.count())):
+        if not pending and any(invalid.nth(i).is_visible() for i in range(invalid.count())):
             pending.append({"key": "form_changed", "label": "Required fields changed; inspect the current form.",
                             "required": True, "options": [], "sensitive": False})
     unique = {item["key"]: item for item in pending}

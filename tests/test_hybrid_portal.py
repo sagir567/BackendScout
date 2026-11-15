@@ -12,7 +12,11 @@ from playwright.sync_api import sync_playwright
 from backend_scout.application_package import ReviewedAnswer
 from backend_scout.application_routes import ApplicationRoute
 from backend_scout.config import TrackerName
-from backend_scout.employer_forms import find_application_form, form_review_signature
+from backend_scout.employer_forms import (
+    find_application_form,
+    form_review_signature,
+    prepare_reviewed_fields,
+)
 from backend_scout.guided_submission import GuidedFormField, GuidedFormPlan, GuidedFormSnapshot
 from backend_scout.hybrid_portal import HybridPortalAdapter
 from backend_scout.portal_sessions import PortalSessionManager
@@ -249,6 +253,29 @@ def test_hebrew_employer_form_preflight(review_service, tmp_path, monkeypatch, s
         assert inspection["form_identified"] is verified, inspection["route"]
         assert bool(inspection["proposed_answers"].get("review.form_schema_sha256")) is verified
         assert set(requests) == {job.application_url}
+    finally:
+        manager.close()
+        driver.stop()
+
+
+@pytest.mark.skipif(os.getenv("BACKENDSCOUT_BROWSER_SMOKE") != "1", reason="Opt-in isolated Chromium")
+def test_rejected_browser_value_reports_field_without_disclosing_it(review_service, tmp_path):
+    package, _, route = configure(review_service)
+    route._tracker = "test"
+    url = package.official_destination
+    markup = r"""<form><label>Email<input name="email" type="email" pattern=".+@employer\.test"></label>
+        <label>Resume<input type="file" name="resume"></label><button>Apply</button></form>"""
+    manager, driver, _ = browser(tmp_path, {url: markup})
+    try:
+        session = manager.acquire("invalid-email", "test", url, "0" * 64, "inspection", navigate=False)
+        session.page.goto(url)
+        view = find_application_form(session.page, route)
+        package = package.model_copy(update={"answers": (
+            ReviewedAnswer(key="identity.email", value="candidate@example.test"),
+        )})
+        _, pending = prepare_reviewed_fields(view, package, fill=True)
+        assert [(item["key"], item["label"]) for item in pending] == [("email", "Email (format rejected)")]
+        assert "candidate@example.test" not in str(pending)
     finally:
         manager.close()
         driver.stop()
