@@ -1580,6 +1580,13 @@ transports, write the observed stage to the Notion fixture, then run the real
 projection sync and assert the stage in the paired web workspace. Replay the
 same input to check that no additional Telegram message is sent.
 
+After Gmail reauthorization, first run `backend-scout gmail check`, then
+verify a fresh successful mailbox task with `backend-scout system runtime health`.
+The first command checks the credential; the second verifies that the actual
+worker used it. A completed scan does not imply a new employer reply was found.
+The OAuth project can use the public TechJob Scout GitHub Pages URLs for its
+branding; the application workspace stays private.
+
 On a verified Comeet posting, the read-only resolver can open the known
 Apply disclosure outside any form. It ignores the same-job social iframe and
 requires the revealed application iframe to match the exact tenant and job.
