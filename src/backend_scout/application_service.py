@@ -62,7 +62,7 @@ PLACEHOLDERS = {
     "indeed email recommendation.",
 }
 _PDF_RENDER_LOCK = Lock()
-_PREFLIGHT_RECHECK_CODES = {"form_review_changed", "form_schema_changed", "destination_changed"}
+_PREFLIGHT_RECHECK_CODES = {"form_review_changed", "form_schema_changed", "destination_changed", "form_validation_failed"}
 _FORM_SCHEMA_ANSWER = "review.form_schema_sha256"
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 
@@ -246,6 +246,10 @@ class ApplicationService:
             return self._outcome(application_id, "browser_preflight_pending",
                                  "Wait for the queued browser preflight before approving.", status="blocked")
         if self._verified_route(application_id, tracker) is None:
+            meta = self.store.metadata(application_id, tracker)
+            if meta.get("needs_input_code") == "form_validation_failed":
+                return self._outcome(application_id, "form_validation_failed",
+                                     meta["needs_input_message"], status="blocked")
             route = self.store.latest_application_route(application_id, tracker) or {}
             observation = self.store.latest_form_inspection(application_id, tracker) or {}
             if observation.get("mode") == "hybrid" and observation.get("status") == "unavailable":

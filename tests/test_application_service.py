@@ -493,6 +493,20 @@ def test_material_form_change_requires_reinspection_without_cv_regeneration(hybr
     assert not any(t.kind.value == "package_cv_draft" for t in list_tasks(service.store.database_path))
 
 
+def test_rejected_prefilled_identity_remains_blocked_even_if_answer_is_known(hybrid_ready):
+    service = hybrid_ready
+    package = service.preview_package("example-job", T)[0]
+    service.approve_and_queue("example-job", T, "12345", package.fingerprint())
+    service.delivery_adapter = lambda *_: BrowserPreparationResult(
+        "needs_input", (), "The employer rejected a reviewed value.",
+        review_questions=({"key": "last_name", "label": "Last name", "required": True},),
+        reason_code="form_validation_failed",
+    )
+    assert service.deliver("example-job", T, package.fingerprint(), "invalid").status == "blocked"
+    assert service.detail("example-job", T)["package_blocker"]["reason_code"] == "form_validation_failed"
+    assert service.queue_delivery("example-job", T, "12345", package.fingerprint()).reason_code == "form_validation_failed"
+
+
 @pytest.mark.parametrize("reason", ["missing_pricing", "total_monthly_limit"])
 def test_cv_budget_pause_is_blocked_with_stable_reason_and_preserves_existing_pdf(hybrid_ready, reason):
     service = hybrid_ready

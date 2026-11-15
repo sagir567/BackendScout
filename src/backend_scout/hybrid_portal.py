@@ -427,7 +427,7 @@ class HybridPortalAdapter:
             captured, pending = prepare_reviewed_fields(view, package, fill=True, action=action)
             for _ in range(2):
                 # Re-observe each cycle. A planner cannot approve new text or choices.
-                if not pending:
+                if not pending or any(item.get("validation_failed") for item in pending):
                     break
                 try:
                     plan, facts = self._map(captured, package)
@@ -462,6 +462,9 @@ class HybridPortalAdapter:
                 package_for_audit = package
             package_for_audit = locals().get("package_for_audit", package)
             if pending:
+                if any(item.get("validation_failed") for item in pending):
+                    return result("needs_input", "form_validation_failed",
+                                  "The employer rejected a reviewed value. Inspect the form before retrying.", pending)
                 return result("needs_input", "portal_input_required", "Review the new or ambiguous fields; nothing was sent.", pending)
             action()
             policy.update(stage="upload", writes=0)
@@ -483,6 +486,9 @@ class HybridPortalAdapter:
                 return result("needs_input", "form_review_changed", "Questions changed after upload; inspect and review them before submitting.")
             _, pending = prepare_reviewed_fields(view, package_for_audit, fill=False)
             if pending:
+                if any(item.get("validation_failed") for item in pending):
+                    return result("needs_input", "form_validation_failed",
+                                  "The employer rejected a reviewed value after file selection.", pending)
                 return result("needs_input", "form_changed", "The form changed after upload; review its fields.", pending)
             button = unique_submit(view)
             if human_required(page, package.tracker):

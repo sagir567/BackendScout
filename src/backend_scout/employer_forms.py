@@ -440,11 +440,11 @@ def prepare_reviewed_fields(view, package, *, fill, action=lambda: None):
             }""")
             item = question(field, control)
             pending.append(item | {"label": f"{item['label'][:1900]} ({reason or 'input rejected'})",
-                                   "required": True})
+                                   "required": True, "validation_failed": True})
         invalid = view.locator('input:invalid:not([type="file"]),textarea:invalid,select:invalid')
         if not pending and any(invalid.nth(i).is_visible() for i in range(invalid.count())):
             pending.append({"key": "form_changed", "label": "Required fields changed; inspect the current form.",
-                            "required": True, "options": [], "sensitive": False})
+                            "required": True, "options": [], "sensitive": False, "validation_failed": True})
     unique = {item["key"]: item for item in pending}
     return captured, list(unique.values())
 
