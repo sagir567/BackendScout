@@ -210,8 +210,9 @@ def test_mailbox_updates_application_on_second_page(
         def update_application_status(self, page_id, status):
             updates.append((page_id, status))
 
-        def append_submission_record(self, page_id, record):
+        def append_submission_record(self, page_id, record, *, status):
             records.append((page_id, record))
+            updates.append((page_id, status))
 
     monkeypatch.setattr(cli, "NotionClient", FakeNotion)
     cli.gmail_watch_once(write_notion=True, state_path=tmp_path / "mailbox.json")

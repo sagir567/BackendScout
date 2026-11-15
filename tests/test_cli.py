@@ -921,8 +921,9 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
             updated_statuses.append((page_id, status))
             return {"id": page_id}
 
-        def append_submission_record(self, page_id: str, record: str) -> dict[str, object]:
+        def append_submission_record(self, page_id: str, record: str, *, status) -> dict[str, object]:
             appended_records.append((page_id, record))
+            updated_statuses.append((page_id, status))
             return {"id": page_id}
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)

@@ -2391,13 +2391,10 @@ def gmail_watch_once(
                         continue
                     if can_transition_application_status(current, classification.status):
                         if write_notion:
-                            notion_client.update_application_status(
-                                page_id,
-                                classification.status,
-                            )
                             notion_client.append_submission_record(
                                 page_id,
                                 format_mailbox_audit_record(message, classification),
+                                status=classification.status,
                             )
                         current_statuses[page_id] = classification.status
                         changed_updates.append((message, classification, application))

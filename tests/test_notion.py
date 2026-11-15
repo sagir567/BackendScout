@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 
 from backend_scout.models import ApplicationStatus, Job
@@ -13,6 +15,18 @@ from backend_scout.notion import (
     upsert_job_page,
     validate_applications_data_source,
 )
+
+
+def test_mailbox_status_and_audit_are_written_in_one_patch(monkeypatch):
+    with NotionClient("fixture") as client:
+        monkeypatch.setattr(client, "retrieve_page", lambda _: {"properties": {}})
+        patch = Mock()
+        monkeypatch.setattr(client._client, "patch", patch)
+        client.append_submission_record("page", "Mailbox audit", status=ApplicationStatus.REJECTED)
+    patch.assert_called_once()
+    properties = patch.call_args.kwargs["json"]["properties"]
+    assert properties[APPLICATIONS_PROPERTY_NAMES["status"]] == {"status": {"name": "rejected"}}
+    assert "Mailbox audit" in str(properties[APPLICATIONS_PROPERTY_NAMES["submission_record"]])
 
 
 def test_find_job_matches_ats_alias_and_does_not_merge_a_different_requisition():

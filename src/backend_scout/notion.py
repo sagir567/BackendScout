@@ -225,18 +225,19 @@ class NotionClient:
         self,
         page_id: str,
         record: str,
+        *,
+        status: ApplicationStatus | None = None,
     ) -> dict[str, Any]:
         page = self.retrieve_page(page_id)
         properties = page.get("properties", {}) if isinstance(page, dict) else {}
         previous_record = _extract_rich_text_value(properties, "submission_record")
         updated_record = f"{previous_record}\n\n{record}" if previous_record else record
+        updates = {APPLICATIONS_PROPERTY_NAMES["submission_record"]: _rich_text(updated_record)}
+        if status is not None:
+            updates[APPLICATIONS_PROPERTY_NAMES["status"]] = {"status": {"name": status.value}}
         response = self._client.patch(
             f"/pages/{page_id}",
-            json={
-                "properties": {
-                    APPLICATIONS_PROPERTY_NAMES["submission_record"]: _rich_text(updated_record),
-                }
-            },
+            json={"properties": updates},
         )
         response.raise_for_status()
         return response.json()
