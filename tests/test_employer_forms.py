@@ -132,6 +132,15 @@ class Control:
     def get_attribute(self, key):
         return self.attributes.get(key)
 
+    def is_visible(self):
+        return True
+
+    def evaluate(self, script):
+        if "el.labels" in script and "a[href]" in script:
+            return []
+        assert script in {"el => el.validity.customError", "el => el.matches(':invalid')"}
+        return False
+
     def input_value(self, **kwargs):
         return self.value
 
