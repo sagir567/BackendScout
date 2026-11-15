@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Literal
 
+from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict
 
 from backend_scout.gmail import GmailMessageSummary
@@ -69,7 +71,8 @@ class MailClassification(BaseModel):
 
 
 def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
-    haystack = _message_search_text(message)
+    subject = "" if re.match(r"^\s*(?:re|fw|fwd)\s*:", message.subject, re.IGNORECASE) else message.subject
+    haystack = f"{subject} {_fresh_message_body(message)}".casefold()
     recruitment_context = is_recruitment_related_message(message)
     if recruitment_context and _contains_any(
         haystack,
@@ -223,12 +226,28 @@ def _contains_any(value: str, terms: tuple[str, ...]) -> bool:
     return any(term in value for term in terms)
 
 
+_QUOTED_HEADER = re.compile(r"^\s*(?:on .{1,400} wrote:|-{2,}\s*(?:original|forwarded) message\s*-*|בתאריך .+כתב(?:ה)?[:：])", re.IGNORECASE)
+
+
+def _fresh_message_body(message: GmailMessageSummary) -> str:
+    if message.body_text:
+        body = message.body_text[:20_000]
+    elif message.body_html:
+        document = BeautifulSoup(message.body_html[:100_000], "html.parser")
+        for element in document.select("blockquote, .gmail_quote, script, style"):
+            if element.parent is not None:
+                element.decompose()
+        body = document.get_text("\n", strip=True)[:20_000]
+    else:
+        return message.snippet
+    fresh = []
+    for line in body.splitlines():
+        if _QUOTED_HEADER.match(line):
+            break
+        if not line.lstrip().startswith(">"):
+            fresh.append(line)
+    return " ".join(fresh)
+
+
 def _message_search_text(message: GmailMessageSummary) -> str:
-    return " ".join(
-        [
-            message.subject,
-            message.from_header,
-            message.snippet,
-            message.body_text[:20_000],
-        ]
-    ).casefold()
+    return f"{message.subject} {message.from_header} {_fresh_message_body(message)}".casefold()

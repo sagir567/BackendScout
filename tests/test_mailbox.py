@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from backend_scout.gmail import GmailMessageSummary
 from backend_scout.mailbox import (
     classify_gmail_message,
@@ -25,6 +27,22 @@ def test_classify_gmail_message_detects_assessment() -> None:
 
     assert classification.status == ApplicationStatus.ASSESSMENT
     assert classification.needs_immediate_attention
+
+
+def test_reply_quote_and_snippet_do_not_replay_an_old_rejection() -> None:
+    message = replace(
+        _message("Re: Application rejection", "We decided not to proceed."),
+        body_text="Thanks for your note.\n\nOn Tue, Recruiting wrote:\nWe decided not to proceed.",
+    )
+    assert classify_gmail_message(message).status is None
+
+
+def test_fresh_html_reply_wins_over_the_quoted_status() -> None:
+    message = replace(
+        _message("Re: Your application", "We decided not to proceed."),
+        body_html="<p>We invite you to an interview.</p><blockquote>We decided not to proceed.</blockquote>",
+    )
+    assert classify_gmail_message(message).status == ApplicationStatus.INTERVIEW
 
 
 def test_classify_gmail_message_uses_full_body_text() -> None:
