@@ -439,6 +439,17 @@ def capture_guided_form(page) -> CapturedGuidedForm:
                 kind = _guided_control_kind(metadata)
                 if kind is None or metadata.get("disabled"):
                     continue
+                control_id = str(metadata.get("id") or "")
+                if (
+                    urlparse(page.url).hostname in {"job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
+                    and re.fullmatch(r"iti-\d+__search-input", control_id)
+                ):
+                    # The phone widget's country search is not an application field.
+                    continue
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", control_id):
+                    by_id = scope.locator(f'[id="{control_id}"]')
+                    if by_id.count() == 1:
+                        control = by_id
                 if kind != GuidedControlKind.FILE and not control.is_visible():
                     custom_choice = kind in {GuidedControlKind.CHECKBOX, GuidedControlKind.RADIO}
                     if not custom_choice or not control.evaluate("""el => Array.from(el.labels || [])
@@ -461,12 +472,6 @@ def capture_guided_form(page) -> CapturedGuidedForm:
                         sensitive=is_sensitive_form_field(label),
                     )
                 )
-                if kind == GuidedControlKind.COMBOBOX and re.fullmatch(
-                    r"[A-Za-z_][A-Za-z0-9_-]*", str(metadata.get("id") or "")
-                ):
-                    by_id = scope.locator(f'input[id="{metadata["id"]}"][role="combobox"]')
-                    if by_id.count() == 1:
-                        control = by_id
                 controls[field_id] = control
             except (PlaywrightError, TypeError, ValueError) as exc:
                 LOGGER.debug("Could not inspect a form control for guided mapping: %s", exc)

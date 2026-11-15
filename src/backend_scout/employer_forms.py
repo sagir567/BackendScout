@@ -168,11 +168,21 @@ def _greenhouse_selected(control):
     }""")
 
 
+def capture_review_form(view, *, action=lambda: None):
+    if urlsplit(view.url).hostname in {"job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}:
+        controls = view.locator('input[id^="question_"][role="combobox"]')
+        if 0 < controls.count() <= 12:
+            # Opening and closing one known widget waits for its client handlers
+            # before the form snapshot references controls created during hydration.
+            greenhouse_choices(view, controls.first, action=action)
+    return capture_guided_form(view)
+
+
 def form_review_signature(view, *, attached_filename=None, action=lambda: None,
                           captured=None, observed_choices=None):
     """Bind question meaning and consent links, excluding changing field values."""
     if captured is None:
-        captured = capture_guided_form(view)
+        captured = capture_review_form(view, action=action)
     fields = []
     for field in captured.snapshot.fields:
         control = captured.controls[field.field_id]

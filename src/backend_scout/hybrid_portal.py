@@ -29,6 +29,7 @@ from backend_scout.browser_budget import BudgetExceeded
 from backend_scout.budget_config import configured_budget
 from backend_scout.config import TrackerName
 from backend_scout.employer_forms import (
+    capture_review_form,
     find_application_form,
     form_review_signature,
     greenhouse_choices,
@@ -195,7 +196,7 @@ class HybridPortalAdapter:
             if view:
                 from backend_scout.cv_service import load_career_evidence
 
-                captured = capture_guided_form(view)
+                captured = capture_review_form(view)
                 fields = [field.model_dump(mode="json") for field in captured.snapshot.fields]
                 radio_questions = {}
                 observed_choices = {}
