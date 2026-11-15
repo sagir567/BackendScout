@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "backend-scout"
 version = "0.1.0"
-description = "A local-first agent for finding, evaluating, and tracking backend engineering job applications."
+description = "TechJob Scout finds relevant tech roles and prepares applications for human review."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

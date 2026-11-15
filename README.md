@@ -1,4 +1,6 @@
-# BackendScout
+# TechJob Scout
+
+[Project site](https://sagir567.github.io/BackendScout/)
 
 Runtime health reports the oldest available browser task and last queue poll.
 A browser task waiting at least two minutes is reported as stalled even if the
@@ -13,8 +15,9 @@ It saves a validated key in the OS keyring; scheduled Job Space ingestion is
 not enabled by that command. `JOB_SPACE_COLLECTION_ENABLED` defaults to off;
 enable only after confirming the live API response matches the collector.
 
-BackendScout is a local-first, human-approved job-search agent for backend
-engineering roles.
+TechJob Scout finds relevant tech roles, prepares tailored applications, and
+keeps the candidate in control of what gets sent. The repository and CLI retain
+the original BackendScout identifiers for compatibility.
 
 I am building it for two reasons: to make my job search more systematic, and
 to gain hands-on experience designing reliable AI-agent workflows with real

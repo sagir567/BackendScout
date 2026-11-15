@@ -13,7 +13,7 @@ Owner-confirmed reusable facts belong in ignored private configuration, with a
 confirmation date and scope. They are facts, not authorization to deliver or
 accept new terms. Do not publish personal answers in this guide.
 
-This guide explains how to build BackendScout as a complex local-first agent
+This guide explains how to build TechJob Scout as a job-search agent
 system. Keep it updated as the project evolves.
 
 CV presentation checkpoint (2026-11-05): keep private authorship evidence intact,
@@ -598,7 +598,7 @@ a live submission authorization.
 
 ## What We Are Building
 
-BackendScout is a job-search agent for backend engineering roles. It should:
+TechJob Scout is a job-search agent for tech roles. It should:
 
 1. Scan relevant job sources.
 2. Parse and normalize job descriptions.
