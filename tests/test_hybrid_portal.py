@@ -131,6 +131,9 @@ def test_network_mutations_require_controlled_step_and_one_submit_request():
     assert send("https://cdn.test/script.js")
     assert not send("https://cdn.test/other.js")
     assert not send(route.application_url, "POST")
+    context._backendscout_policy.update(stage="upload", writes=0)
+    assert not send(route.application_url, "POST")
+    assert context._backendscout_policy["writes"] == 0
     context._backendscout_policy.update(stage="send", writes=0)
     assert not send("https://example.test/jobs/2/applications", "POST")
     assert send(route.application_url, "POST")

@@ -258,9 +258,9 @@ class HybridPortalAdapter:
             verification = verification_resource(url, route._tracker)
             allowed = official and read
             if not read:
-                allowance = 2 if policy["stage"] == "upload" else 1
-                allowed = (official and policy["stage"] in {"upload", "send"}
-                           and policy["writes"] < allowance)
+                # Selecting a file is local. An unbound background upload can
+                # otherwise act as a hidden form submission before Submit.
+                allowed = official and policy["stage"] == "send" and policy["writes"] == 0
                 if allowed:
                     policy["writes"] += 1
             if verification:

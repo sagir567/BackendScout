@@ -1579,6 +1579,11 @@ Verify classification changes through the full mailbox path: mock external
 transports, write the observed stage to the Notion fixture, then run the real
 projection sync and assert the stage in the paired web workspace. Replay the
 same input to check that no additional Telegram message is sent.
+
+In the hybrid delivery worker, selecting the approved resume file does not
+authorize a network write. Block early upload requests unless a future adapter
+explicitly verifies a separate upload endpoint. The bounded write allowance
+opens only for the verified final submit action.
 Process catch-up emails oldest first using Gmail's receipt timestamp, not the
 sender's Date header. Keep each valid transition in the tracker audit, but show
 only the latest change per application in the Telegram digest.
