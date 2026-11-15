@@ -2387,7 +2387,9 @@ def gmail_watch_once(
                     for message, classification, _application in updates
                 ]
                 current_statuses = {}
-                for message, classification, application in matched_updates:
+                for message, classification, application in sorted(
+                    matched_updates, key=lambda item: item[0].received_at_ms
+                ):
                     if application is None or classification.status is None or classification.confidence != "clear":
                         continue
                     page_id = application.notion_page_id

@@ -31,7 +31,8 @@ def pair(client, sessions):
     return {"Origin": ORIGIN, "X-CSRF-Token": response.json()["csrf_token"]}
 
 
-def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, monkeypatch, tmp_path):
+@pytest.mark.parametrize("catch_up", [False, True])
+def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, monkeypatch, tmp_path, catch_up):
     client, sessions, service = web
     pair(client, sessions)
     tracker = TrackerName.TEST
@@ -83,9 +84,11 @@ def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, mo
         ("rejection", "Example Backend Engineer application update",
          "We have decided not to move forward with your application.", ApplicationStatus.REJECTED),
     ):
-        inbox.append(GmailMessageSummary(message_id=message_id, thread_id=message_id,
+        inbox.insert(0, GmailMessageSummary(message_id=message_id, thread_id=message_id,
                                         from_header="jobs@example.test", subject=subject,
-                                        date_header="", snippet=body))
+                                        date_header="", snippet=body, received_at_ms=len(inbox) + 1))
+        if catch_up and expected == ApplicationStatus.INTERVIEW:
+            continue
         scan()
         status, record = records[-1]
         assert status == expected and f"Gmail message ID: {message_id}" in record
@@ -94,7 +97,9 @@ def test_employer_mail_updates_notion_telegram_and_authenticated_history(web, mo
         item = client.get("/api/overview").json()["items"][0]
         assert (item["workspace_bucket"], item["status"]) == ("history", expected.value)
     scan()
-    assert len(records) == len(digests) == 2
+    assert [stage for stage, _ in records] == [ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED]
+    assert len(digests) == (1 if catch_up else 2)
+    assert "interview" not in digests[-1]
 
 
 def test_private_data_and_artifacts_require_owner_session(web):

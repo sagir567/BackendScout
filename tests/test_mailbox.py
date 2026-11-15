@@ -146,7 +146,7 @@ def test_format_mailbox_digest_summarizes_updates() -> None:
 
     digest = format_mailbox_digest([(message, classification, application)])
 
-    assert "Mailbox scan: 1 relevant message" in digest
+    assert "Mailbox updates: 1 application" in digest
     assert "Infinidat - Junior Software Developer" in digest
     assert "assessment" in digest
 

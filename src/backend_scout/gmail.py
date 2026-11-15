@@ -24,6 +24,7 @@ class GmailMessageSummary:
     snippet: str
     body_text: str = ""
     body_html: str = ""
+    received_at_ms: int = 0
 
 
 def connect_gmail(client_secret_path: Path, *, port: int = 0, open_browser: bool = True) -> None:
@@ -93,6 +94,7 @@ def list_recent_messages(
         payload = message.get("payload", {})
         headers = _header_map(payload.get("headers", []))
         body_text, body_html = _message_bodies(payload)
+        received_at = str(message.get("internalDate", ""))
         summaries.append(
             GmailMessageSummary(
                 message_id=item["id"],
@@ -103,6 +105,7 @@ def list_recent_messages(
                 snippet=message.get("snippet", "") if isinstance(message.get("snippet"), str) else "",
                 body_text=body_text,
                 body_html=body_html,
+                received_at_ms=int(received_at) if received_at.isascii() and received_at.isdecimal() else 0,
             )
         )
     return summaries

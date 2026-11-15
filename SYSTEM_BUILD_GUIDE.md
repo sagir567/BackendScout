@@ -1579,6 +1579,9 @@ Verify classification changes through the full mailbox path: mock external
 transports, write the observed stage to the Notion fixture, then run the real
 projection sync and assert the stage in the paired web workspace. Replay the
 same input to check that no additional Telegram message is sent.
+Process catch-up emails oldest first using Gmail's receipt timestamp, not the
+sender's Date header. Keep each valid transition in the tracker audit, but show
+only the latest change per application in the Telegram digest.
 
 After Gmail reauthorization, first run `backend-scout gmail check`, then
 verify a fresh successful mailbox task with `backend-scout system runtime health`.

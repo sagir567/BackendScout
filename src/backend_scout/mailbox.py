@@ -184,15 +184,18 @@ def format_mailbox_digest(
 ) -> str:
     if not updates:
         return "Mailbox scan: no clear application updates found."
-    lines = [f"Mailbox scan: {len(updates)} relevant message(s)."]
-    for message, classification, application in updates:
+    latest = {
+        application.notion_page_id if application else message.message_id: (classification, application)
+        for message, classification, application in updates
+    }
+    lines = [f"Mailbox updates: {len(latest)} application(s)."]
+    for classification, application in latest.values():
         target = f"{application.company} - {application.title}" if application else "unmatched application"
         status = classification.status.value if classification.status else "needs review"
-        lines.append("")
-        lines.append(f"{target}")
-        lines.append(f"Status signal: {status}")
-        lines.append(f"Subject: {message.subject or '(no subject)'}")
-        lines.append(f"Reason: {classification.reason}")
+        target = " ".join(target.split())
+        if len(target) > 52:
+            target = target[:49] + "..."
+        lines.append(f"- {target}: {status.replace('_', ' ')}")
     return "\n".join(lines)
 
 

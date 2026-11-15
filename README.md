@@ -79,6 +79,7 @@ the second command checks Gmail separately. Expired Gmail authorization needs
 If Telegram is temporarily unavailable, the inbox watcher retries the saved
 status digest on its next run without repeating the tracker updates.
 Employer status updates appear in the web workspace after its next Notion sync.
+Telegram summarizes only the latest change per application in each inbox scan.
 
 ## What It Does
 
