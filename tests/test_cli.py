@@ -906,12 +906,23 @@ def test_gmail_watch_once_reports_expired_oauth_only_once(
     assert "authorization expired" in sent_messages[0]
 
 
-@pytest.mark.parametrize("telegram_failure,receipt_only", [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize(
+    "telegram_failure,expected_status,subject,snippet",
+    [
+        (False, ApplicationStatus.ASSESSMENT, "Coding challenge for Infinidat", "Complete this assessment."),
+        (True, ApplicationStatus.ASSESSMENT, "Coding challenge for Infinidat", "Complete this assessment."),
+        (False, ApplicationStatus.RECRUITER_REPLY, "Infinidat application received", ""),
+        (False, ApplicationStatus.REJECTED, "Infinidat application update", "We decided not to move forward."),
+        (False, ApplicationStatus.INTERVIEW, "Infinidat application update", "We invite you to an interview."),
+    ],
+)
 def test_gmail_watch_once_writeback_updates_status_and_audit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     telegram_failure: bool,
-    receipt_only: bool,
+    expected_status: ApplicationStatus,
+    subject: str,
+    snippet: str,
 ) -> None:
     updated_statuses = []
     appended_records = []
@@ -924,9 +935,9 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
                 message_id="msg-1",
                 thread_id="thread-1",
                 from_header="jobs@infinidat.com",
-                subject="Infinidat application received" if receipt_only else "Coding challenge for Infinidat",
+                subject=subject,
                 date_header="Wed, 9 Sep 2026 08:00:00 +0300",
-                snippet="" if receipt_only else "Please complete this assessment.",
+                snippet=snippet,
             )
         ],
     )
@@ -955,30 +966,28 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
     sent = []
-    if telegram_failure or receipt_only:
-        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
 
-        class FakeTelegramClient:
-            def __init__(self, _token: str) -> None:
-                pass
+    class FakeTelegramClient:
+        def __init__(self, _token: str) -> None:
+            pass
 
-            def __enter__(self) -> Self:
-                return self
+        def __enter__(self) -> Self:
+            return self
 
-            def __exit__(self, *args: object) -> None:
-                pass
+        def __exit__(self, *args: object) -> None:
+            pass
 
-            def send_message(self, chat_id: int, message: str) -> None:
-                sent.append((chat_id, message))
-                if len(sent) == 1:
-                    raise RuntimeError("Telegram unavailable")
+        def send_message(self, chat_id: int, message: str) -> None:
+            sent.append((chat_id, message))
+            if telegram_failure and len(sent) == 1:
+                raise RuntimeError("Telegram unavailable")
 
-        monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
+    monkeypatch.setattr("backend_scout.cli.TelegramClient", FakeTelegramClient)
 
     state_path = tmp_path / "mailbox.json"
     command = ["gmail", "watch-once", "--write-notion", "--state-path", str(state_path)]
-    if telegram_failure or receipt_only:
-        command += ["--send-digest", "--chat-id", "12345"]
+    command += ["--send-digest", "--chat-id", "12345"]
 
     result = runner.invoke(app, command)
     if telegram_failure:
@@ -992,10 +1001,11 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
         assert not list(tmp_path.glob("*.telegram.json"))
     else:
         assert result.exit_code == 0
-    if receipt_only:
-        assert sent == []
+        assert runner.invoke(app, command).exit_code == 0
+        assert len(sent) == (0 if expected_status == ApplicationStatus.RECRUITER_REPLY else 1)
+        if sent:
+            assert expected_status.value in sent[0][1]
         assert not list(tmp_path.glob("*.telegram.json"))
-    expected_status = ApplicationStatus.RECRUITER_REPLY if receipt_only else ApplicationStatus.ASSESSMENT
     assert updated_statuses == [("page-1", expected_status)]
     assert appended_records[0][0] == "page-1"
     assert "Gmail message ID: msg-1" in appended_records[0][1]

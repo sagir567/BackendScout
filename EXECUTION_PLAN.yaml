@@ -332,7 +332,7 @@ tasks:
       - Proposed repository skills still require factual confirmation.
     evidence:
       - path: tests/test_web.py
-        result: Synthetic employer interview and rejection messages traverse the mailbox watcher, Notion writeback, Telegram digest and authenticated web history; repeated scans do not re-send the digest. On November 15 the reauthorized Gmail credential passed its API check and the production mailbox worker completed a real scan on its first attempt. Live employer status-change delivery and full shared-ledger cutover are not yet verified.
+        result: Synthetic interview and rejection messages each produce one Notion write and one Telegram update across repeated scans. The web projection preserves those statuses against older snapshots. Automatic receipts still update tracking without a Telegram alert. The November 16 local rollout passed runtime doctor; live employer status-change delivery and full shared-ledger cutover are not yet verified.
       - path: src/backend_scout/durable_runtime.py
         result: Existing 08:00 production scout and fifteen-minute mailbox routine preserved; five-minute typed snapshot sync feeds the local web workspace. Collectors and mailbox still use the legacy Notion path until their full shared-ledger cutover.
       - path: tests/test_job_enrichment.py
