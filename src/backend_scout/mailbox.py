@@ -104,7 +104,8 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
          "invite you to interview", "invite you to an interview", "invite you for an interview",
          "interview confirmed",
          "was selected for an interview",
-         "calendly", "זימון לראיון", "לתאם ראיון", "להזמין אותך לראיון"),
+         "book your interview", "availability for an interview", "availability for a screening call",
+         "זימון לראיון", "לתאם ראיון", "להזמין אותך לראיון"),
     ):
         return MailClassification(
             message_id=message.message_id,

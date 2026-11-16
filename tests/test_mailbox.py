@@ -78,6 +78,20 @@ def test_confirmation_mentioning_possible_interview_is_not_an_invitation():
     assert classify_gmail_message(message).status == ApplicationStatus.RECRUITER_REPLY
 
 
+def test_receipt_with_calendly_in_signature_is_not_an_invitation():
+    message = _message("Application received", "Thank you for applying.\nRecruiting | calendly.com/team")
+    classification = classify_gmail_message(message)
+    assert classification.status == ApplicationStatus.RECRUITER_REPLY
+    assert classification.receipt_only
+
+
+def test_explicit_screening_availability_request_is_interview_progress():
+    message = _message("Update on your application", "Please send your availability for a screening call.")
+    classification = classify_gmail_message(message)
+    assert classification.status == ApplicationStatus.INTERVIEW
+    assert classification.needs_immediate_attention
+
+
 def test_hebrew_application_rejection_and_interview():
     rejected = _message("עדכון לגבי מועמדות", "החלטנו שלא להמשיך בתהליך.")
     interview = _message("זימון לראיון", "נשמח לפגוש אותך ביום ראשון.")

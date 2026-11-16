@@ -1651,9 +1651,10 @@ fingerprint even before approval; it does not create an approval or attempt.
 Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
 Mailbox digests include only clear, matched status transitions. A saved digest
-can still be delivered when a later Gmail scan fails. Automatic
-application receipts still update tracking but do not send a Telegram alert. The workspace
-imports those transitions without granting approval or replaying delivery.
+can still be delivered when a later Gmail scan fails. Automatic application
+receipts update tracking silently. A scheduler link alone is not evidence of an
+interview; look for an invitation or an explicit request to arrange screening.
+The workspace imports those transitions without granting approval or replaying delivery.
 The outbound projection preserves a more advanced employer status already
 present in Notion instead of replacing it with a stale local delivery status.
 Scheduled scouting sends new job cards but skips healthy run summaries.
