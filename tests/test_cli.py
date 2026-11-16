@@ -906,11 +906,12 @@ def test_gmail_watch_once_reports_expired_oauth_only_once(
     assert "authorization expired" in sent_messages[0]
 
 
-@pytest.mark.parametrize("telegram_failure", [False, True])
+@pytest.mark.parametrize("telegram_failure,receipt_only", [(False, False), (True, False), (False, True)])
 def test_gmail_watch_once_writeback_updates_status_and_audit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     telegram_failure: bool,
+    receipt_only: bool,
 ) -> None:
     updated_statuses = []
     appended_records = []
@@ -923,9 +924,9 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
                 message_id="msg-1",
                 thread_id="thread-1",
                 from_header="jobs@infinidat.com",
-                subject="Coding challenge for Infinidat",
+                subject="Infinidat application received" if receipt_only else "Coding challenge for Infinidat",
                 date_header="Wed, 9 Sep 2026 08:00:00 +0300",
-                snippet="Please complete this assessment.",
+                snippet="" if receipt_only else "Please complete this assessment.",
             )
         ],
     )
@@ -954,7 +955,7 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
     sent = []
-    if telegram_failure:
+    if telegram_failure or receipt_only:
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
 
         class FakeTelegramClient:
@@ -976,7 +977,7 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
 
     state_path = tmp_path / "mailbox.json"
     command = ["gmail", "watch-once", "--write-notion", "--state-path", str(state_path)]
-    if telegram_failure:
+    if telegram_failure or receipt_only:
         command += ["--send-digest", "--chat-id", "12345"]
 
     result = runner.invoke(app, command)
@@ -991,7 +992,11 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
         assert not list(tmp_path.glob("*.telegram.json"))
     else:
         assert result.exit_code == 0
-    assert updated_statuses == [("page-1", ApplicationStatus.ASSESSMENT)]
+    if receipt_only:
+        assert sent == []
+        assert not list(tmp_path.glob("*.telegram.json"))
+    expected_status = ApplicationStatus.RECRUITER_REPLY if receipt_only else ApplicationStatus.ASSESSMENT
+    assert updated_statuses == [("page-1", expected_status)]
     assert appended_records[0][0] == "page-1"
     assert "Gmail message ID: msg-1" in appended_records[0][1]
 

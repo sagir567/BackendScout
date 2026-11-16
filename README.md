@@ -274,7 +274,8 @@ draft have both been approved.
 - Gmail mailbox scanning with `gmail.readonly` to classify confirmations,
   rejections, assessments, interviews, and offers, then append an audit note to
   Notion when a status is updated. A private checkpoint prevents repeated
-  Telegram alerts for the same message.
+  Telegram alerts for the same message. Routine application receipts update
+  the tracker silently; substantive status changes are batched in Telegram.
 - Public ATS scouting extracts recognizable skill and years-of-experience
   signals from the full job description, then keeps only jobs with meaningful
   target-role relevance in the automatic shortlist.

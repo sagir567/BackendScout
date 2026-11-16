@@ -57,24 +57,29 @@ def unseen_messages(
 
 
 def load_processed_message_ids(path: Path = DEFAULT_MAILBOX_STATE_PATH) -> set[str]:
+    return set(_read_processed_message_ids(path))
+
+
+def _read_processed_message_ids(path: Path) -> list[str]:
     if not path.exists():
-        return set()
+        return []
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return set()
+        return []
     values = payload.get("processed_message_ids") if isinstance(payload, dict) else None
     if not isinstance(values, list):
-        return set()
-    return {value for value in values if isinstance(value, str) and value}
+        return []
+    return [value for value in values if isinstance(value, str) and value]
 
 
 def mark_messages_processed(
     messages: list[GmailMessageSummary],
     path: Path = DEFAULT_MAILBOX_STATE_PATH,
 ) -> None:
-    existing = list(load_processed_message_ids(path))
-    ordered = list(dict.fromkeys([*existing, *(message.message_id for message in messages)]))
+    current = dict.fromkeys(message.message_id for message in messages)
+    existing = (value for value in _read_processed_message_ids(path) if value not in current)
+    ordered = list(dict.fromkeys([*existing, *current]))
     retained = ordered[-MAX_PROCESSED_MESSAGE_IDS:]
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")

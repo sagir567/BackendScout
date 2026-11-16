@@ -1650,7 +1650,8 @@ A successful recheck of an existing draft records the exact preview
 fingerprint even before approval; it does not create an approval or attempt.
 Test Telegram form questions with the streamlined web view both on and off.
 The answer reopens review; it does not approve the package or enqueue delivery.
-Mailbox digests include only clear, matched status transitions. The workspace
+Mailbox digests include only clear, matched status transitions. Automatic
+application receipts still update tracking but do not send a Telegram alert. The workspace
 imports those transitions without granting approval or replaying delivery.
 The outbound projection preserves a more advanced employer status already
 present in Notion instead of replacing it with a stale local delivery status.

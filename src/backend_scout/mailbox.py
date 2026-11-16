@@ -68,6 +68,7 @@ class MailClassification(BaseModel):
     confidence: Literal["clear", "ambiguous"]
     reason: str
     needs_immediate_attention: bool = False
+    receipt_only: bool = False
 
 
 def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
@@ -134,6 +135,7 @@ def classify_gmail_message(message: GmailMessageSummary) -> MailClassification:
             status=ApplicationStatus.RECRUITER_REPLY,
             confidence="clear",
             reason="Application confirmation language detected.",
+            receipt_only=True,
         )
     if recruitment_context:
         return MailClassification(
@@ -173,13 +175,21 @@ def match_message_to_application(
     applications: list[ApplicationDigestItem],
 ) -> ApplicationDigestItem | None:
     haystack = _message_search_text(message)
-    company_matches = [a for a in applications if a.company.casefold() in haystack]
+    company_matches = [a for a in applications if _mentions_identity(haystack, a.company)]
     if len(company_matches) == 1:
         return company_matches[0]
     title_matches = [
-        a for a in (company_matches or applications) if a.title.casefold() in haystack
+        a for a in (company_matches or applications) if _mentions_identity(haystack, a.title)
     ]
     return title_matches[0] if len(title_matches) == 1 else None
+
+
+def _mentions_identity(haystack: str, identity: str) -> bool:
+    parts = identity.casefold().split()
+    if not parts:
+        return False
+    phrase = r"\s+".join(re.escape(part) for part in parts)
+    return re.search(rf"(?<!\w){phrase}(?!\w)", haystack) is not None
 
 
 def format_mailbox_digest(

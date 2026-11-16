@@ -2417,7 +2417,8 @@ def gmail_watch_once(
                                 status=classification.status,
                             )
                         current_statuses[page_id] = classification.status
-                        changed_updates.append((message, classification, application))
+                        if not classification.receipt_only:
+                            changed_updates.append((message, classification, application))
         except Exception as exc:
             console.print("[red]Mailbox tracker update failed[/red]")
             console.print(str(exc))

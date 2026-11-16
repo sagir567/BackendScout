@@ -148,6 +148,10 @@ def test_match_message_to_application_uses_company_or_role_words() -> None:
     assert match_message_to_application(
         _message("Infinidat - Junior Software Developer", ""), [other, application]
     ) == application
+    short = application.model_copy(update={"company": "Cover", "title": "QA Engineer"})
+    assert match_message_to_application(_message("Discover a new role", ""), [short]) is None
+    assert match_message_to_application(_message("QA Engineering application", ""), [short]) is None
+    assert match_message_to_application(_message("QA   Engineer application", ""), [short]) == short
 
 
 def test_format_mailbox_digest_summarizes_updates() -> None:
