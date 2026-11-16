@@ -924,6 +924,8 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
     subject: str,
     snippet: str,
 ) -> None:
+    from backend_scout import cli
+
     updated_statuses = []
     appended_records = []
     monkeypatch.setenv("NOTION_API_KEY", "secret_notion")
@@ -993,7 +995,17 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
     if telegram_failure:
         assert result.exit_code == 1
         assert isinstance(result.exception, RuntimeError)
-        assert runner.invoke(app, command).exit_code == 0
+        fetch_messages = cli.list_recent_messages
+
+        def temporarily_unavailable(*_args):
+            raise RuntimeError("Gmail temporarily unavailable")
+
+        monkeypatch.setattr(cli, "list_recent_messages", temporarily_unavailable)
+        unavailable_result = runner.invoke(app, command)
+        assert unavailable_result.exit_code == 1
+        assert "Gmail mailbox scan failed" in unavailable_result.output
+        assert not list(tmp_path.glob("*.telegram.json"))
+        monkeypatch.setattr(cli, "list_recent_messages", fetch_messages)
         assert runner.invoke(app, command).exit_code == 0
         assert len(sent) == 2
         assert sent[0] == sent[1]

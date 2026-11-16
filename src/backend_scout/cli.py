@@ -2341,6 +2341,11 @@ def gmail_watch_once(
     try:
         fetched_messages = list_recent_messages(query, max_results)
     except Exception as exc:
+        if resolved_chat_id is not None:
+            try:
+                _deliver_pending_mailbox_digest(pending_digest, resolved_chat_id, settings)
+            except Exception:  # noqa: BLE001 - keep the backlog and report the original Gmail error.
+                console.print("[yellow]A saved mailbox digest is still pending Telegram delivery.[/yellow]")
         if gmail_reauthorization_required(exc) and send_digest:
             if gmail_auth_alert_due(auth_alert_path) and settings.telegram_bot_token:
                 resolved_chat_id = _resolve_daily_chat_id(settings, chat_id)
