@@ -919,12 +919,14 @@ def test_gmail_watch_once_reports_expired_oauth_only_once(
 def test_gmail_watch_once_writeback_updates_status_and_audit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    review_service,
     telegram_failure: bool,
     expected_status: ApplicationStatus,
     subject: str,
     snippet: str,
 ) -> None:
     from backend_scout import cli
+    from backend_scout.config import TrackerName
 
     updated_statuses = []
     appended_records = []
@@ -944,6 +946,8 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
         ],
     )
 
+    page = _application_page("page-1", ApplicationStatus.SUBMITTED)
+
     class FakeNotionClient:
         def __init__(self, api_key: str, api_version: str) -> None:
             pass
@@ -955,15 +959,17 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
             return None
 
         def query_data_source(self, data_source_id: str, payload: dict[str, object]) -> dict[str, object]:
-            return {"results": [_application_page("page-1", ApplicationStatus.SUBMITTED)]}
+            return {"results": [page]}
 
         def update_application_status(self, page_id: str, status: ApplicationStatus) -> dict[str, object]:
             updated_statuses.append((page_id, status))
             return {"id": page_id}
 
         def append_submission_record(self, page_id: str, record: str, *, status) -> dict[str, object]:
+            nonlocal page
             appended_records.append((page_id, record))
             updated_statuses.append((page_id, status))
+            page = _application_page(page_id, status)
             return {"id": page_id}
 
     monkeypatch.setattr("backend_scout.cli.NotionClient", FakeNotionClient)
@@ -1021,6 +1027,12 @@ def test_gmail_watch_once_writeback_updates_status_and_audit(
     assert updated_statuses == [("page-1", expected_status)]
     assert appended_records[0][0] == "page-1"
     assert "Gmail message ID: msg-1" in appended_records[0][1]
+    monkeypatch.setattr("backend_scout.notion.NotionClient", FakeNotionClient)
+    review_service.settings.notion_api_key = "fake-notion-key"
+    review_service.settings.notion_production_applications_data_source_id = "data-source-123"
+    outcome = review_service.sync_projection(TrackerName.PRODUCTION, "12345")
+    assert outcome.reason_code == "projection_imported"
+    assert review_service.detail("page-1", TrackerName.PRODUCTION)["item"]["status"] == expected_status.value
 
 
 @pytest.mark.parametrize("existing_status,resend_pending,delivered", [
