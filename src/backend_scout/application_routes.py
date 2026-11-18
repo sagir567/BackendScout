@@ -835,7 +835,8 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                             if _binding(target) == binding and _safe(target, tracker, widget=True):
                                 return result(
                                     "verified", "comeet_reveal_manual",
-                                    "The verified posting opens an embedded Comeet form for the exact role.",
+                                    "Open the official posting and select Apply for this job to fill the "
+                                    "embedded Comeet form. Automatic submission is not supported for this form.",
                                     current,
                                 )
                 reason = "unsafe_apply_link" if unsafe_link else "application_route_missing"

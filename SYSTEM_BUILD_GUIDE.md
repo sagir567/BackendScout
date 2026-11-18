@@ -1690,6 +1690,11 @@ also qualify for a recheck after the existing cooldown. They remain internal unt
 the score on the recovered description determines whether to prepare a CV.
 Manual cards use the recorded form-inspection message, falling back to the
 verified route's message; a rollout restriction is reported separately.
+Read-only live inspection of an embedded Comeet posting confirmed that the
+employer's Apply control can create a widget with an additional nested form.
+The nested form exposed a required CV input but no native submit control.
+Keep this route manual until the widget's delivery and receipt behavior can
+be verified in isolation; do not authorize generic writes to the widget.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.
