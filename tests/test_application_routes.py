@@ -588,6 +588,8 @@ def test_unknown_is_not_claimed_closed_and_observed_closure_is_distinct():
     assert route.reason_code == "application_route_missing"
     route = resolve_application_route(job(), FakePage({EMPLOYER: html("This position is closed.")}))
     assert (route.status, route.reason_code) == ("unavailable", "vacancy_closed")
+    route = resolve_application_route(job(), FakePage({EMPLOYER: html("כבר לא מקבלים מועמדויות")}))
+    assert (route.status, route.reason_code) == ("unavailable", "vacancy_closed")
     route = resolve_application_route(job(), FakePage({EMPLOYER: 404}))
     assert (route.status, route.reason_code) == ("unavailable", "posting_unavailable")
     route = resolve_application_route(job(), FakePage({EMPLOYER: 403}))

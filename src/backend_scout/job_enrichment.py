@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 import httpx
 from bs4 import BeautifulSoup
 
-from backend_scout.application_urls import application_entry_url
+from backend_scout.application_urls import application_entry_url, has_hebrew_closure_notice
 from backend_scout.collectors import extract_required_skills, extract_years_experience
 from backend_scout.models import Job
 
@@ -338,7 +338,7 @@ def _description(value: str, job: Job) -> str:
         raise _Unavailable(
             "source_gated", "The source returned a sign-in or verification placeholder."
         )
-    if _CLOSED.search(value):
+    if _CLOSED.search(value) or has_hebrew_closure_notice(value):
         raise _Unavailable("closed", "The public posting says the role is no longer available.")
     if len(value) > MAX_DESCRIPTION_CHARS:
         raise _Unavailable(
@@ -485,7 +485,7 @@ def _html_body(job: Job, posting: _Posting, body: bytes, url: str) -> tuple[str,
         raise _Unavailable(
             "source_gated", "The public source returned a login, cookie or anti-bot page."
         )
-    if _CLOSED.search(visible):
+    if _CLOSED.search(visible) or has_hebrew_closure_notice(visible):
         raise _Unavailable("closed", "The public page says the role is no longer available.")
     canonical = soup.find("link", rel="canonical")
     canonical_url = urljoin(url, str(canonical.get("href", ""))) if canonical else None

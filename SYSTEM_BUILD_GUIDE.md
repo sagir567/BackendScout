@@ -1676,6 +1676,8 @@ the tenant and requisition ID; this does not grant a Workday delivery route.
 When the public page provides a visible, scoped description expander, the
 read-only browser can open it once and verify the posting again. Authentication
 and verification screens are not expanded or bypassed.
+Recognize explicit Hebrew and English closure notices before accepting public
+posting text or presenting an application destination.
 Rebuild skill and experience signals from a manually corrected posting, then
 rescore it. A stated experience advantage is not a minimum requirement.
 With the ready workspace enabled, incomplete and below-threshold postings

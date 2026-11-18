@@ -6,6 +6,14 @@ from urllib.parse import parse_qs, urlsplit
 AUTHENTICATION_PATH = re.compile(
     r"/(?:login|signin|sign-in|signup|sign-up|authwall|checkpoint|uas)(?:/|$)", re.IGNORECASE
 )
+_HEBREW_CLOSED_NOTICE = re.compile(
+    r"(?:כבר\s+לא\s+מקבלים\s+(?:בקשות|מועמדויות)|"
+    r"משרה\s+זו\s+אינה\s+פתוחה\s+עוד\s+להגשת\s+מועמדות)"
+)
+
+
+def has_hebrew_closure_notice(text: str) -> bool:
+    return bool(_HEBREW_CLOSED_NOTICE.search(text))
 
 
 def is_authentication_url(url: str) -> bool:

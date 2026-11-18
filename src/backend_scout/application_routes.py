@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
+from backend_scout.application_urls import has_hebrew_closure_notice
 from backend_scout.models import Job
 
 
@@ -683,7 +684,7 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                 )
             expected = binding or expected
             evidence.append(current)
-            if _CLOSED.search(view["body"]):
+            if _CLOSED.search(view["body"]) or has_hebrew_closure_notice(view["body"]):
                 return result(
                     "unavailable",
                     "vacancy_closed",

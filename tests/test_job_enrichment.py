@@ -544,6 +544,7 @@ def test_cookie_banner_does_not_replace_or_invalidate_real_description():
         (_schema(validThrough="2000-01-01"), ""),
         (_schema(validThrough="2000-01-01T00:00:00Z"), ""),
         (_schema(), "No longer accepting applications"),
+        (_schema(), "כבר לא מקבלים בקשות"),
         (_schema(description="This job has expired."), ""),
     ],
 )
