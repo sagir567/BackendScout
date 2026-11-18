@@ -326,23 +326,32 @@ class ApplicationService:
         self._authorize(actor_id)
         if not (self.settings.web_ready_to_apply and self._hybrid and tracker == TrackerName.PRODUCTION):
             return []
-        day = (now or datetime.now(UTC)).astimezone(ZoneInfo("Asia/Hebron")).date()
+        now = now or datetime.now(UTC)
+        day = now.astimezone(ZoneInfo("Asia/Hebron")).date()
         prefix = f"background-prepare:{tracker.value}:{day}:"
         candidates = []
         for row in self.store.list_records(tracker):
-            if (not row["job_json"] or row["status"] not in {"discovered", "shortlisted"}
-                    or row["current_fingerprint"] or row["needs_input_code"]):
+            if not row["job_json"] or row["current_fingerprint"]:
+                continue
+            retry = (
+                row["status"] == "needs_input"
+                and row["needs_input_code"] in {"full_posting_required", "application_route_missing"}
+                and now - datetime.fromisoformat(row["updated_at"]) >= timedelta(hours=24)
+            )
+            if not retry and (
+                row["status"] not in {"discovered", "shortlisted"} or row["needs_input_code"]
+            ):
                 continue
             job = Job.model_validate_json(row["job_json"])
             url = application_entry_url(job.application_url, job.source_url)
             if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
                 continue
             direct = bool(application_entry_url(job.application_url))
-            candidates.append((direct, job.match_score, row["application_id"]))
+            candidates.append((direct, job.match_score, row["application_id"], retry))
         task_ids = []
-        for _, _, application_id in sorted(candidates, key=lambda item: (-item[0], -item[1], item[2])):
+        for _, _, application_id, retry in sorted(candidates, key=lambda item: (-item[0], -item[1], item[2])):
             if (self.store.form_check_pending(application_id, tracker)
-                    or self.store.latest_form_inspection(application_id, tracker)):
+                    or not retry and self.store.latest_form_inspection(application_id, tracker)):
                 continue
             try:
                 self._manifest(application_id, tracker)
@@ -1178,6 +1187,12 @@ class ApplicationService:
             raise ApplicationConflict("Resolve the current application before drafting")
         if record.status in {"drafting", "enriching"}:
             return self._outcome(application_id, "queued", "CV drafting is already queued.")
+        if (background_preparation and tracker == TrackerName.PRODUCTION
+                and record.job.match_score is not None and record.job.match_score < 55):
+            message = "The full posting scored below the automatic preparation threshold."
+            self.store.set_state(application_id, tracker, "needs_input",
+                                 code="below_match_threshold", message=message)
+            return self._outcome(application_id, "below_match_threshold", message, status="blocked")
         if self._hybrid:
             if self._verified_route(application_id, tracker) is None and (
                 not self._has_requirements(record.job) or record.current_fingerprint

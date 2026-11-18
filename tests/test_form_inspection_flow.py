@@ -236,6 +236,38 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
     assert all(task.payload["tailor_after"] is True for task in tasks)
 
 
+def test_background_rechecks_only_aged_incomplete_records(hybrid):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    production = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    for identifier, code in [
+        ("older", "full_posting_required"),
+        ("fresh", "application_route_missing"),
+        ("validation", "form_validation_failed"),
+    ]:
+        service.store.import_snapshot(identifier, production, job, "found")
+        service.store.set_state(identifier, production, "needs_input", code=code)
+    with sqlite3.connect(service.store.database_path) as conn:
+        conn.execute(
+            "UPDATE application_metadata SET updated_at=? WHERE application_pk IN "
+            "(SELECT id FROM applications WHERE application_id IN ('older', 'validation'))",
+            ((datetime.now(UTC) - timedelta(days=2)).isoformat(),),
+        )
+    assert len(service.queue_daily_preparation(production, "12345")) == 1
+    assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["older"]
+
+
+def test_background_drafting_stops_when_refreshed_score_is_below_threshold(hybrid):
+    service, _, _ = hybrid
+    job = service.store.get_application("example-job", T).job.model_copy(update={"match_score": 42})
+    production = TrackerName.PRODUCTION
+    service.store.import_snapshot("low-score", production, job, "found")
+    outcome = service.request_tailoring("low-score", production, "12345", background_preparation=True)
+    assert outcome.reason_code == "below_match_threshold"
+    assert not list_tasks(service.store.database_path)
+
+
 def test_expired_review_recheck_has_no_draft_authority_and_skips_changed_state(hybrid):
     service, result, calls = hybrid
     service.settings.web_ready_to_apply = True
