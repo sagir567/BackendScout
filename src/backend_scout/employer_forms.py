@@ -247,6 +247,7 @@ def find_application_form(page, route):
     from backend_scout.application_routes import route_allows_url
 
     candidates = []
+    explicit = []
     scopes = [page] + [f for f in page.frames if f != page.main_frame]
     for scope in scopes:
         if not route_allows_url(route, scope.url):
@@ -270,7 +271,12 @@ def find_application_form(page, route):
             if (container.locator('input[type="email"], input[name*="email" i]').count() == 0
                 and not re.search(r"email|מייל|דוא", context, re.IGNORECASE)):
                 continue
-            candidates.append(ApplicationFormView(page, scope, container, upload, scope.url))
+            view = ApplicationFormView(page, scope, container, upload, scope.url)
+            candidates.append(view)
+            if RESUME.search(meta["label"]):
+                explicit.append(view)
+    if explicit:
+        candidates = explicit
     return candidates[0] if len(candidates) == 1 else None
 
 

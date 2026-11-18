@@ -605,6 +605,21 @@ def test_browser_recognizes_required_second_attachment_without_upload(browser_fi
     assert page.evaluate("window.sent") == 0
 
 
+def test_browser_prefers_explicit_resume_over_generic_required_upload(browser_fixture):
+    page, load, _ = browser_fixture
+    route = load("raft")
+    view = forms.find_application_form(page, route)
+    view.file_control.evaluate("""el => {
+      el.setAttribute('aria-label', 'Resume');
+      el.closest('form').insertAdjacentHTML('beforeend',
+        '<li>Please submit your grade sheet: <a>Upload file<input type="file" name="cards[example][field0]" required></a></li>');
+    }""")
+    selected = forms.find_application_form(page, route)
+    assert selected.file_control.get_attribute("aria-label") == "Resume"
+    assert forms.requires_additional_attachment(selected)
+    assert page.evaluate("window.sent") == 0
+
+
 def test_browser_city_not_country_and_marketing_stays_off(browser_fixture):
     page, load, _ = browser_fixture
     view = forms.find_application_form(page, load("ibi"))

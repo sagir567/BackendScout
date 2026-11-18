@@ -1690,6 +1690,9 @@ also qualify for a recheck after the existing cooldown. They remain internal unt
 the score on the recovered description determines whether to prepare a CV.
 Manual cards use the recorded form-inspection message, falling back to the
 verified route's message; a rollout restriction is reported separately.
+When a form contains a clearly identified resume input and a generic upload,
+inspection selects the resume input and checks required secondary attachments
+separately. Multiple explicitly identified resume inputs still fail closed.
 Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
