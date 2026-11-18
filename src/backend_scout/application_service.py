@@ -18,7 +18,12 @@ from pydantic import BaseModel, ConfigDict
 
 from backend_scout.application_package import ApplicationPackage, ReviewedAnswer
 from backend_scout.application_routes import ApplicationRoute
-from backend_scout.application_store import ApplicationConflict, ApplicationStore
+from backend_scout.application_store import (
+    DELIVERY_LOCKED_STATUSES,
+    ApplicationConflict,
+    ApplicationStore,
+    portal_job_identity,
+)
 from backend_scout.application_urls import application_entry_url
 from backend_scout.browser_budget import BudgetExceeded
 from backend_scout.career_evidence import load_career_evidence
@@ -65,6 +70,17 @@ _PDF_RENDER_LOCK = Lock()
 _PREFLIGHT_RECHECK_CODES = {"form_review_changed", "form_schema_changed", "destination_changed", "form_validation_failed"}
 _FORM_SCHEMA_ANSWER = "review.form_schema_sha256"
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
+
+
+def _delivery_locked_portals(rows):
+    keys = set()
+    for row in rows:
+        if row["status"] in DELIVERY_LOCKED_STATUSES and row["job_json"]:
+            job = Job.model_validate_json(row["job_json"])
+            key = portal_job_identity(job.application_url, job.company, job.title)
+            if key:
+                keys.add(key)
+    return keys
 
 
 @lru_cache(maxsize=8)
@@ -330,7 +346,9 @@ class ApplicationService:
         day = now.astimezone(ZoneInfo("Asia/Hebron")).date()
         prefix = f"background-prepare:{tracker.value}:{day}:"
         candidates = []
-        for row in self.store.list_records(tracker):
+        rows = self.store.list_records(tracker)
+        locked = _delivery_locked_portals(rows)
+        for row in rows:
             if not row["job_json"] or row["current_fingerprint"]:
                 continue
             retry = (
@@ -343,6 +361,8 @@ class ApplicationService:
             ):
                 continue
             job = Job.model_validate_json(row["job_json"])
+            if portal_job_identity(job.application_url, job.company, job.title) in locked:
+                continue
             url = application_entry_url(job.application_url, job.source_url)
             if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
                 continue
@@ -540,7 +560,9 @@ class ApplicationService:
 
     def overview(self, tracker: TrackerName) -> dict:
         items = []
-        for row in self.store.list_records(tracker):
+        rows = self.store.list_records(tracker)
+        locked = _delivery_locked_portals(rows)
+        for row in rows:
             if not row["job_json"]:
                 continue
             job = Job.model_validate_json(row["job_json"])
@@ -558,6 +580,8 @@ class ApplicationService:
             except (OSError, ValueError):
                 pass
             code, message = row["needs_input_code"], row["needs_input_message"]
+            duplicate = (row["status"] not in HISTORICAL
+                         and portal_job_identity(job.application_url, job.company, job.title) in locked)
             route_blocker = self._posting_blocker(row["application_id"], tracker)
             if route_blocker and row["status"] not in HISTORICAL:
                 code, message = route_blocker["reason_code"], route_blocker["message"]
@@ -602,7 +626,9 @@ class ApplicationService:
             bucket = "internal"
             complete_and_relevant = self._has_requirements(job) and (
                 job.match_score is None or job.match_score >= 55
-            )
+            ) and not duplicate
+            if duplicate:
+                code, message = "duplicate_portal_role", "This role has a sent or unresolved application in the history."
             can_deliver = bool(
                 self.settings.web_allow_delivery and route
                 and hybrid_delivery_allowed(self.settings, self.store, row["application_id"], tracker)

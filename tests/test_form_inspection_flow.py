@@ -219,8 +219,14 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
     original = service.store.get_application("example-job", T).job
     for score in range(60, 68):
         service.store.import_snapshot(
-            f"job-{score}", production, original.model_copy(update={"match_score": score}), "found",
+            f"job-{score}", production, original.model_copy(update={
+                "match_score": score,
+                "application_url": f"https://careers.example.test/job/{score}",
+            }), "found",
         )
+    service.store.import_snapshot(
+        "same-as-submitted", production, original.model_copy(update={"match_score": 100}), "found",
+    )
     service.store.import_snapshot(
         "discovery-only", production,
         original.model_copy(update={"application_url": None, "match_score": 99}), "found",
@@ -234,6 +240,10 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
     assert [task.payload["page_id"] for task in tasks] == [f"job-{score}" for score in range(67, 62, -1)]
     assert all(task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT for task in tasks)
     assert all(task.payload["tailor_after"] is True for task in tasks)
+    entries = {item["id"]: item for item in service.overview(production)["items"]}
+    assert entries["same-as-submitted"]["workspace_bucket"] == "internal"
+    assert entries["same-as-submitted"]["needs_input_code"] == "duplicate_portal_role"
+    assert entries["submitted"]["workspace_bucket"] == "history"
 
 
 def test_background_rechecks_only_aged_incomplete_records(hybrid):

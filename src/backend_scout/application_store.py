@@ -22,6 +22,10 @@ from backend_scout.config import TrackerName
 from backend_scout.models import ApplicationStatus, Job, can_transition_application_status
 
 SCHEMA_VERSION = 5
+DELIVERY_LOCKED_STATUSES = frozenset({
+    "sending", "submitted", "submission_unknown", "recruiter_reply",
+    "assessment", "interview", "offer", "rejected",
+})
 
 
 def _portal_destination_key(url: str | None):
@@ -40,6 +44,13 @@ def _portal_destination_key(url: str | None):
 
 def _role_key(role: str) -> str:
     return " ".join(re.sub(r"\s+[-–]\s*\d+\s*$", "", role).casefold().split())
+
+
+def portal_job_identity(url: str | None, company: str, role: str):
+    key = _portal_destination_key(url)
+    if key is None or key[0] == "ats":
+        return key
+    return (*key, company.casefold().strip(), _role_key(role))
 
 
 class ApplicationConflict(ValueError):
@@ -906,7 +917,7 @@ class ApplicationStore:
 
     @staticmethod
     def _guard_duplicate_portal_delivery(db, application, package: ApplicationPackage) -> None:
-        key = _portal_destination_key(package.official_destination)
+        key = portal_job_identity(package.official_destination, package.company, package.role)
         if key is None:
             return
         rows = db.execute(
@@ -933,10 +944,7 @@ class ApplicationStore:
                 job = Job.model_validate_json(row["job_json"])
                 identities.append((job.application_url, job.company, job.title))
             for url, company, role in identities:
-                if key == _portal_destination_key(url) and (
-                    key[0] == "ats" or (company.casefold().strip() == package.company.casefold().strip()
-                                       and _role_key(role) == _role_key(package.role))
-                ):
+                if key == portal_job_identity(url, company, role):
                     raise ApplicationConflict("This portal role already has a sent or unresolved application")
 
     def finish_attempt(

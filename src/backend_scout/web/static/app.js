@@ -704,9 +704,9 @@ function preparationMarkup(detail, guards) {
   return `<section class="workflow-section" aria-labelledby="preparation-heading">
     <div class="section-heading"><h2 id="preparation-heading">Application preparation</h2></div>
     <p class="action-context" role="status">${escapeHTML(context)}</p>
-    <div class="primary-actions">${cv ? externalLink(cv, 'View CV', { localOnly: true })
+    ${item.needs_input_code === 'duplicate_portal_role' ? '' : `<div class="primary-actions">${cv ? externalLink(cv, 'View CV', { localOnly: true })
       : actionButton('tailor', 'Create CV', guards.tailor && !detail.form_check_pending, 'button-primary', 'Creating...')}
-    ${actionButton('refresh-details', 'Fetch job details', guards['refresh-details'] && !detail.form_check_pending, '', 'Fetching...')}</div>
+    ${actionButton('refresh-details', 'Fetch job details', guards['refresh-details'] && !detail.form_check_pending, '', 'Fetching...')}</div>`}
   </section>`;
 }
 

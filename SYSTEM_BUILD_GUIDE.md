@@ -1669,6 +1669,8 @@ For an incomplete LinkedIn lead, the read-only preflight can recover full
 public description markup tied to the exact posting. It does not turn the
 discovery link into an application destination. The delivery transaction
 checks other rows for a sent or unresolved attempt at the same portal role.
+The workspace and daily preparation skip known duplicate rows while keeping
+the original receipt and lifecycle visible in history.
 When the public page provides a visible, scoped description expander, the
 read-only browser can open it once and verify the posting again. Authentication
 and verification screens are not expanded or bypassed.
