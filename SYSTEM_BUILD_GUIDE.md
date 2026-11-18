@@ -1683,7 +1683,11 @@ Enabling preparation does not change rollout limits or approve any package.
 When scheduling the bounded daily preparation, check existing employer entry
 links before discovery-only leads, then rank each group by fit. Every entry
 still needs its own public identity and form verification.
-The daily schedule can inspect twelve public postings. Only five background
+The daily schedule can inspect twelve public postings. Complete, high-scoring
+postings come first, but thin postings can use remaining inspection capacity
+even when their preliminary score is low. They remain internal until verified;
+the score on the recovered description determines whether to prepare a CV.
+Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
 Check the full posting for an explicit senior role heading before background

@@ -246,6 +246,23 @@ def test_daily_preparation_reserves_only_twelve_top_ranked_production_checks(hyb
     assert entries["submitted"]["workspace_bucket"] == "history"
 
 
+def test_background_can_recover_thin_low_scoring_posting_without_exposing_it(hybrid):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    production = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    service.store.import_snapshot(
+        "thin", production, job.model_copy(update={"description": job.title, "match_score": 30}), "found",
+    )
+    service.store.import_snapshot(
+        "complete-low", production, job.model_copy(update={"match_score": 30}), "found",
+    )
+    assert len(service.queue_daily_preparation(production, "12345")) == 1
+    assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["thin"]
+    item = next(item for item in service.overview(production)["items"] if item["id"] == "thin")
+    assert item["workspace_bucket"] == "internal"
+
+
 def test_background_rechecks_only_aged_incomplete_records(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True

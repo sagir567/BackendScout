@@ -371,12 +371,16 @@ class ApplicationService:
             if declares_senior_role(job.title, job.description):
                 continue
             url = application_entry_url(job.application_url, job.source_url)
-            if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
+            if not url or not url.startswith("https://"):
+                continue
+            complete = self._has_requirements(job)
+            if complete and (job.match_score is None or job.match_score < 55):
                 continue
             direct = bool(application_entry_url(job.application_url))
-            candidates.append((direct, job.match_score, row["application_id"], retry))
+            candidates.append((complete, direct, job.match_score or 0, row["application_id"], retry))
         task_ids = []
-        for _, _, application_id, retry in sorted(candidates, key=lambda item: (-item[0], -item[1], item[2])):
+        ranked = sorted(candidates, key=lambda item: (-item[0], -item[1], -item[2], item[3]))
+        for _, _, _, application_id, retry in ranked:
             if (self.store.form_check_pending(application_id, tracker)
                     or not retry and self.store.latest_form_inspection(application_id, tracker)):
                 continue
