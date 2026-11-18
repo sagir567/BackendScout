@@ -364,7 +364,7 @@ def _normalize_for_skill_search(value: str) -> str:
 
 def _extract_years_experience(description: str) -> str | None:
     patterns = (
-        r"(\d+)\s*\+\s*(?:years?|yrs?)",
+        r"(\d+)\s*(?:[-–—]\s*\d+\s*)?\+\s*(?:years?|yrs?)",
         r"(\d+)\s*(?:[-–—]\s*\d+\s*)?(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience",
         r"(\d+)\s*(?:[-–—]\s*\d+\s*)?(?:years?|yrs?)[ \t]+of[ \t]+(?:[a-z-]+[ \t]+){1,4}experience",
         r"at least\s+(\d+)\s+(?:years?|yrs?)",
@@ -372,13 +372,16 @@ def _extract_years_experience(description: str) -> str | None:
     )
     text = description.casefold()
     optional = re.compile(r"\b(?:advantage|preferred|nice to have|a plus|not required|optional|desirable)\b")
-    for pattern in patterns:
-        for match in re.finditer(pattern, text):
-            before = re.split(r"[.!?\n]", text[max(0, match.start() - 40):match.start()])[-1]
-            after = re.split(r"[.!?\n]", text[match.end():match.end() + 100])[0]
-            if not optional.search(before + " " + after):
-                return f"{match.group(1)}+ years"
-    return None
+    alternatives = re.compile(r"\b(?:years?|yrs?)\b[^.!?\n]*\bor\b[^.!?\n]*\d+\s*\+?\s*(?:years?|yrs?)\b")
+    minimums = []
+    for clause in re.split(r"[.!?\n]", text):
+        if alternatives.search(clause):
+            continue
+        for pattern in patterns:
+            for match in re.finditer(pattern, clause):
+                if not optional.search(clause[max(0, match.start() - 40):match.end() + 100]):
+                    minimums.append(int(match.group(1)))
+    return f"{max(minimums)}+ years" if minimums else None
 
 
 def extract_years_experience(description: str) -> str | None:

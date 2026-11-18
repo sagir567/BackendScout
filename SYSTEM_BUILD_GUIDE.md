@@ -1711,6 +1711,8 @@ drafting. References to working with senior engineers do not disqualify a job.
 Use the private profile's seniority ceiling for the production preparation
 queue and application lists. Compare verified minimum experience from the
 description, not the high end of a range or years stated only as an advantage.
+When a posting lists multiple distinct minimums, use the highest one. Do not
+infer a hard minimum from a clause that presents alternative experience paths.
 Incomplete posting or route observations can be checked again after 24 hours
 within the same daily quota. An updated score below the preparation threshold
 blocks the background CV draft before calling the model.

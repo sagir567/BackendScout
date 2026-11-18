@@ -281,3 +281,12 @@ def test_experience_extraction_skips_preferred_years_and_reads_unicode_ranges():
     assert extract_years_experience(optional) is None
     assert extract_years_experience(optional + " Requires 3–5 years of software development experience.") == "3+ years"
     assert extract_years_experience(optional + " Requires 3–5 years of experience with Python.") == "3+ years"
+    assert extract_years_experience(
+        "2+ years of Python experience. At least 4 years of experience in software development."
+    ) == "4+ years"
+    assert extract_years_experience(
+        "2–4+ years of experience developing APIs. 5 years of mobile development experience is preferred."
+    ) == "2+ years"
+    assert extract_years_experience(
+        "4+ years of development experience or 2+ years of experience with backend APIs."
+    ) is None
