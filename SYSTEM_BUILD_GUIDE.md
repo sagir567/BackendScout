@@ -1703,6 +1703,8 @@ exact-match expanded description when both are available. A short structured
 summary must not mask fuller text recovered by the browser.
 Notion snapshots without an explicit discovery date use the page creation
 time so periodic synchronization does not invalidate an in-flight form check.
+An identical Notion reimport is a no-op for unclaimed records. In particular
+it must not reset the recheck cooldown of a legacy portal record.
 Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.

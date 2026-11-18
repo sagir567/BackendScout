@@ -365,10 +365,11 @@ class ApplicationStore:
             )
             code = "legacy_portal_incomplete"
             message = "Previous portal preparation needs review; no new delivery is authorized."
+        job_json = job.model_dump_json()
         with self._transaction() as db:
             db.execute(
                 "INSERT OR IGNORE INTO applications(application_id,tracker,status,job_json) VALUES (?,?,?,?)",
-                (application_id, TrackerName(tracker).value, status, job.model_dump_json()),
+                (application_id, TrackerName(tracker).value, status, job_json),
             )
             app = self._application(db, application_id, tracker)
             meta = db.execute(
@@ -408,9 +409,13 @@ class ApplicationStore:
                 return
             if app["current_fingerprint"] is not None:
                 raise ApplicationConflict("Reviewed application requires explicit reconciliation")
+            if (meta and (app["status"], app["job_json"]) == (status, job_json)
+                    and (meta["legacy_status"], meta["needs_input_code"], meta["needs_input_message"])
+                    == (legacy_status, code, message)):
+                return
             db.execute(
                 "UPDATE applications SET status=?,job_json=? WHERE id=?",
-                (status, job.model_dump_json(), app["id"]),
+                (status, job_json, app["id"]),
             )
             now = _now()
             db.execute(

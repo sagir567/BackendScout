@@ -226,16 +226,26 @@ def test_legacy_notion_reimport_keeps_discovery_timestamp_stable(hybrid, monkeyp
     monkeypatch.setattr(notion, "query_all_pages", lambda *_: [
         {"id": "legacy", "created_time": "2026-10-01T08:00:00Z"},
     ])
-    monkeypatch.setattr(notion, "application_digest_item_from_page", lambda page:
-                        SimpleNamespace(notion_page_id=page["id"], status=SimpleNamespace(value="found")))
+    monkeypatch.setattr(notion, "application_digest_item_from_page", lambda page: SimpleNamespace(
+        notion_page_id=page["id"], status=SimpleNamespace(value="submission_prepared"),
+    ))
     job = service.store.get_application("example-job", T).job
     monkeypatch.setattr(notion, "job_from_application_page",
                         lambda _: job.model_copy(update={"discovered_at": datetime.now(UTC)}))
     service.sync_projection(tracker, "12345")
     original = service.store.get_application("legacy", tracker).job
+    aged = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    with sqlite3.connect(service.store.database_path) as conn:
+        conn.execute(
+            "UPDATE application_metadata SET updated_at=? WHERE application_pk IN "
+            "(SELECT id FROM applications WHERE application_id='legacy')", (aged,),
+        )
+    service.settings.web_ready_to_apply = True
     service.sync_projection(tracker, "12345")
     assert service.store.get_application("legacy", tracker).job == original
     assert original.discovered_at == datetime(2026, 10, 1, 8, tzinfo=UTC)
+    assert service.store.metadata("legacy", tracker)["updated_at"] == aged
+    assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["legacy"]
 
 
 def test_daily_preparation_reserves_only_twelve_top_ranked_production_checks(hybrid):
