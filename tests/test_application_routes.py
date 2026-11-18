@@ -234,6 +234,7 @@ def test_official_employer_form_and_contract():
         "evidence_urls",
         "allowed_origins",
         "posting_text",
+        "discovery_posting_text",
     }
 
 

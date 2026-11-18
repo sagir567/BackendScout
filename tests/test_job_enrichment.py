@@ -443,6 +443,42 @@ def test_hybrid_preflight_uses_public_linkedin_text_without_promoting_board(monk
     assert result["route"] == {"status": "needs_input", "application_url": None}
 
 
+@pytest.mark.parametrize("company,can_expand", [("Example Labs", True), ("Other Company", False)])
+def test_browser_expands_only_the_verified_linkedin_description(company, can_expand):
+    from backend_scout.application_routes import _linkedin_browser_text
+
+    class Page:
+        url = LINKEDIN
+        expanded = False
+
+        def content(self):
+            description = BODY if self.expanded else "Short teaser"
+            return (
+                f'<link rel="canonical" href="{LINKEDIN}">'
+                '<h1 class="top-card-layout__title">Backend Engineer</h1>'
+                f'<a class="topcard__org-name-link">{company}</a>'
+                f'<div class="description__text"><div class="show-more-less-html__markup">{description}</div></div>'
+            )
+
+        def locator(self, selector):
+            assert selector == ".description__text button.show-more-less-html__button--more"
+            return self
+
+        def count(self):
+            return 1
+
+        def is_visible(self):
+            return True
+
+        def click(self, *, timeout):
+            assert timeout == 1500
+            self.expanded = True
+
+    page = Page()
+    assert _linkedin_browser_text(page, LINKEDIN, _job()) == (BODY if can_expand else None)
+    assert page.expanded is can_expand
+
+
 @pytest.mark.parametrize(
     "text",
     [

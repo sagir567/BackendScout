@@ -39,6 +39,7 @@ class ApplicationRoute(BaseModel):
     evidence_urls: list[str] = Field(default_factory=list)
     allowed_origins: list[str] = Field(default_factory=list)
     posting_text: str | None = Field(default=None, max_length=30_000)
+    discovery_posting_text: str | None = Field(default=None, max_length=30_000)
     _tracker: str = PrivateAttr(default="production")
     _widgets: set[str] = PrivateAttr(default_factory=set)
 
@@ -444,6 +445,30 @@ def _posting_text(view: dict, job: Job) -> str | None:
     return None
 
 
+def _linkedin_browser_text(page, url: str, job: Job) -> str | None:
+    if urlsplit(url).hostname not in {"linkedin.com", "www.linkedin.com", "il.linkedin.com"}:
+        return None
+    from playwright.sync_api import Error as PlaywrightError
+
+    from backend_scout.job_enrichment import read_linkedin_snapshot
+
+    try:
+        if not hasattr(page, "content"):
+            return None
+        baseline = read_linkedin_snapshot(job, page.content(), url, allow_incomplete=True)
+        if baseline is None:
+            return None
+        button = page.locator(".description__text button.show-more-less-html__button--more")
+        if button.count() != 1 or not button.is_visible():
+            return baseline or None
+        button.click(timeout=1500)
+        if page.url != url:
+            return None
+        return read_linkedin_snapshot(job, page.content(), url)
+    except PlaywrightError:
+        return None
+
+
 def route_allows_url(route: ApplicationRoute, url: str, *, confirmation: bool = False) -> bool:
     """Check route scope, not permission to send. Confirmation adds no new origin."""
     if route.status != "verified" or not route.application_url:
@@ -504,6 +529,7 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
     employer = None
     expected = None
     posting_text = None
+    discovery_posting_text = None
     trusted_hosts = frozenset(verified_employer_hosts)
 
     def official(url):
@@ -533,6 +559,7 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
             if application
             else [],
             posting_text=posting_text,
+            discovery_posting_text=discovery_posting_text,
         )
         route._tracker, route._widgets = tracker, widgets.copy()
         return route
@@ -652,6 +679,10 @@ def resolve_application_route(job: Job, page, *, tracker="test", verified_employ
                     "vacancy_closed",
                     "The role page explicitly says applications are closed.",
                 )
+            if _board(current):
+                discovery_posting_text = _linkedin_browser_text(page, current, job) or discovery_posting_text
+                if blocked or page.url != current:
+                    return result("needs_input", "unsafe_redirect", "Job description expansion left the public posting.")
             is_official = official(current)
             if is_official and not _ATS.get(urlsplit(current).hostname or "") and employer is None:
                 employer = current

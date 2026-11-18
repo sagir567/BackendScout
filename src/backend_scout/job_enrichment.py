@@ -547,6 +547,22 @@ def _html_body(job: Job, posting: _Posting, body: bytes, url: str) -> tuple[str,
     raise _Unavailable("no_description", "No identifiable full public job description was exposed.")
 
 
+def read_linkedin_snapshot(job: Job, html: str, url: str, *, allow_incomplete=False) -> str | None:
+    """Use the same public identity checks for HTML retrieved by the browser."""
+    try:
+        target, source = _posting(url), _posting(job.source_url)
+        if not target or target.provider != "linkedin" or target != source:
+            return None
+        body = html.encode("utf-8")
+        if len(body) > MAX_BODY_BYTES:
+            return None
+        return _html_body(job, target, body, url)[0]
+    except _Unavailable as exc:
+        if allow_incomplete and exc.code == "description_incomplete":
+            return ""
+        return None
+
+
 def enrich_job(job: Job, *, fetcher: Fetcher | None = None) -> EnrichmentResult:
     """Return a deep job copy or ``unavailable`` with ``job=None`` for manual fallback.
 

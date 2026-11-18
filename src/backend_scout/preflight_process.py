@@ -65,9 +65,13 @@ def main() -> None:
 def _add_linkedin_details(job: Job, result: dict) -> None:
     from backend_scout.application_service import ApplicationService
 
+    route = result.get("route") or {}
+    if route.get("discovery_posting_text"):
+        result["public_posting_text"] = route["discovery_posting_text"]
+        return
     if (urlsplit(job.source_url).hostname not in {"linkedin.com", "www.linkedin.com", "il.linkedin.com"}
             or ApplicationService._has_requirements(job)
-            or (result.get("route") or {}).get("posting_text")):
+            or route.get("posting_text")):
         return
     enriched = enrich_job(job.model_copy(update={"application_url": None}))
     if enriched.job and enriched.status == "enriched":
