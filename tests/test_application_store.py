@@ -82,6 +82,30 @@ def test_versions_immutability_and_stale_approval(store):
         assert db.execute("SELECT COUNT(*) FROM application_approvals").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize("prior_status", ["submitted", "submission_unknown"])
+def test_same_employer_role_cannot_send_from_duplicate_row(store, prior_status):
+    duplicate = package()
+    prior = Job(
+        source="manual", source_url="https://example.test/old",
+        application_url=duplicate.official_destination + "/",
+        company=duplicate.company, title=duplicate.role + " - 1726",
+        description="Build backend software.",
+    )
+    store.import_snapshot("previous-row", TrackerName.TEST, prior, prior_status)
+    approve(store, duplicate)
+    with pytest.raises(ApplicationConflict, match="sent or unresolved"):
+        store.begin_attempt(duplicate.application_id, duplicate.tracker, duplicate.fingerprint(), "duplicate")
+
+
+def test_second_ats_alias_cannot_start_while_first_is_sending(store):
+    url = "https://jobs.eu.lever.co/example/a262af21-b179-42a9-b8e4-1b1a32eb66f4"
+    first = approve(store, package(official_destination=url))
+    store.begin_attempt(first.application_id, first.tracker, first.fingerprint(), "first")
+    other = approve(store, package(application_id="second-row", official_destination=url + "/apply"))
+    with pytest.raises(ApplicationConflict, match="sent or unresolved"):
+        store.begin_attempt(other.application_id, other.tracker, other.fingerprint(), "second")
+
+
 def test_restart_idempotent_package_and_existing_queue_coexist(store):
     queued = enqueue_task(QueuedTaskKind.SCOUT_TODAY, TrackerName.TEST, path=store.database_path)
     content = approve(store)

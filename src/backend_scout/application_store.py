@@ -7,18 +7,39 @@ confirmation before recording receipt. This module performs no network actions.
 import hashlib
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from backend_scout.application_package import ApplicationPackage
+from backend_scout.application_routes import ats_job_identity
 from backend_scout.config import TrackerName
 from backend_scout.models import ApplicationStatus, Job, can_transition_application_status
 
 SCHEMA_VERSION = 5
+
+
+def _portal_destination_key(url: str | None):
+    if not url:
+        return None
+    if identity := ats_job_identity(url):
+        return ("ats", *identity)
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return None
+    except ValueError:
+        return None
+    return ("url", parsed.netloc.casefold(), parsed.path.rstrip("/"), parsed.query)
+
+
+def _role_key(role: str) -> str:
+    return " ".join(re.sub(r"\s+[-–]\s*\d+\s*$", "", role).casefold().split())
 
 
 class ApplicationConflict(ValueError):
@@ -865,6 +886,8 @@ class ApplicationStore:
             package = ApplicationPackage.model_validate_json(current["payload_json"])
             if package.delivery_route == "whatsapp":
                 raise ApplicationConflict("WhatsApp requires a user-sent handoff")
+            if package.delivery_route == "portal":
+                self._guard_duplicate_portal_delivery(db, application, package)
             self._artifact(current["cv_path"], package.cv_sha256)
             attempt_id, now = uuid4().hex, _now()
             db.execute(
@@ -880,6 +903,41 @@ class ApplicationStore:
                 {"attempt_id": attempt_id, "fingerprint": fingerprint},
             )
             return DeliveryAttempt(attempt_id, fingerprint, "sending", True)
+
+    @staticmethod
+    def _guard_duplicate_portal_delivery(db, application, package: ApplicationPackage) -> None:
+        key = _portal_destination_key(package.official_destination)
+        if key is None:
+            return
+        rows = db.execute(
+            """
+            SELECT a.job_json, p.payload_json
+            FROM applications a
+            LEFT JOIN delivery_attempts d ON d.application_pk=a.id
+                AND d.state IN ('sending','submitted','unknown')
+            LEFT JOIN package_versions p ON p.id=d.package_id
+            WHERE a.tracker=? AND a.id<>? AND (
+                d.attempt_id IS NOT NULL OR a.status IN
+                ('sending','submitted','submission_unknown','recruiter_reply','assessment','interview','offer','rejected')
+            )
+            """,
+            (application["tracker"], application["id"]),
+        )
+        for row in rows:
+            identities = []
+            if row["payload_json"]:
+                prior = ApplicationPackage.model_validate_json(row["payload_json"])
+                if prior.delivery_route == "portal":
+                    identities.append((prior.official_destination, prior.company, prior.role))
+            if row["job_json"]:
+                job = Job.model_validate_json(row["job_json"])
+                identities.append((job.application_url, job.company, job.title))
+            for url, company, role in identities:
+                if key == _portal_destination_key(url) and (
+                    key[0] == "ats" or (company.casefold().strip() == package.company.casefold().strip()
+                                       and _role_key(role) == _role_key(package.role))
+                ):
+                    raise ApplicationConflict("This portal role already has a sent or unresolved application")
 
     def finish_attempt(
         self, attempt_id: str, outcome: str, receipt: str, proof_relative_path: str | None = None

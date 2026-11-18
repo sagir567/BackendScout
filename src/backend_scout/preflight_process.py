@@ -8,8 +8,10 @@ import sys
 from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urlsplit
 
 from backend_scout.config import Settings, TrackerName
+from backend_scout.job_enrichment import enrich_job
 from backend_scout.models import Job
 
 
@@ -51,11 +53,25 @@ def main() -> None:
         "workflow_database_path": root / "inspection.sqlite3",
         "cv_archive_root": root / "cv_archive",
     })
+    job = Job.model_validate(request["job"])
     with PortalSessionManager(root / "browser") as manager:
         result = HybridPortalAdapter(manager, settings).inspect(
-            Job.model_validate(request["job"]), TrackerName(request["tracker"]),
+            job, TrackerName(request["tracker"]),
         )
+    _add_linkedin_details(job, result)
     print(json.dumps(result, ensure_ascii=False))
+
+
+def _add_linkedin_details(job: Job, result: dict) -> None:
+    from backend_scout.application_service import ApplicationService
+
+    if (urlsplit(job.source_url).hostname not in {"linkedin.com", "www.linkedin.com", "il.linkedin.com"}
+            or ApplicationService._has_requirements(job)
+            or (result.get("route") or {}).get("posting_text")):
+        return
+    enriched = enrich_job(job.model_copy(update={"application_url": None}))
+    if enriched.job and enriched.status == "enriched":
+        result["public_posting_text"] = enriched.job.description
 
 
 if __name__ == "__main__":

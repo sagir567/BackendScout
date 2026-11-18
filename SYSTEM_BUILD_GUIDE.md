@@ -1665,6 +1665,10 @@ Manual scouting keeps its summary unless explicitly run with `--quiet-summary`.
 Both workspace views use unresolved questions to gate approval, not the full
 list of observed fields.
 Verification fields such as one-time codes are not requested in Telegram.
+For an incomplete LinkedIn lead, the read-only preflight can recover full
+public description markup tied to the exact posting. It does not turn the
+discovery link into an application destination. The delivery transaction
+checks other rows for a sent or unresolved attempt at the same portal role.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the

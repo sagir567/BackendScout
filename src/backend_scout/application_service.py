@@ -954,10 +954,24 @@ class ApplicationService:
                                   and application_entry_url(route.application_url) == route.application_url)
         if (passed or self.settings.web_ready_to_apply and public_destination) and route.application_url != job.application_url:
             updates["application_url"] = route.application_url
-        if (passed or self.settings.web_ready_to_apply and public_destination) and route.posting_text and route.posting_text != job.description:
-            candidate = job.model_copy(update={"description": route.posting_text})
+        posting_text = (
+            route.posting_text if passed or self.settings.web_ready_to_apply and public_destination else None
+        )
+        if not posting_text and not self._has_requirements(job):
+            posting_text = result.get("public_posting_text")
+        if isinstance(posting_text, str) and posting_text != job.description:
+            candidate = job.model_copy(update={"description": posting_text})
             if self._has_requirements(candidate):
-                updates["description"] = route.posting_text
+                from backend_scout.collectors import (
+                    extract_required_skills,
+                    extract_years_experience,
+                )
+
+                updates["description"] = posting_text
+                if not job.years_experience:
+                    updates["years_experience"] = extract_years_experience(posting_text)
+                if not job.required_skills:
+                    updates["required_skills"] = extract_required_skills(posting_text)
         if updates:
             job = job.model_copy(update=updates)
             if "description" in updates and self.job_scorer:

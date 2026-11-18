@@ -533,7 +533,12 @@ def _html_body(job: Job, posting: _Posting, body: bytes, url: str) -> tuple[str,
     if posting.provider == "linkedin" and canonical_url:
         titles = soup.select(".top-card-layout__title")
         companies = soup.select(".topcard__org-name-link")
-        descriptions = soup.select(".description__text .show-more-less-html__markup")
+        descriptions = soup.select(
+            ".description__text .show-more-less-html__markup, "
+            ".description__text .show-more-less-html__full-content"
+        )
+        descriptions = [node for node in descriptions
+                        if not any(parent in descriptions for parent in node.parents)]
         if len(titles) == len(companies) == len(descriptions) == 1:
             _identity(
                 job, titles[0].get_text(" ", strip=True), companies[0].get_text(" ", strip=True)
