@@ -5,7 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from backend_scout.application_package import ApplicationPackage
-from backend_scout.application_store import ApplicationConflict, ApplicationStore, is_ledger_owned
+from backend_scout.application_store import (
+    ApplicationConflict,
+    ApplicationStore,
+    is_ledger_owned,
+    portal_job_identity,
+)
 from backend_scout.config import TrackerName
 from backend_scout.models import Job
 from backend_scout.task_queue import QueuedTaskKind, enqueue_task, list_tasks
@@ -104,6 +109,18 @@ def test_second_ats_alias_cannot_start_while_first_is_sending(store):
     other = approve(store, package(application_id="second-row", official_destination=url + "/apply"))
     with pytest.raises(ApplicationConflict, match="sent or unresolved"):
         store.begin_attempt(other.application_id, other.tracker, other.fingerprint(), "second")
+
+
+def test_workday_aliases_share_requisition_but_not_tenant_or_role_id():
+    base = "https://example.wd5.myworkdayjobs.com/en-US/Careers/job/"
+    posting = base + "QA-Engineer_R62424"
+    form = base + "Tel-Aviv%2C-Israel/QA-Engineer_R62424/apply/applyManually"
+    key = portal_job_identity(posting, "Example", "QA Engineer")
+    assert key == ("ats", "workday", "example", "r62424")
+    assert portal_job_identity(form, "Example Israel", "QA Automation Test Engineer") == key
+    assert portal_job_identity(form.replace("R62424", "R62425"), "", "") != key
+    assert portal_job_identity(form.replace("example.wd5", "other.wd5"), "", "") != key
+    assert portal_job_identity(form.replace(".com/", ".com.invalid/"), "", "") != key
 
 
 def test_restart_idempotent_package_and_existing_queue_coexist(store):

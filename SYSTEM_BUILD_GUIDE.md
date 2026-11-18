@@ -1671,6 +1671,8 @@ discovery link into an application destination. The delivery transaction
 checks other rows for a sent or unresolved attempt at the same portal role.
 The workspace and daily preparation skip known duplicate rows while keeping
 the original receipt and lifecycle visible in history.
+Workday posting and apply aliases can share a deduplication key derived from
+the tenant and requisition ID; this does not grant a Workday delivery route.
 When the public page provides a visible, scoped description expander, the
 read-only browser can open it once and verify the posting again. Authentication
 and verification screens are not expanded or bypassed.

@@ -208,6 +208,16 @@ def ats_job_identity(url: str | None) -> tuple[str, str, str] | None:
     except ValueError:
         return None
     slug = r"[A-Za-z0-9_-]+"
+    workday_host = re.fullmatch(rf"({slug})\.wd\d+\.myworkdayjobs\.com", parsed.hostname or "")
+    if workday_host:
+        match = re.fullmatch(
+            rf"/(?:[a-z]{{2}}-[A-Z]{{2}}/)?{slug}/job/(?:[^/]+/)?[^/]+_((?:JR|R)[-_]?\d+)"
+            r"(?:/apply(?:/(?:applyManually|autofillWithResume|useMyLastApplication))?)?/?",
+            parsed.path,
+        )
+        if match:
+            return "workday", workday_host[1].casefold(), match[1].casefold()
+        return None
     uid = r"[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"
     patterns = {
         "greenhouse": rf"/{slug}/jobs/\d+/?",
