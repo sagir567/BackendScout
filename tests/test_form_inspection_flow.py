@@ -231,7 +231,9 @@ def test_legacy_notion_reimport_keeps_discovery_timestamp_stable(hybrid, monkeyp
     ))
     job = service.store.get_application("example-job", T).job
     monkeypatch.setattr(notion, "job_from_application_page",
-                        lambda _: job.model_copy(update={"discovered_at": datetime.now(UTC)}))
+                        lambda _: job.model_copy(update={
+                            "discovered_at": datetime.now(UTC), "updated_at": datetime.now(UTC),
+                        }))
     service.sync_projection(tracker, "12345")
     original = service.store.get_application("legacy", tracker).job
     aged = (datetime.now(UTC) - timedelta(days=2)).isoformat()

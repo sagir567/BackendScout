@@ -409,9 +409,11 @@ class ApplicationStore:
                 return
             if app["current_fingerprint"] is not None:
                 raise ApplicationConflict("Reviewed application requires explicit reconciliation")
-            if (meta and (app["status"], app["job_json"]) == (status, job_json)
+            if (meta and app["status"] == status and app["job_json"]
                     and (meta["legacy_status"], meta["needs_input_code"], meta["needs_input_message"])
-                    == (legacy_status, code, message)):
+                    == (legacy_status, code, message)
+                    and Job.model_validate_json(app["job_json"]).model_dump(exclude={"updated_at"})
+                    == job.model_dump(exclude={"updated_at"})):
                 return
             db.execute(
                 "UPDATE applications SET status=?,job_json=? WHERE id=?",
