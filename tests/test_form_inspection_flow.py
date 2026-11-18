@@ -270,6 +270,7 @@ def test_background_rechecks_only_aged_incomplete_records(hybrid):
     job = service.store.get_application("example-job", T).job
     for identifier, code in [
         ("older", "full_posting_required"),
+        ("legacy", "legacy_portal_incomplete"),
         ("fresh", "application_route_missing"),
         ("validation", "form_validation_failed"),
     ]:
@@ -278,11 +279,11 @@ def test_background_rechecks_only_aged_incomplete_records(hybrid):
     with sqlite3.connect(service.store.database_path) as conn:
         conn.execute(
             "UPDATE application_metadata SET updated_at=? WHERE application_pk IN "
-            "(SELECT id FROM applications WHERE application_id IN ('older', 'validation'))",
+            "(SELECT id FROM applications WHERE application_id IN ('older', 'legacy', 'validation'))",
             ((datetime.now(UTC) - timedelta(days=2)).isoformat(),),
         )
-    assert len(service.queue_daily_preparation(production, "12345")) == 1
-    assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["older"]
+    assert len(service.queue_daily_preparation(production, "12345")) == 2
+    assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["legacy", "older"]
 
 
 def test_background_paid_drafts_have_a_separate_daily_limit(hybrid):

@@ -358,6 +358,7 @@ class ApplicationService:
                 row["status"] == "needs_input"
                 and row["needs_input_code"] in {
                     "full_posting_required", "application_route_missing", "daily_cv_limit",
+                    "legacy_portal_incomplete",
                 }
                 and now - datetime.fromisoformat(row["updated_at"]) >= timedelta(hours=24)
             )
