@@ -100,13 +100,17 @@ def test_watchdog_recovers_only_today_and_not_before_eight(tmp_path):
     assert list_tasks(db)[0].idempotency_key == "schedule:scout:2026-10-30"
 
 
-def test_watchdog_recovers_exhausted_dns_failure_once_after_cooldown(tmp_path):
+@pytest.mark.parametrize("error", [
+    "[Errno 8] nodename nor servname provided, or not known",
+    "Unable to find the server at gmail.googleapis.com",
+])
+def test_watchdog_recovers_exhausted_dns_failure_once_after_cooldown(tmp_path, error):
     db = tmp_path / "tasks.sqlite3"
     now = datetime(2026, 11, 3, 9, tzinfo=UTC)
     ensure_today_scout(db, 1, now)
     original = list_tasks(db)[0]
     mark_task_status(original.task_id, QueuedTaskStatus.DEAD_LETTER,
-                     "[Errno 8] nodename nor servname provided, or not known", path=db)
+                     error, path=db)
     with sqlite3.connect(db) as connection:
         connection.execute("UPDATE tasks SET updated_at=? WHERE task_id=?",
                            ((now - timedelta(minutes=20)).isoformat(), original.task_id))

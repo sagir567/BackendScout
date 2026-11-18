@@ -1657,6 +1657,9 @@ interview; look for an invitation or an explicit request to arrange screening.
 The workspace imports those transitions without granting approval or replaying delivery.
 The outbound projection preserves a more advanced employer status already
 present in Notion instead of replacing it with a stale local delivery status.
+Treat the Gmail client's DNS exception as a source failure during scouting.
+The watchdog also recognizes its message on exhausted historical tasks and
+queues at most one same-day connectivity recovery after the cooldown.
 Scheduled scouting sends new job cards but skips healthy run summaries.
 Manual scouting keeps its summary unless explicitly run with `--quiet-summary`.
 Both workspace views use unresolved questions to gate approval, not the full

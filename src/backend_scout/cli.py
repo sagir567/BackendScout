@@ -14,6 +14,7 @@ import httpx
 import typer
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError as GoogleHttpError
+from httplib2 import ServerNotFoundError
 from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
@@ -769,7 +770,8 @@ def collect_run(
                 collected.extend(secret_report.jobs)
                 source_counts["SecretHunter email"] = len(secret_report.jobs)
                 failures.extend(f"SecretHunter email: {warning}" for warning in secret_report.warnings)
-        except (GoogleAuthError, GoogleHttpError, httpx.HTTPError, OSError, TypeError, ValueError) as exc:
+        except (GoogleAuthError, GoogleHttpError, ServerNotFoundError,
+                httpx.HTTPError, OSError, TypeError, ValueError) as exc:
             failures.append(f"Job recommendation email: {exc}")
     israel_relevant = [job for job in collected if is_israel_or_remote(job)]
     scored_jobs = unique_scored_jobs(score_jobs(profile, israel_relevant))

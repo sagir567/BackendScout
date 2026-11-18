@@ -282,6 +282,7 @@ draft have both been approved.
 - Indeed recommendation emails are read through Gmail, reduced to stable
   `jk` job URLs, and merged into the same scored morning shortlist. Hebrew
   Israeli locations and Indeed's opaque tracking redirects are supported.
+  A Gmail DNS outage does not stop independent public sources.
 
 ## Privacy And Safety
 

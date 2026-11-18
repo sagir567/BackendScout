@@ -123,6 +123,7 @@ def ensure_today_scout(
         "nodename nor servname", "name or service not known", "temporary failure in name",
         "network is unreachable", "network is down", "connection refused",
         "connecttimeout", "connect timeout", "connection timed out",
+        "unable to find the server at",
     )
     if (
         task.status != QueuedTaskStatus.DEAD_LETTER
