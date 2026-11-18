@@ -1672,6 +1672,8 @@ checks other rows for a sent or unresolved attempt at the same portal role.
 When the public page provides a visible, scoped description expander, the
 read-only browser can open it once and verify the posting again. Authentication
 and verification screens are not expanded or bypassed.
+Rebuild skill and experience signals from a manually corrected posting, then
+rescore it. A stated experience advantage is not a minimum requirement.
 With the ready workspace enabled, incomplete and below-threshold postings
 stay out of application lists. A verified form with a reviewable PDF is shown
 under manual application when rollout does not allow automatic delivery.

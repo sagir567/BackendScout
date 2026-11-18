@@ -596,11 +596,15 @@ def test_hybrid_malformed_or_wrong_job_preflight_cannot_create_review_authority(
 def test_hybrid_missing_requirements_are_resolved_only_by_inspector_posting_text(hybrid):
     service, result, _ = hybrid
     job = service.store.get_application("example-job", T).job
-    service.store.revise_job("example-job", T, job.model_copy(update={"description": "Published Lin-Srael job listing."}))
+    service.store.revise_job("example-job", T, job.model_copy(update={
+        "description": "Published Lin-Srael job listing.",
+        "required_skills": [],
+    }))
     result["route"]["posting_text"] = job.description
     assert service.request_tailoring("example-job", T, "12345").reason_code == "queued"
     assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
     assert service.store.get_application("example-job", T).job.description == job.description
+    assert "Python" in service.store.get_application("example-job", T).job.required_skills
     assert all(task.kind != QueuedTaskKind.PACKAGE_ENRICH for task in list_tasks(service.store.database_path))
 
 

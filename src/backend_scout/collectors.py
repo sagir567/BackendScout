@@ -365,14 +365,19 @@ def _normalize_for_skill_search(value: str) -> str:
 def _extract_years_experience(description: str) -> str | None:
     patterns = (
         r"(\d+)\s*\+\s*(?:years?|yrs?)",
-        r"(\d+)\s*(?:-\s*\d+\s*)?(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience",
+        r"(\d+)\s*(?:[-–—]\s*\d+\s*)?(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience",
+        r"(\d+)\s*(?:[-–—]\s*\d+\s*)?(?:years?|yrs?)[ \t]+of[ \t]+(?:[a-z-]+[ \t]+){1,4}experience",
         r"at least\s+(\d+)\s+(?:years?|yrs?)",
         r"minimum\s+of\s+(\d+)\s+(?:years?|yrs?)",
     )
+    text = description.casefold()
+    optional = re.compile(r"\b(?:advantage|preferred|nice to have|a plus|not required|optional|desirable)\b")
     for pattern in patterns:
-        match = re.search(pattern, description.casefold())
-        if match:
-            return f"{match.group(1)}+ years"
+        for match in re.finditer(pattern, text):
+            before = re.split(r"[.!?\n]", text[max(0, match.start() - 40):match.start()])[-1]
+            after = re.split(r"[.!?\n]", text[match.end():match.end() + 100])[0]
+            if not optional.search(before + " " + after):
+                return f"{match.group(1)}+ years"
     return None
 
 

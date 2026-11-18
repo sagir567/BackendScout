@@ -272,3 +272,12 @@ def test_lin_empty_results_do_not_request_extra_pages():
                               post_json=lambda *args: calls.append(args) or {"pages": 0, "jobs": []})
     assert jobs == []
     assert len(calls) == 1
+
+
+def test_experience_extraction_skips_preferred_years_and_reads_unicode_ranges():
+    from backend_scout.collectors import extract_years_experience
+
+    optional = "1–2 years of experience in electromechanical validation is an advantage."
+    assert extract_years_experience(optional) is None
+    assert extract_years_experience(optional + " Requires 3–5 years of software development experience.") == "3+ years"
+    assert extract_years_experience(optional + " Requires 3–5 years of experience with Python.") == "3+ years"

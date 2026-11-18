@@ -993,7 +993,7 @@ class ApplicationService:
                 if not job.years_experience:
                     updates["years_experience"] = extract_years_experience(posting_text)
                 if not job.required_skills:
-                    updates["required_skills"] = extract_required_skills(posting_text)
+                    updates["required_skills"] = extract_required_skills(job.title, posting_text)
         if updates:
             job = job.model_copy(update=updates)
             if "description" in updates and self.job_scorer:
@@ -1087,6 +1087,8 @@ class ApplicationService:
     def update_details(
         self, application_id, tracker, actor_id, *, description, official_url, years_experience
     ):
+        from backend_scout.collectors import extract_required_skills, extract_years_experience
+
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
         if len(description) > 30000 or len(description.strip()) < 60:
@@ -1100,9 +1102,14 @@ class ApplicationService:
             | {
                 "description": description,
                 "application_url": official_url,
-                "years_experience": years_experience,
+                "years_experience": years_experience or extract_years_experience(description),
+                "required_skills": extract_required_skills(record.job.title, description),
             }
         )
+        if not self._has_requirements(job):
+            raise ValueError("Provide the full job description")
+        if self.job_scorer:
+            job = self.job_scorer(job)
         self.store.revise_job(application_id, tracker, job)
         self.store.set_state(application_id, tracker, "discovered")
         return self._outcome(
