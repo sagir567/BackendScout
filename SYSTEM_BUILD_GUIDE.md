@@ -1679,6 +1679,9 @@ still needs its own public identity and form verification.
 Incomplete posting or route observations can be checked again after 24 hours
 within the same daily quota. An updated score below the preparation threshold
 blocks the background CV draft before calling the model.
+An authenticated direct link to an internal posting can still fetch details or
+request a CV. These preparation controls do not expose submission approval or
+put an incomplete record into the ready or manual list.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the

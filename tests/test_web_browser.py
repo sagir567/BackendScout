@@ -302,6 +302,15 @@ def test_phone_and_desktop_review_end_to_end(review_service, tmp_path, engine):
             page.goto(origin)
             expect(page.get_by_role("heading", name="Ready to apply", exact=True)).to_be_visible()
             expect(page.locator("[data-job-id='unverified-job']")).to_have_count(0)
+            page.goto(origin + "?application=unverified-job")
+            expect(page.get_by_role("heading", name="Application preparation", exact=True)).to_be_visible()
+            expect(page.get_by_role("button", name="Apply with this CV", exact=True)).to_have_count(0)
+            with page.expect_response(lambda response: response.url.endswith("/unverified-job/tailor")):
+                page.get_by_role("button", name="Create CV", exact=True).click()
+            assert any(task.kind == QueuedTaskKind.PACKAGE_CV_DRAFT
+                       and task.payload["page_id"] == "unverified-job"
+                       for task in list_tasks(settings.workflow_database_path))
+            page.goto(origin)
             page.locator("[data-job-id='example-job']").click()
             expect(page.get_by_role("button", name="Apply with this CV", exact=True)).to_be_enabled()
             expect(page.get_by_role("button", name="Request CV changes", exact=True)).to_be_visible()

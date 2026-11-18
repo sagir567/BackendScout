@@ -695,6 +695,21 @@ function workflowMarkup(detail, guards) {
   </section>`;
 }
 
+function preparationMarkup(detail, guards) {
+  const { item } = detail;
+  if (guards.archived || guards.uncertain || item.needs_input_code === 'below_match_threshold') return '';
+  const cv = safeURL(item.cv_url, { localOnly: true });
+  const context = item.needs_input_message || detail.package_blocker?.message
+    || (detail.form_check_pending ? 'Checking the public employer form.' : 'Preparing this application.');
+  return `<section class="workflow-section" aria-labelledby="preparation-heading">
+    <div class="section-heading"><h2 id="preparation-heading">Application preparation</h2></div>
+    <p class="action-context" role="status">${escapeHTML(context)}</p>
+    <div class="primary-actions">${cv ? externalLink(cv, 'View CV', { localOnly: true })
+      : actionButton('tailor', 'Create CV', guards.tailor && !detail.form_check_pending, 'button-primary', 'Creating...')}
+    ${actionButton('refresh-details', 'Fetch job details', guards['refresh-details'] && !detail.form_check_pending, '', 'Fetching...')}</div>
+  </section>`;
+}
+
 function deliveryReadinessMarkup(detail, guards) {
   const readiness = detail.item.delivery_readiness;
   if (!readiness) return '';
@@ -812,6 +827,7 @@ function renderDetail() {
     <dl class="facts-grid"><div><dt>Required experience</dt><dd>${missing(experience(item))}</dd></div><div><dt>Work mode</dt><dd>${missing(workMode(item))}</dd></div><div><dt>Salary</dt><dd>${missing(salary(item))}</dd></div><div><dt>Added</dt><dd>${escapeHTML(dateText(item.created_at))}</dd></div></dl>
     ${manual ? `<section class="workflow-section"><h2>Manual application</h2><p>${missing(item.manual_reason || detail.form_inspection?.message, 'The employer form is not supported for automatic submission.')}</p><div class="link-row">${externalLink(item.cv_url, 'View CV', { localOnly: true })}${official}</div></section>` : ''}
     ${ready ? `<section class="workflow-section"><div class="primary-actions">${reviewed ? actionButton('deliver', 'Resume delivery', guards.deliver, 'button-primary', 'Resuming...') : actionButton('approve', 'Apply with this CV', guards.approve, 'button-primary', 'Approving...')}<button id="request-changes" class="button" type="button">Request CV changes</button></div>${revisionMarkup(detail, guards)}</section>` : ''}
+    ${streamlined && item.workspace_bucket === 'internal' ? preparationMarkup(detail, guards) : ''}
     ${!streamlined ? workflowMarkup(detail, guards) + deliveryReadinessMarkup(detail, guards) + answersMarkup(detail, guards) : ''}
     ${!streamlined || ready ? packageMarkup(detail, guards) : ''}
     <section class="detail-section" aria-labelledby="job-facts-heading"><div class="section-heading"><h2 id="job-facts-heading">Role &amp; fit</h2></div><p class="prose">${missing(item.match_reason, 'Match reason not provided.')}</p>
