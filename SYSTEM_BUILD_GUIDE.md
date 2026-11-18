@@ -1695,6 +1695,8 @@ employer's Apply control can create a widget with an additional nested form.
 The nested form exposed a required CV input but no native submit control.
 Keep this route manual until the widget's delivery and receipt behavior can
 be verified in isolation; do not authorize generic writes to the widget.
+Verified manual Comeet routes join the bounded read-only recheck queue when
+their evidence expires. Rechecking neither redrafts an existing CV nor queues delivery.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.

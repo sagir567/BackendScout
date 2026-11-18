@@ -384,16 +384,20 @@ def test_verified_experience_mismatch_stops_existing_preflight_and_new_drafting(
     assert not calls and not list_tasks(service.store.database_path)
 
 
-def test_expired_review_recheck_has_no_draft_authority_and_skips_changed_state(hybrid):
+@pytest.mark.parametrize("manual", [False, True])
+def test_expired_review_recheck_has_no_draft_authority_and_skips_changed_state(hybrid, manual):
     service, result, calls = hybrid
     service.settings.web_ready_to_apply = True
     tracker = TrackerName.PRODUCTION
     job = service.store.get_application("example-job", T).job
     service.store.import_snapshot("older-review", tracker, job, "found")
-    service.store.set_state("older-review", tracker, "review_ready")
+    reason = "comeet_reveal_manual" if manual else result["route"]["reason_code"]
+    service.store.set_state("older-review", tracker, "needs_input" if manual else "review_ready",
+                            code=reason if manual else None)
     now = datetime.now(UTC)
     route = ApplicationRoute.model_validate(result["route"] | {
         "checked_at": (now - timedelta(hours=25)).isoformat(),
+        "reason_code": reason,
     })
     service.store.save_application_route("older-review", tracker, route)
     queued = service.queue_expired_review_checks(tracker, "12345", now=now)

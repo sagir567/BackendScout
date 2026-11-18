@@ -418,7 +418,9 @@ class ApplicationService:
         prefix = f"background-recheck:{tracker.value}:{day}:"
         task_ids = []
         for row in self.store.list_records(tracker):
-            if row["status"] != "review_ready" or not row["job_json"]:
+            if not row["job_json"] or not self._can_recheck_review(
+                row["status"], row["needs_input_code"],
+            ):
                 continue
             application_id = row["application_id"]
             fingerprint = row["current_fingerprint"]
@@ -427,6 +429,8 @@ class ApplicationService:
                 continue
             route = self.store.latest_application_route(application_id, tracker)
             if not route or route.get("status") != "verified":
+                continue
+            if row["status"] == "needs_input" and route.get("reason_code") != "comeet_reveal_manual":
                 continue
             try:
                 age = now - datetime.fromisoformat(route["checked_at"])
@@ -454,6 +458,10 @@ class ApplicationService:
             if task.status in {QueuedTaskStatus.QUEUED, QueuedTaskStatus.RUNNING, QueuedTaskStatus.RETRYING}:
                 task_ids.append(task.task_id)
         return task_ids
+
+    @staticmethod
+    def _can_recheck_review(status, code):
+        return status == "review_ready" or (status, code) == ("needs_input", "comeet_reveal_manual")
 
     @staticmethod
     def _outcome(application_id, reason_code, message, *, status="succeeded", **values):
@@ -901,7 +909,9 @@ class ApplicationService:
         """Worker-only inspection; injected browsers must stay on their owner thread."""
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
-        if expired_review_recheck and (record.status != "review_ready" or (
+        if expired_review_recheck and (not self._can_recheck_review(
+            record.status, self.store.metadata(application_id, tracker).get("needs_input_code"),
+        ) or (
             record.current_fingerprint and self.store.package_approved(
                 application_id, tracker, record.current_fingerprint,
             )
