@@ -212,12 +212,12 @@ def test_hybrid_inspection_without_tailor_after_does_not_queue_paid_draft(hybrid
     assert len(calls) == 1 and not list_tasks(service.store.database_path)
 
 
-def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybrid):
+def test_daily_preparation_reserves_only_twelve_top_ranked_production_checks(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True
     production = TrackerName.PRODUCTION
     original = service.store.get_application("example-job", T).job
-    for score in range(60, 68):
+    for score in range(60, 74):
         service.store.import_snapshot(
             f"job-{score}", production, original.model_copy(update={
                 "match_score": score,
@@ -234,10 +234,10 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
     service.store.import_snapshot("submitted", production, original, "submitted")
     assert service.queue_daily_preparation(T, "12345") == []
     task_ids = service.queue_daily_preparation(production, "12345")
-    assert len(task_ids) == 5
+    assert len(task_ids) == 12
     assert service.queue_daily_preparation(production, "12345") == []
     tasks = list_tasks(service.store.database_path)
-    assert [task.payload["page_id"] for task in tasks] == [f"job-{score}" for score in range(67, 62, -1)]
+    assert [task.payload["page_id"] for task in tasks] == [f"job-{score}" for score in range(73, 61, -1)]
     assert all(task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT for task in tasks)
     assert all(task.payload["tailor_after"] is True for task in tasks)
     entries = {item["id"]: item for item in service.overview(production)["items"]}
@@ -266,6 +266,23 @@ def test_background_rechecks_only_aged_incomplete_records(hybrid):
         )
     assert len(service.queue_daily_preparation(production, "12345")) == 1
     assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["older"]
+
+
+def test_background_paid_drafts_have_a_separate_daily_limit(hybrid):
+    service, _, _ = hybrid
+    production = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    for index in range(6):
+        service.store.import_snapshot(f"prepare-{index}", production, job, "found")
+    for index in range(5):
+        assert service.request_tailoring(
+            f"prepare-{index}", production, "12345", background_preparation=True,
+        ).reason_code == "queued"
+    assert service.request_tailoring(
+        "prepare-5", production, "12345", background_preparation=True,
+    ).reason_code == "daily_cv_limit"
+    assert len(list_tasks(service.store.database_path)) == 5
+    assert service.request_tailoring("prepare-5", production, "12345").reason_code == "queued"
 
 
 def test_background_drafting_stops_when_refreshed_score_is_below_threshold(hybrid):

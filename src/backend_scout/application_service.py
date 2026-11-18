@@ -70,6 +70,8 @@ _PDF_RENDER_LOCK = Lock()
 _PREFLIGHT_RECHECK_CODES = {"form_review_changed", "form_schema_changed", "destination_changed", "form_validation_failed"}
 _FORM_SCHEMA_ANSWER = "review.form_schema_sha256"
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
+_DAILY_FORM_CHECK_LIMIT = 12
+_DAILY_BACKGROUND_DRAFT_LIMIT = 5
 
 
 def _delivery_locked_portals(rows):
@@ -353,7 +355,9 @@ class ApplicationService:
                 continue
             retry = (
                 row["status"] == "needs_input"
-                and row["needs_input_code"] in {"full_posting_required", "application_route_missing"}
+                and row["needs_input_code"] in {
+                    "full_posting_required", "application_route_missing", "daily_cv_limit",
+                }
                 and now - datetime.fromisoformat(row["updated_at"]) >= timedelta(hours=24)
             )
             if not retry and (
@@ -387,7 +391,7 @@ class ApplicationService:
                         "actor_id": actor_id, "tailor_after": True, "background_preparation": True,
                     },
                     self.store.database_path, idempotency_key=prefix + application_id,
-                    quota=(prefix, 5),
+                    quota=(prefix, _DAILY_FORM_CHECK_LIMIT),
                 )
             except TaskQuotaReached:
                 break
@@ -1283,15 +1287,27 @@ class ApplicationService:
         payload = self._task_context(record, actor_id)
         if background_preparation:
             payload["background_preparation"] = True
-        task = enqueue_task(
-            QueuedTaskKind.PACKAGE_CV_DRAFT,
-            tracker,
-            payload,
-            self.store.database_path,
-            idempotency_key=f"package-cv:{tracker.value}:{application_id}:{key}",
-        )
+        daily = background_preparation and tracker == TrackerName.PRODUCTION
+        day = datetime.now(ZoneInfo("Asia/Hebron")).date()
+        prefix = f"background-cv:{tracker.value}:{day}:" if daily else f"package-cv:{tracker.value}:"
+        try:
+            task = enqueue_task(
+                QueuedTaskKind.PACKAGE_CV_DRAFT,
+                tracker,
+                payload,
+                self.store.database_path,
+                idempotency_key=f"{prefix}{application_id}:{key}",
+                quota=(prefix, _DAILY_BACKGROUND_DRAFT_LIMIT) if daily else None,
+            )
+        except TaskQuotaReached:
+            message = "The daily background CV limit was reached. This job will be reconsidered for preparation."
+            self.store.set_state(application_id, tracker, "needs_input", code="daily_cv_limit", message=message)
+            return self._outcome(application_id, "daily_cv_limit", message, status="blocked")
         if task.status in {QueuedTaskStatus.DONE, QueuedTaskStatus.BLOCKED, QueuedTaskStatus.DEAD_LETTER,
                            QueuedTaskStatus.FAILED, QueuedTaskStatus.CANCELLED}:
+            if daily:
+                return self._outcome(application_id, "background_draft_already_attempted",
+                                     "This background draft was already attempted today.", status="blocked")
             # An explicit retry may draft again, but simultaneous clicks share active work.
             task = enqueue_task(QueuedTaskKind.PACKAGE_CV_DRAFT, tracker, payload, self.store.database_path)
         self.store.set_state(application_id, tracker, "drafting")

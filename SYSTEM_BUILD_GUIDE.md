@@ -1683,6 +1683,9 @@ Enabling preparation does not change rollout limits or approve any package.
 When scheduling the bounded daily preparation, check existing employer entry
 links before discovery-only leads, then rank each group by fit. Every entry
 still needs its own public identity and form verification.
+The daily schedule can inspect twelve public postings. Only five background
+CV tasks can reserve paid preparation slots; failed lookups consume no draft
+slots, and explicit owner requests still follow the shared model budget.
 Incomplete posting or route observations can be checked again after 24 hours
 within the same daily quota. An updated score below the preparation threshold
 blocks the background CV draft before calling the model.
