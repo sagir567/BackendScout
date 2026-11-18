@@ -278,6 +278,18 @@ def test_background_drafting_stops_when_refreshed_score_is_below_threshold(hybri
     assert not list_tasks(service.store.database_path)
 
 
+def test_verified_experience_mismatch_stops_existing_preflight_and_new_drafting(hybrid):
+    service, _, calls = hybrid
+    service.settings.web_ready_to_apply = True
+    service.store.set_state("example-job", T, "needs_input", code="experience_requirement_unmet")
+    for operation in (service.request_form_inspection, service.inspect_form, service.request_tailoring):
+        assert operation("example-job", T, "12345").reason_code == "experience_requirement_unmet"
+    detail = service.detail("example-job", T)
+    assert detail["item"]["workspace_bucket"] == "internal"
+    assert detail["package_blocker"]["reason_code"] == "experience_requirement_unmet"
+    assert not calls and not list_tasks(service.store.database_path)
+
+
 def test_expired_review_recheck_has_no_draft_authority_and_skips_changed_state(hybrid):
     service, result, calls = hybrid
     service.settings.web_ready_to_apply = True

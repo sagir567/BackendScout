@@ -459,6 +459,12 @@ class ApplicationService:
         return record
 
     def _posting_blocker(self, application_id, tracker):
+        meta = self.store.metadata(application_id, tracker)
+        if meta.get("needs_input_code") == "experience_requirement_unmet":
+            return {
+                "reason_code": "experience_requirement_unmet",
+                "message": meta.get("needs_input_message") or "The confirmed experience does not meet this posting.",
+            }
         return posting_observation_blocker(self.store.latest_decisive_form_inspection(application_id, tracker))
 
     def _refresh_route_observation(self, application_id, tracker):
@@ -626,7 +632,7 @@ class ApplicationService:
             bucket = "internal"
             complete_and_relevant = self._has_requirements(job) and (
                 job.match_score is None or job.match_score >= 55
-            ) and not duplicate
+            ) and not duplicate and code != "experience_requirement_unmet"
             if duplicate:
                 code, message = "duplicate_portal_role", "This role has a sent or unresolved application in the history."
             can_deliver = bool(
@@ -754,9 +760,12 @@ class ApplicationService:
                     "message": "Create a tailored CV for this job before applying.",
                 }
         hybrid_blocker = self._hybrid_blocked_outcome(application_id, tracker)
-        blocker = (({"reason_code": hybrid_blocker.reason_code, "message": hybrid_blocker.message}
-                    if hybrid_blocker else None)
-                   or self._posting_blocker(application_id, tracker) or blocker)
+        posting_blocker = self._posting_blocker(application_id, tracker)
+        if posting_blocker and posting_blocker["reason_code"] == "experience_requirement_unmet":
+            blocker = posting_blocker
+        else:
+            blocker = (({"reason_code": hybrid_blocker.reason_code, "message": hybrid_blocker.message}
+                        if hybrid_blocker else None) or posting_blocker or blocker)
         if preview and not blocker:
             rollout = self._rollout_blocker(application_id, tracker)
             if rollout:
@@ -823,6 +832,9 @@ class ApplicationService:
                                 background_preparation=False) -> OperationOutcome:
         self._authorize(actor_id)
         record = self._record(application_id, tracker)
+        blocker = self._posting_blocker(application_id, tracker)
+        if blocker and blocker["reason_code"] == "experience_requirement_unmet":
+            return self._outcome(application_id, **blocker, status="blocked")
         from backend_scout.portal_adapters import adapter_for_url
         adapter = adapter_for_url(record.job.application_url or "", tracker=tracker)
         if self._hybrid:
@@ -900,6 +912,9 @@ class ApplicationService:
     def _inspect_hybrid_form(self, application_id, tracker, actor_id, *, tailor_after,
                              background_preparation=False):
         record = self._record(application_id, tracker)
+        blocker = self._posting_blocker(application_id, tracker)
+        if blocker and blocker["reason_code"] == "experience_requirement_unmet":
+            return self._outcome(application_id, **blocker, status="blocked")
         if record.status in {"drafting", "enriching"}:
             return self._outcome(application_id, "application_busy", "Wait for current application work.",
                                  status="blocked")
