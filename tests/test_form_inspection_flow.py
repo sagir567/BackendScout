@@ -379,11 +379,16 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     result.update(form_identified=False, proposed_answers={})
     if reason != "browser_form_unidentified":
         result["reason_code"] = reason
+    result["message"] = "The employer form must be completed manually."
     assert service.inspect_form("example-job", T, "12345", tailor_after=True).reason_code == "queued"
     assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
     assert service.draft("example-job", T).reason_code == "cv_ready_route_pending"
     detail = service.detail("example-job", T)
     assert detail["item"]["workspace_bucket"] == "manual"
+    assert detail["item"]["manual_reason"] == (
+        "No unique actual application form was identified; repeat browser preflight."
+        if reason == "browser_form_unidentified" else result["message"]
+    )
     assert detail["item"]["official_url"] == result["route"]["application_url"]
     assert detail["package"] is None
     assert service.approve_and_queue("example-job", T, "12345", "not-approved").status == "blocked"

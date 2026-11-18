@@ -1688,6 +1688,8 @@ postings come first, but thin postings can use remaining inspection capacity
 even when their preliminary score is low. Legacy incomplete portal records
 also qualify for a recheck after the existing cooldown. They remain internal until verified;
 the score on the recovered description determines whether to prepare a CV.
+Manual cards use the recorded form-inspection message, falling back to the
+verified route's message; a rollout restriction is reported separately.
 Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.

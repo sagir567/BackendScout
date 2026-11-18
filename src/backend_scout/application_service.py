@@ -672,8 +672,9 @@ class ApplicationService:
                     "workspace_bucket": bucket,
                     "manual_reason": (
                         "Automatic delivery is not enabled for this role; use the verified employer link."
-                        if bucket == "manual" and readiness.state == "supported_after_approval" else None
-                    ),
+                        if readiness.state == "supported_after_approval"
+                        else (inspection or {}).get("message") or (route_record or {}).get("message")
+                    ) if bucket == "manual" else None,
                     "company": job.company,
                     "title": job.title,
                     "location": job.location,
