@@ -289,6 +289,27 @@ def test_background_can_recover_thin_low_scoring_posting_without_exposing_it(hyb
     assert item["workspace_bucket"] == "internal"
 
 
+def test_background_experience_ceiling_only_blocks_required_minimum(hybrid, monkeypatch):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    monkeypatch.setattr(service, "_experience_limit", lambda: 2)
+    tracker = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    for name, requirements in [
+        ("high", "At least 3 years of experience building backend services."),
+        ("optional", "3 years of experience building backend services is preferred."),
+        ("range", "2–4 years of experience building backend services."),
+    ]:
+        service.store.import_snapshot(name, tracker, job.model_copy(update={
+            "description": job.description + "\n" + requirements,
+            "application_url": f"https://careers.example.test/jobs/{name}",
+        }), "found")
+    assert len(service.queue_daily_preparation(tracker, "12345")) == 2
+    assert {task.payload["page_id"] for task in list_tasks(service.store.database_path)} == {"optional", "range"}
+    result = service.request_tailoring("high", tracker, "12345", background_preparation=True)
+    assert result.reason_code == "experience_preference_exceeded"
+
+
 def test_background_rechecks_only_aged_incomplete_records(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True

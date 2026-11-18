@@ -1708,6 +1708,9 @@ CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
 Check the full posting for an explicit senior role heading before background
 drafting. References to working with senior engineers do not disqualify a job.
+Use the private profile's seniority ceiling for the production preparation
+queue and application lists. Compare verified minimum experience from the
+description, not the high end of a range or years stated only as an advantage.
 Incomplete posting or route observations can be checked again after 24 hours
 within the same daily quota. An updated score below the preparation threshold
 blocks the background CV draft before calling the model.

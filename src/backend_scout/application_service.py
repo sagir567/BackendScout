@@ -352,6 +352,7 @@ class ApplicationService:
         candidates = []
         rows = self.store.list_records(tracker)
         locked = _delivery_locked_portals(rows)
+        years_limit = self._experience_limit()
         for row in rows:
             if not row["job_json"] or row["current_fingerprint"]:
                 continue
@@ -370,7 +371,7 @@ class ApplicationService:
             job = Job.model_validate_json(row["job_json"])
             if portal_job_identity(job.application_url, job.company, job.title) in locked:
                 continue
-            if declares_senior_role(job.title, job.description):
+            if declares_senior_role(job.title, job.description) or self._exceeds_experience(job, years_limit):
                 continue
             url = application_entry_url(job.application_url, job.source_url)
             if not url or not url.startswith("https://"):
@@ -515,6 +516,25 @@ class ApplicationService:
         return self._outcome(application_id, **blocker, status="blocked") if blocker else None
 
     @staticmethod
+    def _experience_limit():
+        from backend_scout.candidate_profile import load_candidate_profile
+
+        try:
+            return load_candidate_profile().seniority.max_years
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _exceeds_experience(job: Job, limit: int | None) -> bool:
+        from backend_scout.collectors import extract_years_experience
+
+        if limit is None:
+            return False
+        # Only use the conservative requirements parser, not an unverified board label.
+        minimum = extract_years_experience(job.description)
+        return bool(minimum and int(minimum.split("+", 1)[0]) > limit)
+
+    @staticmethod
     def _has_requirements(job: Job) -> bool:
         text = job.description.strip().casefold()
         return len(text) >= 60 and text not in PLACEHOLDERS and text != job.title.casefold()
@@ -581,6 +601,7 @@ class ApplicationService:
         items = []
         rows = self.store.list_records(tracker)
         locked = _delivery_locked_portals(rows)
+        years_limit = self._experience_limit() if tracker == TrackerName.PRODUCTION else None
         for row in rows:
             if not row["job_json"]:
                 continue
@@ -647,7 +668,7 @@ class ApplicationService:
                 job.match_score is None or job.match_score >= 55
             ) and not duplicate and code != "experience_requirement_unmet" and not declares_senior_role(
                 job.title, job.description,
-            )
+            ) and not self._exceeds_experience(job, years_limit)
             if duplicate:
                 code, message = "duplicate_portal_role", "This role has a sent or unresolved application in the history."
             can_deliver = bool(
@@ -1260,6 +1281,13 @@ class ApplicationService:
             return self._outcome(
                 application_id, "explicit_senior_role",
                 "The posting explicitly describes a senior role; no background CV was generated.", status="blocked",
+            )
+        if (background_preparation and tracker == TrackerName.PRODUCTION
+                and self._exceeds_experience(record.job, self._experience_limit())):
+            return self._outcome(
+                application_id, "experience_preference_exceeded",
+                "The posting's minimum experience exceeds the configured target; no background CV was generated.",
+                status="blocked",
             )
         if (background_preparation and tracker == TrackerName.PRODUCTION
                 and record.job.match_score is not None and record.job.match_score < 55):
