@@ -9,9 +9,16 @@ from backend_scout.scouting_preferences import (
     ScoutingPreferences,
     _contains_any,
     _normalize,
+    declares_senior_role,
     load_scouting_preferences,
     public_collection_digest_candidate,
 )
+
+
+def test_explicit_seniority_can_be_found_in_the_body_without_mistaking_mentorship():
+    assert declares_senior_role("Python Expert developer", "Requirements\nSenior Python Backend Engineer (Cloud)")
+    assert declares_senior_role("Python Expert developer", "We are looking for a top-of-the-line Senior Python Engineer.")
+    assert not declares_senior_role("Junior Software Engineer", "Work closely with senior software engineers.")
 
 
 def _profile_path(tmp_path: Path) -> Path:

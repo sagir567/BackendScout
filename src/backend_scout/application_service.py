@@ -43,6 +43,7 @@ from backend_scout.guided_submission import (
 from backend_scout.models import Job
 from backend_scout.portal_rollout import hybrid_delivery_allowed
 from backend_scout.runtime_health import workflow_health
+from backend_scout.scouting_preferences import declares_senior_role
 from backend_scout.task_queue import (
     QueuedTaskKind,
     QueuedTaskStatus,
@@ -367,6 +368,8 @@ class ApplicationService:
             job = Job.model_validate_json(row["job_json"])
             if portal_job_identity(job.application_url, job.company, job.title) in locked:
                 continue
+            if declares_senior_role(job.title, job.description):
+                continue
             url = application_entry_url(job.application_url, job.source_url)
             if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
                 continue
@@ -636,7 +639,9 @@ class ApplicationService:
             bucket = "internal"
             complete_and_relevant = self._has_requirements(job) and (
                 job.match_score is None or job.match_score >= 55
-            ) and not duplicate and code != "experience_requirement_unmet"
+            ) and not duplicate and code != "experience_requirement_unmet" and not declares_senior_role(
+                job.title, job.description,
+            )
             if duplicate:
                 code, message = "duplicate_portal_role", "This role has a sent or unresolved application in the history."
             can_deliver = bool(
@@ -1243,6 +1248,12 @@ class ApplicationService:
         if record.status == "drafting":
             self.store.set_state(application_id, tracker, "discovered")
             record = self._record(application_id, tracker)
+        if (background_preparation and tracker == TrackerName.PRODUCTION
+                and declares_senior_role(record.job.title, record.job.description)):
+            return self._outcome(
+                application_id, "explicit_senior_role",
+                "The posting explicitly describes a senior role; no background CV was generated.", status="blocked",
+            )
         if (background_preparation and tracker == TrackerName.PRODUCTION
                 and record.job.match_score is not None and record.job.match_score < 55):
             message = "The full posting scored below the automatic preparation threshold."

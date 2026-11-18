@@ -1686,6 +1686,8 @@ still needs its own public identity and form verification.
 The daily schedule can inspect twelve public postings. Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
+Check the full posting for an explicit senior role heading before background
+drafting. References to working with senior engineers do not disqualify a job.
 Incomplete posting or route observations can be checked again after 24 hours
 within the same daily quota. An updated score below the preparation threshold
 blocks the background CV draft before calling the model.

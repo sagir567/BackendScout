@@ -9,6 +9,18 @@ from backend_scout.matcher import ScoredJob
 from backend_scout.yaml_files import load_yaml_mapping
 
 DEFAULT_SCOUTING_PREFERENCES_PATH = Path("config/scouting_preferences.yaml")
+_SENIOR_ROLE = r"(?:senior|staff|principal)\s+(?:[\w.+#/-]+\s+){0,5}(?:engineer|developer|architect)\b"
+_SENIOR_HEADING = re.compile(rf"^\s*(?:#+\s*)?{_SENIOR_ROLE}", re.IGNORECASE | re.MULTILINE)
+_SENIOR_OFFER = re.compile(
+    rf"\b(?:looking for|seeking|hiring)\s+(?:(?:a|an|the|top-of-the-line|experienced)\s+){{0,4}}{_SENIOR_ROLE}",
+    re.IGNORECASE,
+)
+
+
+def declares_senior_role(title: str, description: str) -> bool:
+    """Recognize explicit target seniority, not references to senior colleagues."""
+    return bool(_SENIOR_HEADING.search(title) or _SENIOR_HEADING.search(description)
+                or _SENIOR_OFFER.search(description))
 
 
 class ScoutingPreferences(BaseModel):
