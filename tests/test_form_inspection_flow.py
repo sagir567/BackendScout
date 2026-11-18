@@ -212,6 +212,32 @@ def test_hybrid_inspection_without_tailor_after_does_not_queue_paid_draft(hybrid
     assert len(calls) == 1 and not list_tasks(service.store.database_path)
 
 
+def test_legacy_notion_reimport_keeps_discovery_timestamp_stable(hybrid, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from backend_scout import notion
+
+    service, _, _ = hybrid
+    service.settings.notion_api_key = "test"
+    service.settings.notion_production_applications_data_source_id = "test"
+    tracker = TrackerName.PRODUCTION
+    monkeypatch.setattr(notion, "NotionClient", lambda *_: nullcontext())
+    monkeypatch.setattr(notion, "query_all_pages", lambda *_: [
+        {"id": "legacy", "created_time": "2026-10-01T08:00:00Z"},
+    ])
+    monkeypatch.setattr(notion, "application_digest_item_from_page", lambda page:
+                        SimpleNamespace(notion_page_id=page["id"], status=SimpleNamespace(value="found")))
+    job = service.store.get_application("example-job", T).job
+    monkeypatch.setattr(notion, "job_from_application_page",
+                        lambda _: job.model_copy(update={"discovered_at": datetime.now(UTC)}))
+    service.sync_projection(tracker, "12345")
+    original = service.store.get_application("legacy", tracker).job
+    service.sync_projection(tracker, "12345")
+    assert service.store.get_application("legacy", tracker).job == original
+    assert original.discovered_at == datetime(2026, 10, 1, 8, tzinfo=UTC)
+
+
 def test_daily_preparation_reserves_only_twelve_top_ranked_production_checks(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True

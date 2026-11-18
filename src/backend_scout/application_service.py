@@ -321,8 +321,9 @@ class ApplicationService:
                 item = application_digest_item_from_page(page)
                 job = job_from_application_page(page)
                 date_value = page.get("properties", {}).get("Discovered At", {}).get("date") or {}
-                if date_value.get("start"):
-                    discovered = datetime.fromisoformat(date_value["start"])
+                date_source = date_value.get("start") or page.get("created_time")
+                if date_source:
+                    discovered = datetime.fromisoformat(date_source)
                     job = job.model_copy(
                         update={
                             "discovered_at": discovered.replace(tzinfo=UTC)

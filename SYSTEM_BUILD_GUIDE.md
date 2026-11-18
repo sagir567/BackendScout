@@ -1696,6 +1696,8 @@ separately. Multiple explicitly identified resume inputs still fail closed.
 For public LinkedIn postings, compare the structured description with the
 exact-match expanded description when both are available. A short structured
 summary must not mask fuller text recovered by the browser.
+Notion snapshots without an explicit discovery date use the page creation
+time so periodic synchronization does not invalidate an in-flight form check.
 Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
