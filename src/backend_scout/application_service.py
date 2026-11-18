@@ -337,9 +337,10 @@ class ApplicationService:
             url = application_entry_url(job.application_url, job.source_url)
             if job.match_score is None or job.match_score < 55 or not url or not url.startswith("https://"):
                 continue
-            candidates.append((job.match_score, row["application_id"]))
+            direct = bool(application_entry_url(job.application_url))
+            candidates.append((direct, job.match_score, row["application_id"]))
         task_ids = []
-        for _, application_id in sorted(candidates, key=lambda pair: (-pair[0], pair[1])):
+        for _, _, application_id in sorted(candidates, key=lambda item: (-item[0], -item[1], item[2])):
             if (self.store.form_check_pending(application_id, tracker)
                     or self.store.latest_form_inspection(application_id, tracker)):
                 continue

@@ -221,6 +221,10 @@ def test_daily_preparation_reserves_only_five_top_ranked_production_checks(hybri
         service.store.import_snapshot(
             f"job-{score}", production, original.model_copy(update={"match_score": score}), "found",
         )
+    service.store.import_snapshot(
+        "discovery-only", production,
+        original.model_copy(update={"application_url": None, "match_score": 99}), "found",
+    )
     service.store.import_snapshot("submitted", production, original, "submitted")
     assert service.queue_daily_preparation(T, "12345") == []
     task_ids = service.queue_daily_preparation(production, "12345")

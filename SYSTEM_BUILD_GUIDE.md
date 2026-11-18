@@ -1673,6 +1673,9 @@ With the ready workspace enabled, incomplete and below-threshold postings
 stay out of application lists. A verified form with a reviewable PDF is shown
 under manual application when rollout does not allow automatic delivery.
 Enabling preparation does not change rollout limits or approve any package.
+When scheduling the bounded daily preparation, check existing employer entry
+links before discovery-only leads, then rank each group by fit. Every entry
+still needs its own public identity and form verification.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the
