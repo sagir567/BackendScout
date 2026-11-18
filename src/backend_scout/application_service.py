@@ -823,6 +823,7 @@ class ApplicationService:
             "package_blocker": blocker,
             "form_inspection": self.store.latest_form_inspection(application_id, tracker),
             "form_check_pending": self.store.form_check_pending(application_id, tracker),
+            "cv_draft_pending": self.store.cv_draft_pending(application_id, tracker),
             "application_route": item["application_route"],
             "verified_route": item["verified_route"],
             "browser_observation": item["browser_observation"],
@@ -1233,27 +1234,34 @@ class ApplicationService:
         record = self._record(application_id, tracker)
         if record.status in HISTORICAL:
             raise ApplicationConflict("Resolve the current application before drafting")
-        if record.status in {"drafting", "enriching"}:
+        if record.status == "enriching" or self.store.cv_draft_pending(application_id, tracker):
             return self._outcome(application_id, "queued", "CV drafting is already queued.")
+        if record.status == "drafting":
+            self.store.set_state(application_id, tracker, "discovered")
+            record = self._record(application_id, tracker)
         if (background_preparation and tracker == TrackerName.PRODUCTION
                 and record.job.match_score is not None and record.job.match_score < 55):
             message = "The full posting scored below the automatic preparation threshold."
             self.store.set_state(application_id, tracker, "needs_input",
                                  code="below_match_threshold", message=message)
             return self._outcome(application_id, "below_match_threshold", message, status="blocked")
+        try:
+            manifest, _ = self._manifest(application_id, tracker)
+        except (OSError, ValueError):
+            manifest = None
         if self._hybrid:
             if self._verified_route(application_id, tracker) is None and (
-                not self._has_requirements(record.job) or record.current_fingerprint
+                not self._has_requirements(record.job) or record.current_fingerprint and manifest
             ):
                 return self.request_form_inspection(
                     application_id, tracker, actor_id, tailor_after=True,
                     background_preparation=background_preparation,
                 )
-            if record.current_fingerprint and record.status in {"needs_input", "blocked"}:
+            if manifest and record.current_fingerprint and record.status in {"needs_input", "blocked"}:
                 return self._outcome(application_id, "review_ready", "Review the existing PDF and remaining portal answers.")
         if blocked := self._posting_blocked_outcome(application_id, tracker):
             return blocked
-        if record.status in {"review_ready", "approved"} and self.store.metadata(
+        if manifest and record.status in {"review_ready", "approved"} and self.store.metadata(
             application_id, tracker
         ).get("claimed"):
             return self._outcome(
@@ -1265,10 +1273,9 @@ class ApplicationService:
                                      "Browser preflight did not retrieve the full job requirements.", status="blocked")
             return self.request_refresh(application_id, tracker, actor_id, tailor_after=True)
         meta = self.store.metadata(application_id, tracker)
-        try:
-            previous_version = self._manifest(application_id, tracker)[0].draft_id
-        except (OSError, ValueError):
-            previous_version = "none"
+        if not manifest and record.current_fingerprint:
+            self.store.invalidate_review(application_id, tracker, "The previous PDF is unavailable. Prepare a new file for review.")
+        previous_version = manifest.draft_id if manifest else "none"
         content = (
             record.job.model_dump_json() + (meta.get("revision_feedback") or "") + previous_version
         )
@@ -1283,7 +1290,7 @@ class ApplicationService:
             self.store.database_path,
             idempotency_key=f"package-cv:{tracker.value}:{application_id}:{key}",
         )
-        if task.status in {QueuedTaskStatus.BLOCKED, QueuedTaskStatus.DEAD_LETTER,
+        if task.status in {QueuedTaskStatus.DONE, QueuedTaskStatus.BLOCKED, QueuedTaskStatus.DEAD_LETTER,
                            QueuedTaskStatus.FAILED, QueuedTaskStatus.CANCELLED}:
             # An explicit retry may draft again, but simultaneous clicks share active work.
             task = enqueue_task(QueuedTaskKind.PACKAGE_CV_DRAFT, tracker, payload, self.store.database_path)

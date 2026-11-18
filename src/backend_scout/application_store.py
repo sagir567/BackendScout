@@ -467,14 +467,20 @@ class ApplicationStore:
             return json.loads(row["payload_json"])
 
     def form_check_pending(self, application_id: str, tracker: TrackerName) -> bool:
+        return self._package_task_pending(application_id, tracker, "package_form_inspect")
+
+    def cv_draft_pending(self, application_id: str, tracker: TrackerName) -> bool:
+        return self._package_task_pending(application_id, tracker, "package_cv_draft")
+
+    def _package_task_pending(self, application_id: str, tracker: TrackerName, kind: str) -> bool:
         with self._transaction() as db:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks'").fetchone():
                 return False
             return db.execute(
-                "SELECT 1 FROM tasks WHERE kind='package_form_inspect' AND tracker=? "
+                "SELECT 1 FROM tasks WHERE kind=? AND tracker=? "
                 "AND status IN ('queued','running','retrying') "
                 "AND json_extract(payload_json,'$.page_id')=? LIMIT 1",
-                (TrackerName(tracker).value, application_id),
+                (kind, TrackerName(tracker).value, application_id),
             ).fetchone() is not None
 
     def latest_decisive_form_inspection(self, application_id: str, tracker: TrackerName) -> dict | None:

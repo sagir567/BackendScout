@@ -580,7 +580,8 @@ function reviewGuards(detail) {
   const cv = safeURL(pkg?.cv_url, { localOnly: true });
   const archived = finishedStages.has(stage) || detail.package_blocker?.reason_code === 'historical';
   const uncertain = ['submission_unknown', 'uncertain'].includes(stage) || state.deliveryHolds.has(String(item.id));
-  const inFlight = activeDeliveryStages.has(stage) || detail.package_blocker?.reason_code === 'enriching'
+  const inFlight = (activeDeliveryStages.has(stage) && (stage !== 'drafting' || detail.cv_draft_pending !== false))
+    || detail.package_blocker?.reason_code === 'enriching'
     || state.queued.get(String(item.id)) === fingerprint;
   const enabled = detail.delivery_enabled !== false && pkg?.delivery_enabled !== false && item.delivery_enabled !== false;
   const awaitingInput = questionsFor(detail).length > 0 || stage === 'needs_input'

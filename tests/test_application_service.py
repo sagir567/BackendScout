@@ -12,7 +12,7 @@ from backend_scout.application_store import ApplicationConflict, is_ledger_owned
 from backend_scout.browser_budget import BudgetExceeded
 from backend_scout.config import TrackerName
 from backend_scout.submission import BrowserPreparationResult
-from backend_scout.task_queue import list_tasks
+from backend_scout.task_queue import QueuedTaskStatus, list_tasks, mark_task_status
 
 T = TrackerName.TEST
 
@@ -146,6 +146,24 @@ def test_missing_full_posting_fetches_before_any_model_call(review_service):
     assert len(tasks) == 1 and tasks[0].kind.value == "package_enrich"
     assert tasks[0].payload["tailor_after"] is True
     assert service.store.get_application("example-job", T).status == "enriching"
+
+
+@pytest.mark.parametrize("stale_state", ["review_ready", "drafting"])
+def test_create_cv_requeues_missing_pdf_after_terminal_draft(review_service, stale_state):
+    service = review_service
+    service.cv_artifact("example-job", T).unlink()
+    first = service.request_tailoring("example-job", T, "12345")
+    assert first.task_id
+    mark_task_status(first.task_id, QueuedTaskStatus.DONE, path=service.store.database_path)
+    service.store.set_state("example-job", T, stale_state)
+    assert service.detail("example-job", T)["cv_draft_pending"] is False
+    second = service.request_tailoring("example-job", T, "12345")
+    assert second.reason_code == "queued"
+    assert second.task_id != first.task_id
+    assert service.request_tailoring("example-job", T, "12345").reason_code == "queued"
+    assert [t.status for t in list_tasks(service.store.database_path)] == [
+        QueuedTaskStatus.DONE, QueuedTaskStatus.QUEUED,
+    ]
 
 
 def test_existing_cv_remains_viewable_without_job_route_or_complete_description(review_service):

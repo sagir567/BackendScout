@@ -1689,6 +1689,10 @@ blocks the background CV draft before calling the model.
 An authenticated direct link to an internal posting can still fetch details or
 request a CV. These preparation controls do not expose submission approval or
 put an incomplete record into the ready or manual list.
+Treat a review state without a checksum-verified PDF as an incomplete draft.
+An owner retry after a terminal task can create a new immutable version; it
+cannot reuse the old package approval. The web control stays busy only while
+the queue actually has pending draft work.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the
