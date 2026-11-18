@@ -424,6 +424,20 @@ def test_linkedin_public_guest_markup_requires_canonical_title_and_company(class
     )
 
 
+@pytest.mark.parametrize("summary", ["Backend development", BODY])
+def test_linkedin_expanded_description_beats_matching_structured_summary(summary):
+    expanded = BODY + " Collaborate with architects on migration, release planning, and incident response."
+    markup = (
+        '<h1 class="top-card-layout__title">Backend Engineer</h1>'
+        '<a class="topcard__org-name-link">Example Labs</a>'
+        f'<div class="description__text"><div class="show-more-less-html__full-content">{expanded}</div></div>'
+    )
+    result = enrich_job(_job(), fetcher=_page_fetch(_schema(description=summary), extra=markup))
+    assert result.status == "enriched"
+    assert result.job.description == expanded
+    assert result.job.application_url is None
+
+
 def test_hybrid_preflight_uses_public_linkedin_text_without_promoting_board(monkeypatch):
     from backend_scout import preflight_process
 

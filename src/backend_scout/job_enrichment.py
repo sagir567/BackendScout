@@ -522,13 +522,21 @@ def _html_body(job: Job, posting: _Posting, body: bytes, url: str) -> tuple[str,
         raise _Unavailable(
             "identity_mismatch", "The page contains ambiguous matching JobPosting objects."
         )
+    structured_description = None
+    structured_error = None
     if matches:
         candidate = matches[0]
         if _expired(candidate.get("validThrough")):
             raise _Unavailable("closed", "The public posting has expired.")
-        description = _description(_plain(candidate.get("description")), job)
-        return description, url if posting.provider == "comeet" else None
-    if candidates:
+        try:
+            structured_description = _description(_plain(candidate.get("description")), job)
+        except _Unavailable as exc:
+            if posting.provider != "linkedin" or exc.code != "description_incomplete":
+                raise
+            structured_error = exc
+        if posting.provider != "linkedin":
+            return structured_description, url if posting.provider == "comeet" else None
+    elif candidates:
         raise _Unavailable("identity_mismatch", "The structured posting does not match this job.")
     if posting.provider == "linkedin" and canonical_url:
         titles = soup.select(".top-card-layout__title")
@@ -540,10 +548,20 @@ def _html_body(job: Job, posting: _Posting, body: bytes, url: str) -> tuple[str,
         descriptions = [node for node in descriptions
                         if not any(parent in descriptions for parent in node.parents)]
         if len(titles) == len(companies) == len(descriptions) == 1:
-            _identity(
-                job, titles[0].get_text(" ", strip=True), companies[0].get_text(" ", strip=True)
-            )
-            return _description(_plain(str(descriptions[0])), job), None
+            try:
+                _identity(
+                    job, titles[0].get_text(" ", strip=True), companies[0].get_text(" ", strip=True)
+                )
+                expanded = _description(_plain(str(descriptions[0])), job)
+            except _Unavailable as exc:
+                if structured_description is None or exc.code != "description_incomplete":
+                    raise
+            else:
+                return max(expanded, structured_description or "", key=len), None
+    if structured_description:
+        return structured_description, None
+    if structured_error:
+        raise structured_error
     raise _Unavailable("no_description", "No identifiable full public job description was exposed.")
 
 

@@ -1693,6 +1693,9 @@ verified route's message; a rollout restriction is reported separately.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.
+For public LinkedIn postings, compare the structured description with the
+exact-match expanded description when both are available. A short structured
+summary must not mask fuller text recovered by the browser.
 Only five background
 CV tasks can reserve paid preparation slots; failed lookups consume no draft
 slots, and explicit owner requests still follow the shared model budget.
