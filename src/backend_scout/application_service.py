@@ -590,22 +590,34 @@ class ApplicationService:
                 inspection=inspection,
             )
             bucket = "internal"
+            complete_and_relevant = self._has_requirements(job) and (
+                job.match_score is None or job.match_score >= 55
+            )
+            can_deliver = bool(
+                self.settings.web_allow_delivery and route
+                and hybrid_delivery_allowed(self.settings, self.store, row["application_id"], tracker)
+            )
             if row["status"] in HISTORICAL:
                 bucket = "history"
-            elif (self.settings.web_allow_delivery and route and not code
+            elif (complete_and_relevant and can_deliver and not code
                   and row["status"] in {"discovered", "shortlisted", "review_ready"}
                   and not self.store.form_check_pending(row["application_id"], tracker)
-                  and readiness.state == "supported_after_approval"
-                  and hybrid_delivery_allowed(self.settings, self.store, row["application_id"], tracker)):
+                  and readiness.state == "supported_after_approval"):
                 bucket = "ready"
-            elif (has_cv and self._manual_route(job, route_record, inspection)
+            elif (complete_and_relevant and has_cv and (
+                    self._manual_route(job, route_record, inspection)
+                    or route and not can_deliver and not code and readiness.state == "supported_after_approval")
                   and row["status"] in {"discovered", "shortlisted", "review_ready", "needs_input"}
-                  and self._has_requirements(job) and not route_blocker):
+                  and not route_blocker):
                 bucket = "manual"
             items.append(
                 {
                     "id": row["application_id"],
                     "workspace_bucket": bucket,
+                    "manual_reason": (
+                        "Automatic delivery is not enabled for this role; use the verified employer link."
+                        if bucket == "manual" and readiness.state == "supported_after_approval" else None
+                    ),
                     "company": job.company,
                     "title": job.title,
                     "location": job.location,

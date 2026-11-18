@@ -1669,6 +1669,10 @@ For an incomplete LinkedIn lead, the read-only preflight can recover full
 public description markup tied to the exact posting. It does not turn the
 discovery link into an application destination. The delivery transaction
 checks other rows for a sent or unresolved attempt at the same portal role.
+With the ready workspace enabled, incomplete and below-threshold postings
+stay out of application lists. A verified form with a reviewable PDF is shown
+under manual application when rollout does not allow automatic delivery.
+Enabling preparation does not change rollout limits or approve any package.
 
 Before enabling Job Space, run `backend-scout collect job-space-connect`.
 The setup command uses the same parser as the collector and only saves the

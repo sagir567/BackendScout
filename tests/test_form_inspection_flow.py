@@ -266,7 +266,10 @@ def test_ready_workspace_binds_current_pdf_to_verified_form_without_approval(hyb
     assert detail["item"]["workspace_bucket"] == "ready"
     assert detail["package"]["approved"] is False
     service.settings.web_allow_delivery = False
-    assert service.overview(T)["items"][0]["workspace_bucket"] == "internal"
+    item = service.overview(T)["items"][0]
+    assert item["workspace_bucket"] == "manual"
+    assert item["has_cv"]
+    assert "not enabled" in item["manual_reason"]
 
 
 @pytest.mark.parametrize("reason", [
