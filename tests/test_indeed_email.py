@@ -53,7 +53,12 @@ def test_parse_indeed_job_page_uses_structured_job_posting() -> None:
     assert job.title == "Junior Backend Engineer"
     assert job.location == "Tel Aviv, Israel"
     assert job.required_skills == ["Python", "PostgreSQL", "Docker", "APIs"]
-    assert job.years_experience == "2+ years"
+    assert job.years_experience is None  # Preferred experience is not a required minimum.
+    required = parse_indeed_job_page(
+        "https://il.indeed.com/viewjob?jk=abc123", html.replace("2+ years preferred", "2+ years required"),
+    )
+    assert required is not None
+    assert required.years_experience == "2+ years"
 
 
 def test_collect_indeed_email_jobs_deduplicates_links_and_fetches_details() -> None:
