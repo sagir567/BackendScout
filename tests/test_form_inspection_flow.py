@@ -250,6 +250,29 @@ def test_legacy_notion_reimport_keeps_discovery_timestamp_stable(hybrid, monkeyp
     assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["legacy"]
 
 
+@pytest.mark.parametrize("status", ["rejected", "interview", "offer"])
+def test_projection_status_notifications_deduplicate(hybrid, monkeypatch, status):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from backend_scout import notion
+
+    service, _, _ = hybrid
+    service.settings.notion_api_key = "test"
+    service.settings.notion_production_applications_data_source_id = "test"
+    job = service.store.get_application("example-job", T).job
+    monkeypatch.setattr(notion, "NotionClient", lambda *_: nullcontext())
+    monkeypatch.setattr(notion, "query_all_pages", lambda *_: [{"id": "updated-job"}])
+    monkeypatch.setattr(notion, "job_from_application_page", lambda _: job)
+    monkeypatch.setattr(notion, "application_digest_item_from_page", lambda _: SimpleNamespace(
+        notion_page_id="updated-job", status=SimpleNamespace(value=status),
+    ))
+    for _ in range(2):
+        service.sync_projection(TrackerName.PRODUCTION, "12345")
+    with sqlite3.connect(service.store.database_path) as db:
+        assert db.execute("SELECT event_type,status FROM owner_notification_events").fetchall() == [(status, "pending")]
+
+
 def test_daily_preparation_reserves_only_twelve_top_ranked_production_checks(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True

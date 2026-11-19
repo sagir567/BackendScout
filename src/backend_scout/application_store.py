@@ -211,6 +211,12 @@ class ApplicationStore:
 
             install_owner_notification_schema(db)
 
+    def queue_owner_status_update(self, application_id, tracker, event_type, source_event_id):
+        from backend_scout.owner_notifications import enqueue_owner_status
+
+        with self._transaction() as db:
+            return enqueue_owner_status(db, application_id, tracker, event_type, source_event_id)
+
     def save_application_route(self, application_id, tracker, route):
         from backend_scout.application_routes import ApplicationRoute
 

@@ -332,6 +332,13 @@ class ApplicationService:
                         }
                     )
                 self.store.import_snapshot(item.notion_page_id, tracker, job, item.status.value)
+                if item.status.value in {"rejected", "interview", "offer"}:
+                    record = self.store.get_application(item.notion_page_id, tracker)
+                    if record.status == item.status.value:
+                        self.store.queue_owner_status_update(
+                            item.notion_page_id, tracker, item.status.value,
+                            f"projection:{item.status.value}:{page.get('last_edited_time') or 'initial'}",
+                        )
                 count += 1
         self.queue_daily_preparation(tracker, actor_id)
         self.queue_expired_review_checks(tracker, actor_id)

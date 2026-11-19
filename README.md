@@ -13,7 +13,8 @@ automatic delivery is unavailable when the form check provides one.
 An owner-only Meta WhatsApp template transport is under development. It is not
 connected to production events; Telegram remains the active notification channel.
 Its canonical SQLite queue records confirmed portal submissions transactionally;
-no WhatsApp dispatcher is enabled. Discovery and mailbox producers are pending.
+no WhatsApp dispatcher is enabled. Tracker rejection, interview and offer updates
+are deduplicated into this queue; direct discovery/mailbox integration is pending.
 The Job Space credential probe is `backend-scout collect job-space-connect`.
 It checks that the collector can read the response before saving the key in the
 OS keyring. A successful probe with zero results does not validate job fields.

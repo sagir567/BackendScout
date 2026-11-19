@@ -1714,7 +1714,10 @@ deduplicates source events and stores only company/role status summaries.
 Portal-submission notifications require a canonical submitted attempt with
 proof metadata. Confirmed portal attempts with imported job facts enqueue one
 owner event in the receipt transaction. Unknown and not-sent attempts do not.
-Discovery/mailbox producers, budget enforcement and dispatch remain pending.
+Projection synchronization queues rejection, interview and offer events only
+after confirming the imported canonical lifecycle matches. Source edit identity
+deduplicates repeated syncs. Direct discovery/mailbox producers, budget enforcement
+and dispatch remain pending. Historical tracker events do not authorize delivery.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.
