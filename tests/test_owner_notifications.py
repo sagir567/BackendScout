@@ -74,3 +74,83 @@ def test_owner_events_survive_reopen_without_resubmission(tmp_path):
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM owner_notification_events").fetchone()[0] == 1
         assert connection.execute("SELECT count(*) FROM delivery_attempts").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("case,expected", [("ok", "accepted"), ("network", "unknown"),
+                                         ("budget", "budget_blocked"), ("price", "missing_pricing")])
+def test_dispatch_reserves_before_send_and_never_replays_unknown(db, tmp_path, case, expected):
+    from types import SimpleNamespace
+
+    from backend_scout.owner_notifications import dispatch_owner_event
+    from backend_scout.owner_whatsapp import OwnerWhatsAppConfig
+
+    enqueue_owner_status(db, "job", "production", "job_found", "source-1")
+    db.commit()
+    path = tmp_path / "canonical.sqlite3"
+    with sqlite3.connect(path) as target:
+        db.backup(target)
+    calls = []
+
+    def reserve(*_):
+        calls.append("budget")
+        if case == "budget":
+            raise ValueError("quota")
+
+    def send(_):
+        assert calls == ["budget"]
+        calls.append("send")
+        if case == "network":
+            raise RuntimeError("private provider diagnostic")
+        return "wamid.example"
+
+    config = OwnerWhatsAppConfig(enabled=True, access_token="test", phone_number_id="12345",
+                                 owner_number="972500000000", template_name="job_status")
+    client = SimpleNamespace(config=config, send_template=send)
+    budget = SimpleNamespace(record_external_usage=reserve)
+    price = None if case == "price" else "0.05"
+    assert dispatch_owner_event(path, 1, "production", client, budget, price) == expected
+    if case in {"ok", "network"}:
+        before = calls.copy()
+        assert dispatch_owner_event(path, 1, "production", client, budget, price) == "not_pending"
+        assert calls == before
+    else:
+        assert "send" not in calls
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT status FROM applications").fetchone()[0] == "review_ready"
+        assert connection.execute("SELECT count(*) FROM delivery_attempts").fetchone()[0] == 0
+
+
+def test_dispatch_shared_budget_and_concurrent_claim(db, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from backend_scout.browser_budget import BrowserBudget, install_budget_schema
+    from backend_scout.owner_notifications import dispatch_owner_event
+    from backend_scout.owner_whatsapp import OwnerWhatsAppConfig
+
+    enqueue_owner_status(db, "job", "production", "job_found", "source-1")
+    enqueue_owner_status(db, "job", "production", "job_found", "source-2")
+    install_budget_schema(db)
+    db.commit()
+    path = tmp_path / "canonical.sqlite3"
+    with sqlite3.connect(path) as target:
+        db.backup(target)
+    budget = BrowserBudget(path, total_monthly_limit_nis="1", fixed_monthly_nis="0.95")
+    config = OwnerWhatsAppConfig(enabled=True, access_token="test", phone_number_id="12345",
+                                 owner_number="972500000000", template_name="job_status")
+    sent = []
+
+    def send(summary):
+        assert budget.snapshot("job", "production")["monthly_external_micro_nis"] == 50_000
+        sent.append(summary)
+        return "wamid.example"
+
+    client = SimpleNamespace(config=config, send_template=send)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: dispatch_owner_event(
+            path, 1, "production", client, budget, "0.05",
+        ), range(2)))
+    assert sorted(results) == ["accepted", "not_pending"]
+    assert len(sent) == 1
+    assert dispatch_owner_event(path, 2, "production", client, budget, "0.05") == "budget_blocked"
+    assert len(sent) == 1

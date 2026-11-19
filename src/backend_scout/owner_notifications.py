@@ -6,6 +6,7 @@ This queue cannot approve applications, send messages or start employer delivery
 import json
 import sqlite3
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 
 def install_owner_notification_schema(db: sqlite3.Connection) -> None:
@@ -53,3 +54,53 @@ def enqueue_owner_status(db: sqlite3.Connection, application_id: str, tracker: s
         (row[0], event_type, source_event_id, summary, datetime.now(UTC).isoformat()),
     )
     return result.rowcount == 1
+
+
+def dispatch_owner_event(database_path, event_id, tracker, client, budget, unit_cost_nis):
+    """Explicit one-shot dispatch; unknown acknowledgements are never replayed.
+
+    Claim before reserving cost. A crash after claim needs reconciliation, not
+    lease expiry. Conservative budget holds remain booked on ambiguous sends.
+    This function has no application-state write or employer delivery operation.
+    """
+    if not client.config.enabled or client.config.missing_fields():
+        return "disabled_or_unconfigured"
+    try:
+        price = Decimal(str(unit_cost_nis))
+        if not price.is_finite() or price <= 0:
+            raise ValueError
+    except (InvalidOperation, TypeError, ValueError):
+        return "missing_pricing"
+    if tracker not in {"test", "production"}:
+        raise ValueError("Invalid tracker")
+    with sqlite3.connect(database_path, timeout=10) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT e.summary,e.status,e.event_type,a.status FROM owner_notification_events e "
+            "JOIN applications a ON a.id=e.application_pk WHERE e.id=? AND a.tracker=?",
+            (event_id, tracker),
+        ).fetchone()
+        if row is None or row[1] != "pending":
+            return "not_pending"
+        states = {"job_found": {"discovered", "shortlisted", "review_ready", "needs_input"},
+                  "submitted": {"submitted"}, "rejected": {"rejected"},
+                  "interview": {"interview"}, "offer": {"offer"}}
+        if row[3] not in states[row[2]]:
+            db.execute("UPDATE owner_notification_events SET status='failed' WHERE id=?", (event_id,))
+            return "superseded"
+        db.execute("UPDATE owner_notification_events SET status='unknown' WHERE id=?", (event_id,))
+    try:
+        budget.record_external_usage(f"owner-whatsapp:{tracker}:{event_id}", price)
+    except (ValueError, OSError, sqlite3.Error):
+        with sqlite3.connect(database_path) as db:
+            db.execute("UPDATE owner_notification_events SET status='pending' WHERE id=? AND status='unknown'",
+                       (event_id,))
+        return "budget_blocked"
+    try:
+        message_id = client.send_template(row[0])
+    except Exception:  # noqa: BLE001 - no secrets from provider exceptions enter the queue.
+        return "unknown"
+    with sqlite3.connect(database_path) as db:
+        db.execute("UPDATE owner_notification_events SET status='accepted',provider_message_id=? "
+                   "WHERE id=? AND status='unknown'", (message_id, event_id))
+    return "accepted"

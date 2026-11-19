@@ -11,11 +11,13 @@ ready-to-approve, manual, and historical applications from internal preparation.
 Manual applications include a CV, an official link, and the recorded reason
 automatic delivery is unavailable when the form check provides one.
 An owner-only Meta WhatsApp template transport is under development. It is not
-connected to production events; Telegram remains the active notification channel.
+enabled for production sends; Telegram remains the active notification channel.
 Its canonical SQLite queue records confirmed portal submissions transactionally;
 no WhatsApp dispatcher is enabled. Tracker rejection, interview and offer updates
 are deduplicated into this queue. Synchronization also queues new opportunities
 only after a CV and verified route make them visible in ready/manual views.
+The tested one-shot dispatcher reserves shared-budget cost before sending and
+does not replay ambiguous acknowledgements; it is not yet wired to the worker.
 Run `uv run --no-editable backend-scout whatsapp check` to inspect missing local
 configuration without printing credentials or sending any network request.
 The Job Space credential probe is `backend-scout collect job-space-connect`.
