@@ -290,3 +290,7 @@ def test_experience_extraction_skips_preferred_years_and_reads_unicode_ranges():
     assert extract_years_experience(
         "4+ years of development experience or 2+ years of experience with backend APIs."
     ) is None
+    assert extract_years_experience("שנה ומעלה ניסיון בבדיקות תוכנה") == "1+ years"
+    assert extract_years_experience("ניסיון של 3 שנים בפיתוח Python") == "3+ years"
+    assert extract_years_experience("ניסיון שנתיים בפיתוח תוכנה") == "2+ years"
+    assert extract_years_experience("ניסיון של 5 שנים בפיתוח - יתרון") is None

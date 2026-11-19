@@ -3,7 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: str | None = None
     telegram_default_chat_id: int | None = None
+
+    owner_whatsapp_enabled: bool = False
+    owner_whatsapp_access_token: SecretStr | None = None
+    owner_whatsapp_phone_number_id: str = ""
+    owner_whatsapp_recipient: str = ""
+    owner_whatsapp_template_name: str = ""
+    owner_whatsapp_language: str = "he"
+    owner_whatsapp_api_version: str = "v27.0"
 
     notion_api_key: str | None = None
     notion_api_version: str = "2026-03-11"

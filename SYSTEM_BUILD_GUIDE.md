@@ -1703,6 +1703,11 @@ Verified manual Comeet routes join the bounded read-only recheck queue when
 their evidence expires. Rechecking neither redrafts an existing CV nor queues delivery.
 An existing CV must not prevent a cooldown-qualified recheck of missing posting
 or route evidence. Recover the public route before considering any delivery.
+The owner selected Meta Cloud API for future WhatsApp status notifications.
+The initial transport is owner-only and template-only, with mock tests and no
+automatic retry after ambiguous acknowledgement. API acceptance is not delivery
+confirmation. Event/outbox integration and budget enforcement remain pending;
+the transport is not enabled or connected to production.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.

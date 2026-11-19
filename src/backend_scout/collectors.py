@@ -381,6 +381,16 @@ def _extract_years_experience(description: str) -> str | None:
             for match in re.finditer(pattern, clause):
                 if not optional.search(clause[max(0, match.start() - 40):match.end() + 100]):
                     minimums.append(int(match.group(1)))
+        if not re.search(r"יתרון|לא\s+חובה|רצוי|עדיפות", clause):
+            for match in re.finditer(
+                r"(?:ניסיון|נסיון)\s+(?:של\s+)?(?:לפחות\s+)?(\d+)\s*"
+                r"(?:[-–—]\s*\d+\s*)?\+?\s*(?:שנים|שנות)", clause,
+            ):
+                minimums.append(int(match.group(1)))
+            if re.search(r"(?:שנה\s+ומעלה\s+(?:ניסיון|נסיון)|(?:ניסיון|נסיון)\s+(?:של\s+)?שנה\s+(?:לפחות|ומעלה))", clause):
+                minimums.append(1)
+            if re.search(r"(?:ניסיון|נסיון)\s+(?:של\s+)?שנתיים(?:\s|$)", clause):
+                minimums.append(2)
     return f"{max(minimums)}+ years" if minimums else None
 
 
