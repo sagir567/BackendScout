@@ -47,3 +47,30 @@ def test_submission_requires_evidence_and_tracker_matches(db):
     assert enqueue_owner_status(db, "job", "production", "submitted", "receipt-1")
     with pytest.raises(ValueError, match="canonical"):
         enqueue_owner_status(db, "job", "test", "submitted", "receipt-1")
+
+
+def test_owner_events_follow_caller_rollback(db):
+    db.commit()
+    assert enqueue_owner_status(db, "job", "production", "job_found", "rollback-example")
+    db.rollback()
+    assert db.execute("SELECT count(*) FROM owner_notification_events").fetchone()[0] == 0
+
+
+def test_owner_events_survive_reopen_without_resubmission(tmp_path):
+    from backend_scout.application_store import ApplicationStore
+    from backend_scout.config import TrackerName
+    from backend_scout.models import Job
+
+    root = tmp_path / "private"
+    root.mkdir()
+    path = tmp_path / "workflow.sqlite3"
+    store = ApplicationStore(path, root)
+    job = Job(source="manual", source_url="https://example.test/jobs/one",
+              company="Example", title="Backend Engineer", description="Build APIs and background services.")
+    store.import_snapshot("one", TrackerName.PRODUCTION, job, "interview")
+    assert store.queue_owner_status_update("one", TrackerName.PRODUCTION, "interview", "message-1")
+    reopened = ApplicationStore(path, root)
+    assert not reopened.queue_owner_status_update("one", TrackerName.PRODUCTION, "interview", "message-1")
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT count(*) FROM owner_notification_events").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM delivery_attempts").fetchone()[0] == 0

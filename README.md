@@ -15,6 +15,8 @@ connected to production events; Telegram remains the active notification channel
 Its canonical SQLite queue records confirmed portal submissions transactionally;
 no WhatsApp dispatcher is enabled. Tracker rejection, interview and offer updates
 are deduplicated into this queue; direct discovery/mailbox integration is pending.
+Run `uv run --no-editable backend-scout whatsapp check` to inspect missing local
+configuration without printing credentials or sending any network request.
 The Job Space credential probe is `backend-scout collect job-space-connect`.
 It checks that the collector can read the response before saving the key in the
 OS keyring. A successful probe with zero results does not validate job fields.

@@ -22,6 +22,24 @@ from backend_scout.task_queue import QueuedTaskKind, QueuedTaskStatus, enqueue_t
 runner = CliRunner()
 
 
+def test_whatsapp_check_is_local_and_never_prints_secrets(monkeypatch):
+    import httpx
+
+    from backend_scout.config import Settings
+
+    monkeypatch.setattr("backend_scout.cli.Settings", lambda: Settings(
+        _env_file=None, owner_whatsapp_access_token="test-private-token",
+        owner_whatsapp_recipient="972500000000",
+    ))
+    monkeypatch.setattr(httpx.Client, "post", lambda *_a, **_k: pytest.fail("No network call expected"))
+    result = runner.invoke(app, ["whatsapp", "check"])
+    assert result.exit_code == 0
+    assert "setup only" in result.output
+    assert "phone_number_id" in result.output
+    assert "test-private-token" not in result.output
+    assert "972500000000" not in result.output
+
+
 @pytest.mark.parametrize("status", ["succeeded", "blocked"])
 def test_form_inspection_alerts_only_on_blocker_with_deep_link(monkeypatch, tmp_path, status, review_service):
     from types import SimpleNamespace

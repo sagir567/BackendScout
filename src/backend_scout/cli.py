@@ -215,6 +215,7 @@ jobs_app = typer.Typer(help="Manual job import commands.")
 telegram_app = typer.Typer(help="Telegram approval commands.")
 cv_app = typer.Typer(help="Truthful, approval-gated CV draft commands.")
 gmail_app = typer.Typer(help="Gmail OAuth setup and reviewed email delivery.")
+whatsapp_app = typer.Typer(help="Owner WhatsApp notification configuration; no employer messaging.")
 contacts_app = typer.Typer(help="Discover and review verified employer contacts.")
 apply_app = typer.Typer(help="Prepare conservative browser-assisted submissions.")
 collect_app = typer.Typer(help="Collect public ATS jobs for Israel and approved remote work.")
@@ -275,6 +276,20 @@ def web_pair() -> None:
     with TelegramClient(settings.telegram_bot_token) as client:
         send_browser_pairing_message(client, chat_id, message)
     console.print("A single-use pairing code was sent to your private Telegram chat.")
+
+
+@whatsapp_app.command("check")
+def whatsapp_check() -> None:
+    """Inspect local configuration only; never send or reveal credentials."""
+    from backend_scout.owner_whatsapp import OwnerWhatsAppConfig
+
+    config = OwnerWhatsAppConfig.from_settings(Settings())
+    console.print("WhatsApp owner notifications: setup only; dispatch is not implemented.")
+    console.print(f"Enabled flag: {config.enabled}")
+    missing = config.missing_fields()
+    console.print("Missing configuration: " + (", ".join(missing) if missing else "none"))
+    console.print("Meta template approval, pricing and delivery webhook have not been verified.")
+    console.print("No network request or message was sent.")
 
 
 @applications_app.command("sync")
@@ -3260,6 +3275,7 @@ app.add_typer(jobs_app, name="jobs")
 app.add_typer(telegram_app, name="telegram")
 app.add_typer(cv_app, name="cv")
 app.add_typer(gmail_app, name="gmail")
+app.add_typer(whatsapp_app, name="whatsapp")
 app.add_typer(contacts_app, name="contacts")
 app.add_typer(apply_app, name="apply")
 app.add_typer(collect_app, name="collect")
