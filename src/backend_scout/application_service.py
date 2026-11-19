@@ -342,11 +342,26 @@ class ApplicationService:
                 count += 1
         self.queue_daily_preparation(tracker, actor_id)
         self.queue_expired_review_checks(tracker, actor_id)
+        self.queue_ready_owner_notifications(tracker, actor_id)
         return self._outcome(
             "tracker",
             "projection_imported",
             f"Imported {count} job snapshots without transferring approval.",
         )
+
+    def queue_ready_owner_notifications(self, tracker, actor_id) -> int:
+        """Announce only reviewable jobs, never unfinished discovery snapshots."""
+        self._authorize(actor_id)
+        if not self.settings.web_ready_to_apply:
+            return 0
+        count = 0
+        for item in self.overview(tracker)["items"]:
+            if item["workspace_bucket"] not in {"ready", "manual"}:
+                continue
+            count += self.store.queue_owner_status_update(
+                item["id"], tracker, "job_found", "first-reviewable-package",
+            )
+        return count
 
     def queue_daily_preparation(self, tracker, actor_id, *, now=None) -> list[str]:
         """Reserve bounded, read-only preflights; a verified form may chain a draft."""

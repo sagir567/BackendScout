@@ -14,7 +14,8 @@ An owner-only Meta WhatsApp template transport is under development. It is not
 connected to production events; Telegram remains the active notification channel.
 Its canonical SQLite queue records confirmed portal submissions transactionally;
 no WhatsApp dispatcher is enabled. Tracker rejection, interview and offer updates
-are deduplicated into this queue; direct discovery/mailbox integration is pending.
+are deduplicated into this queue. Synchronization also queues new opportunities
+only after a CV and verified route make them visible in ready/manual views.
 Run `uv run --no-editable backend-scout whatsapp check` to inspect missing local
 configuration without printing credentials or sending any network request.
 The Job Space credential probe is `backend-scout collect job-space-connect`.

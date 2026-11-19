@@ -1716,8 +1716,9 @@ proof metadata. Confirmed portal attempts with imported job facts enqueue one
 owner event in the receipt transaction. Unknown and not-sent attempts do not.
 Projection synchronization queues rejection, interview and offer events only
 after confirming the imported canonical lifecycle matches. Source edit identity
-deduplicates repeated syncs. Direct discovery/mailbox producers, budget enforcement
-and dispatch remain pending. Historical tracker events do not authorize delivery.
+deduplicates repeated syncs. New-opportunity events are queued only for ready/manual
+workspace records and once per application, not on each CV revision. Budget
+enforcement and dispatch remain pending. Historical tracker events do not authorize delivery.
 The `whatsapp check` CLI reports configuration presence only. It does not verify
 Meta authorization, template approval or delivery. Queue tests cover rollback and
 reopening the canonical database without duplicate events or delivery attempts.

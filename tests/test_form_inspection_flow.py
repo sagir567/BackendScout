@@ -322,6 +322,7 @@ def test_background_can_recover_thin_low_scoring_posting_without_exposing_it(hyb
     assert [task.payload["page_id"] for task in list_tasks(service.store.database_path)] == ["thin"]
     item = next(item for item in service.overview(production)["items"] if item["id"] == "thin")
     assert item["workspace_bucket"] == "internal"
+    assert service.queue_ready_owner_notifications(production, "12345") == 0
 
 
 def test_background_experience_ceiling_only_blocks_required_minimum(hybrid, monkeypatch):
@@ -496,6 +497,8 @@ def test_verified_unsupported_form_prepares_manual_pdf_without_authorizing(hybri
     )
     assert detail["item"]["official_url"] == result["route"]["application_url"]
     assert detail["package"] is None
+    assert service.queue_ready_owner_notifications(T, "12345") == 1
+    assert service.queue_ready_owner_notifications(T, "12345") == 0
     assert service.approve_and_queue("example-job", T, "12345", "not-approved").status == "blocked"
     assert not any(task.kind == QueuedTaskKind.PACKAGE_DELIVER
                    for task in list_tasks(service.store.database_path))

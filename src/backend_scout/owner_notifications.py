@@ -25,7 +25,7 @@ def install_owner_notification_schema(db: sqlite3.Connection) -> None:
 def enqueue_owner_status(db: sqlite3.Connection, application_id: str, tracker: str,
                          event_type: str, source_event_id: str) -> bool:
     """Caller owns transaction; derive message only from current canonical facts."""
-    expected = {"job_found": {"discovered", "shortlisted", "review_ready"},
+    expected = {"job_found": {"discovered", "shortlisted", "review_ready", "needs_input"},
                 "submitted": {"submitted"}, "rejected": {"rejected"},
                 "interview": {"interview"}, "offer": {"offer"}}
     if event_type not in expected or not source_event_id.strip() or len(source_event_id) > 200:
