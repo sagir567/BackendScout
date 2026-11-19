@@ -111,6 +111,24 @@ def test_second_ats_alias_cannot_start_while_first_is_sending(store):
         store.begin_attempt(other.application_id, other.tracker, other.fingerprint(), "second")
 
 
+def test_owner_notification_is_atomic_with_confirmed_portal_receipt(store):
+    content = package()
+    job = Job(source="manual", source_url=content.official_destination,
+              application_url=content.official_destination, company=content.company,
+              title=content.role, description="Develop and maintain backend services.")
+    store.import_snapshot(content.application_id, content.tracker, job, "found")
+    approve(store, content)
+    attempt = store.begin_attempt(content.application_id, content.tracker, content.fingerprint(), "owner-event")
+    with sqlite3.connect(store.database_path) as db:
+        assert db.execute("SELECT count(*) FROM owner_notification_events").fetchone()[0] == 0
+    store.finish_attempt(attempt.attempt_id, "submitted", "Visible receipt", "success.png")
+    store.finish_attempt(attempt.attempt_id, "submitted", "Visible receipt", "success.png")
+    with sqlite3.connect(store.database_path) as db:
+        assert db.execute("SELECT event_type,status FROM owner_notification_events").fetchall() == [
+            ("submitted", "pending"),
+        ]
+
+
 def test_workday_aliases_share_requisition_but_not_tenant_or_role_id():
     base = "https://example.wd5.myworkdayjobs.com/en-US/Careers/job/"
     posting = base + "QA-Engineer_R62424"

@@ -1708,6 +1708,13 @@ The initial transport is owner-only and template-only, with mock tests and no
 automatic retry after ambiguous acknowledgement. API acceptance is not delivery
 confirmation. Event/outbox integration and budget enforcement remain pending;
 the transport is not enabled or connected to production.
+A dedicated owner-event table is installed idempotently in the canonical
+application database. Enqueue validates current tracker and lifecycle state,
+deduplicates source events and stores only company/role status summaries.
+Portal-submission notifications require a canonical submitted attempt with
+proof metadata. Confirmed portal attempts with imported job facts enqueue one
+owner event in the receipt transaction. Unknown and not-sent attempts do not.
+Discovery/mailbox producers, budget enforcement and dispatch remain pending.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.

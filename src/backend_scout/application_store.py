@@ -207,6 +207,9 @@ class ApplicationStore:
                 install_budget_schema(db)
                 install_notification_schema(db)
                 db.execute("INSERT INTO application_schema_versions VALUES (?,?)", (5, _now()))
+            from backend_scout.owner_notifications import install_owner_notification_schema
+
+            install_owner_notification_schema(db)
 
     def save_application_route(self, application_id, tracker, route):
         from backend_scout.application_routes import ApplicationRoute
@@ -1016,6 +1019,12 @@ class ApplicationStore:
                     self.database_path, package.application_id, package.tracker,
                     package.fingerprint(), connection=db,
                 )
+                if db.execute("SELECT job_json FROM applications WHERE id=?",
+                              (attempt["application_pk"],)).fetchone()[0]:
+                    from backend_scout.owner_notifications import enqueue_owner_status
+
+                    enqueue_owner_status(db, package.application_id, package.tracker,
+                                         "submitted", attempt_id)
 
 
 def is_ledger_owned(database_path: Path, application_id: str, tracker: TrackerName) -> bool:
