@@ -392,7 +392,8 @@ class ApplicationService:
             except (OSError, ValueError):
                 pass
             else:
-                continue
+                if not retry:
+                    continue
             record = self._record(application_id, tracker)
             try:
                 task = enqueue_task(

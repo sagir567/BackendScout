@@ -322,6 +322,25 @@ def test_background_experience_ceiling_only_blocks_required_minimum(hybrid, monk
     assert result.reason_code == "experience_preference_exceeded"
 
 
+def test_background_rechecks_route_even_when_cv_already_exists(hybrid, monkeypatch):
+    service, _, _ = hybrid
+    service.settings.web_ready_to_apply = True
+    tracker = TrackerName.PRODUCTION
+    job = service.store.get_application("example-job", T).job
+    service.store.import_snapshot("missing-route", tracker, job, "found")
+    service.store.set_state("missing-route", tracker, "needs_input", code="application_route_missing")
+    with sqlite3.connect(service.store.database_path) as conn:
+        conn.execute("UPDATE application_metadata SET updated_at=?", (
+            (datetime.now(UTC) - timedelta(days=2)).isoformat(),
+        ))
+    monkeypatch.setattr(service, "_manifest", lambda *_: (object(), object()))
+    assert len(service.queue_daily_preparation(tracker, "12345")) == 1
+    task = list_tasks(service.store.database_path)[0]
+    assert task.kind == QueuedTaskKind.PACKAGE_FORM_INSPECT
+    assert task.payload["page_id"] == "missing-route"
+    assert service.store.get_application("missing-route", tracker).current_fingerprint is None
+
+
 def test_background_rechecks_only_aged_incomplete_records(hybrid):
     service, _, _ = hybrid
     service.settings.web_ready_to_apply = True
