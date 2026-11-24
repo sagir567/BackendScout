@@ -22,6 +22,17 @@ from backend_scout.models import (
 )
 
 
+def test_cv_bullets_keep_visible_paragraph_spacing(tmp_path: Path) -> None:
+    evidence = make_evidence()
+    output = tmp_path / "cv.docx"
+    create_cv_docx(evidence, build_evidence_only_draft(evidence), output)
+    document = Document(output)
+    bullets = [paragraph for paragraph in document.paragraphs if paragraph.style.name == "List Bullet"]
+
+    assert bullets
+    assert all(paragraph.paragraph_format.space_after.pt >= 1 for paragraph in bullets)
+
+
 def make_evidence() -> CareerEvidence:
     return CareerEvidence.model_validate(
         {

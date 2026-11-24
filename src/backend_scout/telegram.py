@@ -847,8 +847,23 @@ def _process_message(
         if application.status != ApplicationStatus.REVISION_REQUESTED:
             raise ValueError("Revision feedback is only accepted after Request changes")
         save_revision_feedback(page_id, feedback)
-        confirmation = f"Saved revision feedback for {application.company}. Run cv revise to create versioned files."
-        result = "revision_feedback_saved"
+        if not isinstance(chat_id, int):
+            return None
+        task_id = _enqueue_task(
+            task_enqueue_handler,
+            QueuedTaskKind.CV_DRAFT,
+            tracker,
+            {
+                "page_id": page_id,
+                "chat_id": chat_id,
+                "revision_feedback": feedback,
+            },
+        )
+        confirmation = (
+            f"Saved revision feedback for {application.company} and queued revised CV "
+            f"task {task_id}."
+        )
+        result = "cv_revision_queued"
     elif command.startswith("/tailor_"):
         if not feedback:
             raise ValueError("Tailoring note cannot be empty")
@@ -869,6 +884,35 @@ def _process_message(
     else:
         if not isinstance(chat_id, int) or task_enqueue_handler is None:
             return None
+        pending_revisions = _application_summaries(
+            notion_client,
+            data_source_id,
+            {ApplicationStatus.REVISION_REQUESTED},
+            limit=2,
+        )
+        if len(pending_revisions) == 1:
+            application = pending_revisions[0]
+            page_id = application.notion_page_id
+            if application_action_guard:
+                application_action_guard(page_id, tracker)
+            save_revision_feedback(page_id, text.strip())
+            task_id = _enqueue_task(
+                task_enqueue_handler,
+                QueuedTaskKind.CV_DRAFT,
+                tracker,
+                {
+                    "page_id": page_id,
+                    "chat_id": chat_id,
+                    "revision_feedback": text.strip(),
+                },
+            )
+            confirmation = (
+                f"Linked your feedback to {application.company} - {application.title} "
+                f"and queued revised CV task {task_id}."
+            )
+            result = "cv_revision_queued"
+            telegram_client.send_message(chat_id, confirmation)
+            return result
         prompt = feedback if command.casefold() == "/ask" else text.strip()
         if not prompt:
             raise ValueError("Send a question after /ask")

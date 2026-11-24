@@ -1522,10 +1522,14 @@ def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions
                 settings.openai_model_fast,
             )
         elif task.kind == QueuedTaskKind.CV_DRAFT:
+            revision_options = {}
+            if revision_feedback := task.payload.get("revision_feedback"):
+                revision_options["revision_feedback"] = revision_feedback
             cv_draft(
                 _payload_string(task.payload, "page_id"),
                 chat_id=_payload_int(task.payload, "chat_id"),
                 tracker=task.tracker,
+                **revision_options,
             )
         elif task.kind == QueuedTaskKind.PORTAL_PREPARE:
             preparation = apply_prepare(

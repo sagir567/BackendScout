@@ -343,7 +343,9 @@ def _add_bullets(document, bullets: list[str], spacing_scale: float = 1.0) -> No
         paragraph = document.add_paragraph(style="List Bullet")
         paragraph.add_run(bullet)
         paragraph.paragraph_format.line_spacing = spacing_scale
-        paragraph.paragraph_format.space_after = Pt(0)
+        # LibreOffice can visually collapse adjacent zero-spacing list paragraphs,
+        # placing the next bullet or heading on the previous line in the PDF.
+        paragraph.paragraph_format.space_after = Pt(spacing_scale)
 
 
 def _add_contact_line(

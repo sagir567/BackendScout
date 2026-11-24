@@ -1040,9 +1040,13 @@ def test_free_text_queues_persistent_agent_chat() -> None:
             messages.append((chat_id, text, reply_markup))
             return {"ok": True}
 
+    class FakeNotionClient:
+        def query_data_source(self, data_source_id, payload):
+            return {"results": []}
+
     result = process_telegram_update(
         FakeTelegramClient(),
-        object(),
+        FakeNotionClient(),
         {
             "message": {
                 "from": {"id": 12345},
@@ -1051,6 +1055,7 @@ def test_free_text_queues_persistent_agent_chat() -> None:
             }
         },
         {12345},
+        data_source_id="production-source",
         task_enqueue_handler=lambda kind, tracker, payload: queued.append(
             (kind, tracker, payload)
         )
@@ -1061,6 +1066,60 @@ def test_free_text_queues_persistent_agent_chat() -> None:
     assert queued[0][0] == QueuedTaskKind.AGENT_CHAT
     assert queued[0][2]["prompt"] == "How should I improve this application?"
     assert "Thinking about that now" in messages[0][1]
+
+
+def test_free_text_after_request_changes_queues_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    queued = []
+    messages = []
+    saved = []
+    page_id = "3da71273-fa0b-81bb-960c-ce61727c4088"
+
+    class FakeTelegramClient:
+        def send_message(self, chat_id: int, text: str, reply_markup=None):
+            messages.append((chat_id, text, reply_markup))
+            return {"ok": True}
+
+    class FakeNotionClient:
+        def query_data_source(self, data_source_id, payload):
+            return {"results": [_application_page(page_id, ApplicationStatus.REVISION_REQUESTED)]}
+
+    monkeypatch.setattr(
+        "backend_scout.telegram.save_revision_feedback",
+        lambda application_id, feedback: saved.append((application_id, feedback)),
+    )
+    result = process_telegram_update(
+        FakeTelegramClient(),
+        FakeNotionClient(),
+        {
+            "message": {
+                "from": {"id": 12345},
+                "chat": {"id": 12345},
+                "text": "Emphasize the verified Java teaching experience.",
+            }
+        },
+        {12345},
+        tracker=TrackerName.PRODUCTION,
+        data_source_id="production-source",
+        task_enqueue_handler=lambda kind, tracker, payload: queued.append(
+            (kind, tracker, payload)
+        )
+        or "revision-1",
+    )
+
+    assert result == "cv_revision_queued"
+    assert saved == [(page_id, "Emphasize the verified Java teaching experience.")]
+    assert queued == [
+        (
+            QueuedTaskKind.CV_DRAFT,
+            TrackerName.PRODUCTION,
+            {
+                "page_id": page_id,
+                "chat_id": 12345,
+                "revision_feedback": "Emphasize the verified Java teaching experience.",
+            },
+        )
+    ]
+    assert "queued revised CV task revision-1" in messages[0][1]
 
 
 def _application_page(page_id: str, status: ApplicationStatus) -> dict[str, object]:
