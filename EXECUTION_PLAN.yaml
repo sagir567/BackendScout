@@ -1,5 +1,5 @@
 schema_version: 1
-updated_on: '2026-11-09'
+updated_on: '2026-11-24'
 architecture:
   path: ARCHITECTURE.md
   version: '1.1'
@@ -36,6 +36,8 @@ tasks:
         result: Chromium and WebKit refresh a completed inspection on browser focus or after leaving the editor, even with interval polling suspended; in-flight refreshes preserve unsent feedback.
       - path: tests/test_application_routes.py
         result: Product application links no longer compete with a resume form; a real recruitment link still does. A same-page resume form without explicit application context is manual-only, with no approval package.
+      - path: tests/test_front2job.py
+        result: Front2Job dynamic bundle parsing, employer-link filtering and observed ATS discovery passed with 25 focused collector/recovery tests. The 2026-11-24 production verification found 35 employers, one supported public board and 80 Gong listings; unsupported employers remained explicit source gaps and no duplicate review was created.
   - id: P15
     track: personal
     title: Verify employer-first routes and inspect real forms before review

@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import time
 from collections import Counter
@@ -284,10 +285,11 @@ def whatsapp_check() -> None:
     from backend_scout.owner_whatsapp import OwnerWhatsAppConfig
 
     config = OwnerWhatsAppConfig.from_settings(Settings())
-    console.print("WhatsApp owner notifications: setup only; dispatch is not implemented.")
+    console.print("WhatsApp owner notifications: setup only until configured and enabled.")
     console.print(f"Enabled flag: {config.enabled}")
     missing = config.missing_fields()
     console.print("Missing configuration: " + (", ".join(missing) if missing else "none"))
+    console.print(f"Message cost configured: {Settings().owner_whatsapp_unit_cost_nis is not None}")
     console.print("Meta template approval, pricing and delivery webhook have not been verified.")
     console.print("No network request or message was sent.")
 
@@ -764,6 +766,23 @@ def collect_run(
             successful_sources += 1
         except JobSpaceError as exc:
             failures.append(f"Job Space: {exc}")
+    if getattr(settings, "front2job_collection_enabled", False):
+        from backend_scout.front2job import collect_front2job_jobs
+
+        try:
+            report = collect_front2job_jobs()
+            collected.extend(report.jobs)
+            source_counts["Front2Job"] = len(report.jobs)
+            successful_sources += 1
+            failures.extend(f"Front2Job: {warning}" for warning in report.warnings)
+            if report.unsupported_employers:
+                failures.append(
+                    "Front2Job: no supported public ATS detected for "
+                    f"{len(report.unsupported_employers)} of {report.employers_checked} employers; "
+                    "kept for the daily manual-source summary"
+                )
+        except (httpx.HTTPError, OSError, TypeError, ValueError) as exc:
+            failures.append(f"Front2Job: {exc}")
     if include_indeed_email or preferences.include_secrethunter_email:
         try:
             # One bounded mailbox read for both sources, not two overlapping scans.
@@ -1381,6 +1400,13 @@ def _service_submission_notifications(queue_path, *, portal_sessions=None, send=
                     portal_sessions.close_session(application_id, tracker)
     except (httpx.HTTPError, OSError, ValueError):
         console.print("[yellow]Receipt notification pending; saved delivery will not be replayed.[/yellow]")
+    if send:
+        from backend_scout.owner_notifications import dispatch_pending_owner_notifications
+
+        try:
+            dispatch_pending_owner_notifications(store, settings)
+        except (OSError, ValueError, sqlite3.Error):
+            console.print("[yellow]Owner WhatsApp notification pending; application delivery is unchanged.[/yellow]")
 
 
 def _process_claimed_task(task: QueuedTask, queue_path: Path, *, portal_sessions=None) -> None:

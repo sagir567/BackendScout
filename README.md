@@ -13,14 +13,23 @@ automatic delivery is unavailable when the form check provides one.
 An owner-only Meta WhatsApp template transport is under development. It is not
 enabled for production sends; Telegram remains the active notification channel.
 Its canonical SQLite queue records confirmed portal submissions transactionally;
-no WhatsApp dispatcher is enabled. Tracker rejection, interview and offer updates
+WhatsApp dispatch is disabled by default. Tracker rejection, interview and offer updates
 are deduplicated into this queue. Synchronization also queues new opportunities
 only after a CV and verified route make them visible in ready/manual views.
 The tested one-shot dispatcher reserves shared-budget cost before sending and
-does not replay ambiguous acknowledgements; it is not yet wired to the worker.
+does not replay ambiguous acknowledgements. The general worker processes at most
+three pending production events per check, only with complete enabled configuration
+and an explicit worst-case message price under the shared budget.
 Run `uv run --no-editable backend-scout whatsapp check` to inspect missing local
 configuration without printing credentials or sending any network request.
 The Job Space credential probe is `backend-scout collect job-space-connect`.
+
+Front2Job partner discovery can be enabled with
+`FRONT2JOB_COLLECTION_ENABLED=true`. Each daily production scout then refreshes
+the official employer directory, follows official career links, and collects
+only boards whose public Greenhouse, Lever or Ashby identity was observed. A
+company without a supported board is reported as a source gap; no application
+URL is guessed and no candidate data is transmitted.
 It checks that the collector can read the response before saving the key in the
 OS keyring. A successful probe with zero results does not validate job fields.
 It saves a validated key in the OS keyring; scheduled Job Space ingestion is

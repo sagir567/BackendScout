@@ -56,6 +56,18 @@ def test_owner_events_follow_caller_rollback(db):
     assert db.execute("SELECT count(*) FROM owner_notification_events").fetchone()[0] == 0
 
 
+def test_pending_dispatch_disabled_never_opens_database(tmp_path):
+    from types import SimpleNamespace
+
+    from backend_scout.config import Settings
+    from backend_scout.owner_notifications import dispatch_pending_owner_notifications
+
+    nonexistent = tmp_path / "must-not-create.sqlite3"
+    store = SimpleNamespace(database_path=nonexistent)
+    assert dispatch_pending_owner_notifications(store, Settings(_env_file=None)) == []
+    assert not nonexistent.exists()
+
+
 def test_owner_events_survive_reopen_without_resubmission(tmp_path):
     from backend_scout.application_store import ApplicationStore
     from backend_scout.config import TrackerName

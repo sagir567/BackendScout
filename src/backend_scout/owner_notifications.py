@@ -104,3 +104,28 @@ def dispatch_owner_event(database_path, event_id, tracker, client, budget, unit_
         db.execute("UPDATE owner_notification_events SET status='accepted',provider_message_id=? "
                    "WHERE id=? AND status='unknown'", (message_id, event_id))
     return "accepted"
+
+
+def dispatch_pending_owner_notifications(store, settings, *, client=None, budget=None):
+    """General worker only; disabled/missing configuration is a network-free no-op."""
+    from backend_scout.budget_config import configured_budget
+    from backend_scout.owner_whatsapp import OwnerWhatsAppClient, OwnerWhatsAppConfig
+
+    config = OwnerWhatsAppConfig.from_settings(settings)
+    if not config.enabled or config.missing_fields() or settings.owner_whatsapp_unit_cost_nis is None:
+        return []
+    client = client or OwnerWhatsAppClient(config)
+    budget = budget or configured_budget(settings)
+    with sqlite3.connect(store.database_path) as db:
+        event_ids = [row[0] for row in db.execute(
+            "SELECT e.id FROM owner_notification_events e JOIN applications a ON a.id=e.application_pk "
+            "WHERE a.tracker='production' AND e.status='pending' ORDER BY e.id LIMIT 3",
+        )]
+    outcomes = []
+    for event_id in event_ids:
+        outcome = dispatch_owner_event(store.database_path, event_id, "production", client,
+                                       budget, settings.owner_whatsapp_unit_cost_nis)
+        outcomes.append(outcome)
+        if outcome in {"budget_blocked", "missing_pricing", "disabled_or_unconfigured", "unknown"}:
+            break
+    return outcomes

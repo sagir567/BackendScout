@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     owner_whatsapp_template_name: str = ""
     owner_whatsapp_language: str = "he"
     owner_whatsapp_api_version: str = "v27.0"
+    owner_whatsapp_unit_cost_nis: Decimal | None = Field(default=None, gt=0, le=1)
 
     notion_api_key: str | None = None
     notion_api_version: str = "2026-03-11"
@@ -54,6 +55,7 @@ class Settings(BaseSettings):
     web_allow_delivery: bool = False
     web_ready_to_apply: bool = False
     job_space_collection_enabled: bool = False
+    front2job_collection_enabled: bool = False
     portal_delivery_mode: Literal["legacy", "hybrid"] = "legacy"
     portal_hybrid_rollout: Literal["test", "canary", "enabled"] = "test"
     portal_canary_application_ids: str = ""

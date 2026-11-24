@@ -1721,11 +1721,22 @@ workspace records and once per application, not on each CV revision. An explicit
 single-event dispatcher claims the event durably and books configured worst-case
 message cost through the existing shared budget before the API request. A crash
 or ambiguous response remains unknown and is never auto-replayed. Real-ledger
-tests cover the shared cap and concurrent claims. Worker wiring and verified
-pricing/Meta configuration remain pending. Historical tracker events do not authorize delivery.
+tests cover the shared cap and concurrent claims. The general worker checks a
+bounded batch independently of Telegram and portal delivery. Complete enabled
+Meta configuration and explicit per-message pricing are required. Missing
+configuration is a network-free no-op. Verified Meta setup and delivery-webhook
+verification remain pending. Historical tracker events do not authorize delivery.
 The `whatsapp check` CLI reports configuration presence only. It does not verify
 Meta authorization, template approval or delivery. Queue tests cover rollback and
 reopening the canonical database without duplicate events or delivery attempts.
+
+Front2Job is an employer directory, not an application authority. The daily
+collector first refreshes `https://front2job.com/employers`, then looks for a
+public Greenhouse, Lever or Ashby board in each official career route. Supported
+boards enter the normal scoring and deduplication path. Unsupported or unavailable
+routes are isolated and summarized instead of being treated as zero jobs. The
+companion `skills/front2job-daily-scout/SKILL.md` preserves this discovery and
+approval contract for agent-driven maintenance.
 When a form contains a clearly identified resume input and a generic upload,
 inspection selects the resume input and checks required secondary attachments
 separately. Multiple explicitly identified resume inputs still fail closed.
